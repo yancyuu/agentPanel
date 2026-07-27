@@ -27,7 +27,8 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "$TAG" \
             --generate-notes \
-            --draft=false 2>/dev/null || echo "Release $TAG already exists, skipping creation"
+            --draft=false 2>/dev/null \
+            || echo "Release $TAG already exists, skipping creation"
 
   release-docker:
     needs: [create-release]
@@ -81,7 +82,7 @@ jobs:
         include:
           - runner: windows-latest
             asset: agentcli-windows-x64.zip
-          - runner: macos-13
+          - runner: macos-15-intel
             asset: agentcli-macos-x64.zip
           - runner: macos-latest
             asset: agentcli-macos-arm64.zip
@@ -91,8 +92,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
