@@ -66,3 +66,56 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+
+  # Build self-contained portable packages (bundle Node — no Node install for
+  # end users) for each platform and attach them to the Release. The one-line
+  # installers (install.sh / install.ps1 on the Pages site) download these.
+  release-standalone:
+    needs: [create-release]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            asset: agentcli-windows-x64.zip
+          - runner: macos-13
+            asset: agentcli-macos-x64.zip
+          - runner: macos-latest
+            asset: agentcli-macos-arm64.zip
+          - runner: ubuntu-latest
+            asset: agentcli-linux-x64.zip
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm fetch:vendor
+      - run: pnpm build:web
+      - run: pnpm build:standalone
+      - name: Zip portable folder
+        shell: bash
+        run: |
+          cd dist-standalone
+          if command -v zip >/dev/null 2>&1; then
+            zip -r -q "../${{ matrix.asset }}" .
+          elif command -v 7z >/dev/null 2>&1; then
+            7z a -tzip "../${{ matrix.asset }}" .
+          else
+            echo "no zip/7z available on ${{ matrix.runner }}" >&2; exit 1
+          fi
+      - name: Upload to Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          gh release upload "$TAG" "${{ matrix.asset }}" \
+            --repo "$GITHUB_REPOSITORY" --clobber

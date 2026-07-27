@@ -187,7 +187,10 @@ import {
   runServiceAction,
 } from './lib/servicesCommand.mjs';
 import { describeUploadToggle, resolveConversationUploadEnabled } from './lib/uploadState.mjs';
-import { createDigitalWorkerCommand, buildDigitalWorkerCommandOptions } from './lib/digitalWorkerCommand.mjs';
+import {
+  createDigitalWorkerCommand,
+  buildDigitalWorkerCommandOptions,
+} from './lib/digitalWorkerCommand.mjs';
 import { createFeishuAssistant, listFeishuAssistants } from './lib/feishuAssistant.mjs';
 import {
   USAGE_UPLOAD_PROVIDER_OPTIONS,
@@ -197,8 +200,18 @@ import {
   normalizeUploadProviders,
   uploadProviderLabel,
 } from './lib/usageRemote.mjs';
-import { cursorPendingRows, formatNumber, localServerRows, serverUsageUnauthorized } from './lib/usageRows.mjs';
-import { absoluteProgressLabel, aggregateUploadProgress, foldFinishedBatches, uploadProgressLabel } from './lib/usageProgress.mjs';
+import {
+  cursorPendingRows,
+  formatNumber,
+  localServerRows,
+  serverUsageUnauthorized,
+} from './lib/usageRows.mjs';
+import {
+  absoluteProgressLabel,
+  aggregateUploadProgress,
+  foldFinishedBatches,
+  uploadProgressLabel,
+} from './lib/usageProgress.mjs';
 import {
   NAV_ACTIONS,
   WEB_ENTRY_ACTIONS,
@@ -239,7 +252,14 @@ import {
   clearWebRunningOptimistic,
   invalidateAuthCache,
 } from './lib/featureState.mjs';
-import { chmodBestEffort, safeReadJson, readHermitSettings, writeHermitSettings, buildTeamCollaborationTaskBusConfig, enableTeamCollaborationDefaults } from './lib/settings.mjs';
+import {
+  chmodBestEffort,
+  safeReadJson,
+  readHermitSettings,
+  writeHermitSettings,
+  buildTeamCollaborationTaskBusConfig,
+  enableTeamCollaborationDefaults,
+} from './lib/settings.mjs';
 import {
   getAuthStorePath,
   ensureAuthStoreDir,
@@ -440,11 +460,18 @@ if (commandArgs[0] === 'init') {
   const usage = await runServiceAction('start-usage');
   const result = { ok: true, command: 'init', hermitHome, usage: usage.usage };
   if (jsonRequested) printJson(result);
-  printCliRows('AgentCli 已初始化', [
-    ['用量后台', usage.usage?.worker?.running ? `运行中 (pid ${usage.usage.worker.pid})` : '已请求启动'],
-    ['开机自启', usage.usage?.autostart?.enabled ? '已开启' : '未开启/不支持'],
-    ['Web 工作台', '默认未启动'],
-  ], '需要 Web 工作台时运行：agentcli web；停止用量：agentcli usage stop。');
+  printCliRows(
+    'AgentCli 已初始化',
+    [
+      [
+        '用量后台',
+        usage.usage?.worker?.running ? `运行中 (pid ${usage.usage.worker.pid})` : '已请求启动',
+      ],
+      ['开机自启', usage.usage?.autostart?.enabled ? '已开启' : '未开启/不支持'],
+      ['Web 工作台', '默认未启动'],
+    ],
+    '需要 Web 工作台时运行：agentcli web；停止用量：agentcli usage stop。'
+  );
   process.exit(0);
 }
 
@@ -515,7 +542,12 @@ if (commandArgs[0] === '__telemetry-worker') {
   //   __telemetry-worker --report-lark-credentials-once --json
   //   __telemetry-worker --startup-once
   // Only --scan-once bypasses the single-instance guard above.
-  const PASSTHROUGH_FLAGS = ['--scan-once', '--startup-once', '--report-lark-credentials-once', '--json'];
+  const PASSTHROUGH_FLAGS = [
+    '--scan-once',
+    '--startup-once',
+    '--report-lark-credentials-once',
+    '--json',
+  ];
   const extraArgs = PASSTHROUGH_FLAGS.filter((flag) => args.includes(flag));
   const existingPid = readPidFile(telemetryWorkerPidPath);
   if (!extraArgs.includes('--scan-once') && existingPid && isPidRunning(existingPid)) {
@@ -658,22 +690,33 @@ async function runWebCommand() {
     const ready = await waitForOpenHermitServerReadyWithLogs(daemon.pid, 60_000);
     if (!ready.ready) {
       if (jsonRequested)
-        printJson({ ok: false, command: 'web', url, reason: ready.reason, logPath: daemonLogPath }, 1);
-      printCliRows(`${BRAND.stylizedName} 工作台`, [
-        ['状态', '启动失败或仍在启动中', 'error'],
-        ['地址', url],
-        ['日志', daemonLogPath],
-        ['原因', ready.reason || '请查看日志'],
-      ], `排查后重试：${brandCommand('web')} 或 ${brandCommand('status')}`);
+        printJson(
+          { ok: false, command: 'web', url, reason: ready.reason, logPath: daemonLogPath },
+          1
+        );
+      printCliRows(
+        `${BRAND.stylizedName} 工作台`,
+        [
+          ['状态', '启动失败或仍在启动中', 'error'],
+          ['地址', url],
+          ['日志', daemonLogPath],
+          ['原因', ready.reason || '请查看日志'],
+        ],
+        `排查后重试：${brandCommand('web')} 或 ${brandCommand('status')}`
+      );
       process.exit(1);
     }
   }
   await openExternalUrl(url);
   if (jsonRequested) printJson({ ok: true, command: 'web', url });
-  printCliRows(`${BRAND.stylizedName} 工作台`, [
-    ['状态', '已就绪', 'ok'],
-    ['地址', url],
-  ], `已在浏览器打开；停止服务：${brandCommand('stop')}`);
+  printCliRows(
+    `${BRAND.stylizedName} 工作台`,
+    [
+      ['状态', '已就绪', 'ok'],
+      ['地址', url],
+    ],
+    `已在浏览器打开；停止服务：${brandCommand('stop')}`
+  );
   process.exit(0);
 }
 
@@ -684,11 +727,15 @@ if (commandArgs[0] === 'stop') {
   // outlive the CLI process; stop them only via an explicit, granular command:
   //   services stop web   — stop the Web UI daemon
   //   usage stop          — stop the background upload worker
-  printCliRows('后台服务', [
-    ['说明', 'stop 不再主动关闭 Web / 用量 worker'],
-    ['Web', '如需停止：services stop web'],
-    ['用量 worker', '如需停止：usage stop'],
-  ], '后台服务会持续运行，退出 CLI 不影响它们。');
+  printCliRows(
+    '后台服务',
+    [
+      ['说明', 'stop 不再主动关闭 Web / 用量 worker'],
+      ['Web', '如需停止：services stop web'],
+      ['用量 worker', '如需停止：usage stop'],
+    ],
+    '后台服务会持续运行，退出 CLI 不影响它们。'
+  );
   process.exit(0);
 }
 
@@ -701,7 +748,9 @@ if (commandArgs.length > 0 && !daemonRequested && !daemonChild) {
   const result = { ok: false, command, error: `Unknown command: ${command}` };
   if (jsonRequested) printJson(result, 1);
   console.error(`${brandLogPrefix()} 未知命令：${command}`);
-  console.error(`${brandLogPrefix()} 可用命令：init | web | status | doctor | update | restart | services | services start/stop | teams list/create | tasks list | usage status/today/report/start/stop/autostart | auth status/login/logout | stop`);
+  console.error(
+    `${brandLogPrefix()} 可用命令：init | web | status | doctor | update | restart | services | services start/stop | teams list/create | tasks list | usage status/today/report/start/stop/autostart | auth status/login/logout | stop`
+  );
   process.exit(1);
 }
 
@@ -713,17 +762,11 @@ if (daemonRequested && !daemonChild) {
 // Check dependencies
 // ---------------------------------------------------------------------------
 
-
 let hermitBridgeProcess = null;
 let bridgeTokens = {
   managementToken:
-    process.env.HERMIT_BRIDGE_TOKEN ||
-    process.env.HERMIT_BRIDGE_MANAGEMENT_TOKEN ||
-    '',
-  bridgeToken:
-    process.env.HERMIT_BRIDGE_WS_TOKEN ||
-    process.env.HERMIT_BRIDGE_TOKEN ||
-    '',
+    process.env.HERMIT_BRIDGE_TOKEN || process.env.HERMIT_BRIDGE_MANAGEMENT_TOKEN || '',
+  bridgeToken: process.env.HERMIT_BRIDGE_WS_TOKEN || process.env.HERMIT_BRIDGE_TOKEN || '',
 };
 let runtimeSetupMode = false;
 
@@ -733,7 +776,11 @@ if (!skipHermitBridge) {
   let shouldStartRuntime = false;
   bridgeTokens = readHermitBridgeConfigState();
   const bridgeBaseUrl = process.env.HERMIT_BRIDGE_BASE_URL || 'http://127.0.0.1:9820';
-  const alreadyRunning = await waitForHermitBridge(bridgeBaseUrl, bridgeTokens.managementToken, 1_000);
+  const alreadyRunning = await waitForHermitBridge(
+    bridgeBaseUrl,
+    bridgeTokens.managementToken,
+    1_000
+  );
   if (alreadyRunning) {
     console.log(`${brandLogPrefix()} Runtime service already running: ${bridgeBaseUrl}`);
   } else if (bridgeTokens.hasProjects) {
@@ -749,11 +796,15 @@ if (!skipHermitBridge) {
       // restart to get the runtime back.
       runtimeSetupMode = true;
       console.warn(`${brandLogPrefix()} Claude Code CLI 未就绪，跳过 runtime，工作台仍会启动。`);
-      console.warn(`${brandLogPrefix()} 请手动安装：npm install -g @anthropic-ai/claude-code@latest`);
+      console.warn(
+        `${brandLogPrefix()} 请手动安装：npm install -g @anthropic-ai/claude-code@latest`
+      );
       printLogTail('Runtime', runtimeLogPath);
     }
   } else {
-    console.error(`${brandLogPrefix()} Runtime config has no projects. Please edit the config and try again.`);
+    console.error(
+      `${brandLogPrefix()} Runtime config has no projects. Please edit the config and try again.`
+    );
     console.error(`${brandLogPrefix()} Runtime config: ${hermitBridgeConfigPath}`);
     process.exit(1);
   }
@@ -762,9 +813,15 @@ if (!skipHermitBridge) {
     const hermitBridgeRunner = resolveHermitBridgeRunner();
     if (!hermitBridgeRunner) {
       runtimeSetupMode = true;
-      console.warn(`${brandLogPrefix()} Bundled ${BRAND.runtimeBridgeName} runtime is not installed for this platform.`);
-      console.warn(`${brandLogPrefix()} Starting ${BRAND.stylizedName} without auto-starting the runtime service.`);
-      console.warn(`${brandLogPrefix()} Configure an external ${BRAND.runtimeBridgeName} service or use --no-hermit-bridge to skip this check.`);
+      console.warn(
+        `${brandLogPrefix()} Bundled ${BRAND.runtimeBridgeName} runtime is not installed for this platform.`
+      );
+      console.warn(
+        `${brandLogPrefix()} Starting ${BRAND.stylizedName} without auto-starting the runtime service.`
+      );
+      console.warn(
+        `${brandLogPrefix()} Configure an external ${BRAND.runtimeBridgeName} service or use --no-hermit-bridge to skip this check.`
+      );
     } else {
       console.log(`${brandLogPrefix()} Starting bundled runtime service...`);
       console.log(`${brandLogPrefix()} Runtime config: ${hermitBridgeConfigPath}`);
@@ -801,7 +858,12 @@ if (!skipHermitBridge) {
       });
 
       try {
-        await waitForRuntimeReady(bridgeBaseUrl, bridgeTokens.managementToken, hermitBridgeProcess, 180_000);
+        await waitForRuntimeReady(
+          bridgeBaseUrl,
+          bridgeTokens.managementToken,
+          hermitBridgeProcess,
+          180_000
+        );
       } catch (err) {
         console.error(
           `${brandLogPrefix()} Runtime service failed to start: ${err instanceof Error ? err.message : String(err)}`
@@ -837,7 +899,9 @@ const canBuildRendererFromSource =
 if (!existsSync(distRendererEntry)) {
   if (!canBuildRendererFromSource) {
     console.error(`${brandLogPrefix()} Missing prebuilt frontend: dist-renderer/index.html`);
-    console.error(`${brandLogPrefix()} This install appears incomplete. Please reinstall ${BRAND.npmPackage} or report a packaging issue.`);
+    console.error(
+      `${brandLogPrefix()} This install appears incomplete. Please reinstall ${BRAND.npmPackage} or report a packaging issue.`
+    );
     process.exit(1);
   }
 
@@ -877,7 +941,22 @@ if (orphanedDaemonChildPids.length) {
   await stopFallbackProcesses(orphanedDaemonChildPids);
 }
 
-const serverProcess = spawn(process.execPath, ['--import', resolveAliasLoaderRegister(), '--import', resolveTsxLoader(), 'src/main/server.ts'], {
+// Prefer the precompiled bundle (dist/server.bundle.cjs) when present — boots
+// with plain `node`, skipping the tsx + alias-loader runtime transpile that
+// makes cold starts slow (see scripts/build-server.mjs). Falls back to tsx for
+// dev or when the bundle hasn't been built.
+const serverBundlePath = path.join(repoRoot, 'dist', 'server.bundle.mjs');
+const useServerBundle = existsSync(serverBundlePath);
+const serverArgs = useServerBundle
+  ? [serverBundlePath]
+  : [
+      '--import',
+      resolveAliasLoaderRegister(),
+      '--import',
+      resolveTsxLoader(),
+      'src/main/server.ts',
+    ];
+const serverProcess = spawn(process.execPath, serverArgs, {
   cwd: repoRoot,
   // Windows: the DAEMON child is spawned detached (see daemon.mjs — that is
   // what survives terminal close); the server inherits that console-less
@@ -942,5 +1021,7 @@ process.on('SIGTERM', () => {
   shutdown(0);
 });
 
-console.log(`${brandLogPrefix()} Server starting on http://${process.env.HOST || '127.0.0.1'}:${port}`);
+console.log(
+  `${brandLogPrefix()} Server starting on http://${process.env.HOST || '127.0.0.1'}:${port}`
+);
 console.log(`${brandLogPrefix()} Press Ctrl+C to stop\n`);

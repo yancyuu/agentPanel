@@ -1,127 +1,85 @@
 #!/usr/bin/env bash
+# scripts/install.sh
+#
+# One-line installer for agentcli (macOS / Linux). Downloads a self-contained
+# portable build that BUNDLES Node from GitHub Releases, extracts it to
+# ~/.agentcli, and puts it on PATH. No Node.js install required on the host.
+#
+# Users run:
+#   curl -fsSL https://yancyuu.github.io/agentcli/install.sh | bash
+#
+# Windows users: use the PowerShell installer instead:
+#   irm https://yancyuu.github.io/agentcli/install.ps1 | iex
+
 set -euo pipefail
 
-PACKAGE="@yancyyu/agentcli"
-MIN_NODE_VERSION=18
+# GitHub repo that hosts the Releases with the portable zips.
+REPO="yancyuu/agentcli"
+INSTALL_DIR="${AGENTCLI_HOME:-$HOME/.agentcli}"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-RESET='\033[0m'
+c() { printf '\033[%sm%s\033[0m' "$1" "$2"; }
+info() { printf '%s %s\n' "$(c 36 '►')" "$*"; }
+ok()   { printf '%s %s\n' "$(c 32 '✓')" "$*"; }
+die()  { printf '%s %s\n' "$(c 31 '✗')" "$*" >&2; exit 1; }
 
-info()  { printf "${CYAN}%s${RESET}\n" "$*"; }
-success() { printf "${GREEN}%s${RESET}\n" "$*"; }
-warn()  { printf "${YELLOW}%s${RESET}\n" "$*"; }
-error() { printf "${RED}%s${RESET}\n" "$*" >&2; exit 1; }
+# --- detect platform -------------------------------------------------------
+case "$(uname -s)" in
+  Darwin) OS="macos" ;;
+  Linux)  OS="linux" ;;
+  MINGW*|MSYS*|CYGWIN*)
+    die "你在 Windows 的 git-bash 里。请用 PowerShell 跑: irm https://yancyuu.github.io/agentcli/install.ps1 | iex" ;;
+  *) die "不支持的系统: $(uname -s)" ;;
+esac
+case "$(uname -m)" in
+  x86_64|amd64)  ARCH="x64" ;;
+  arm64|aarch64) ARCH="arm64" ;;
+  *) die "不支持的架构: $(uname -m)" ;;
+esac
 
-detect_os() {
-  case "$(uname -s)" in
-    Darwin) OS="macOS" ;;
-    Linux)  OS="Linux" ;;
-    *)      error "不支持的操作系统: $(uname -s)。目前仅支持 macOS 和 Linux。" ;;
+ASSET="agentcli-${OS}-${ARCH}.zip"
+URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"
+
+# --- download --------------------------------------------------------------
+info "下载 $URL"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+if ! curl -fSL "$URL" -o "$TMP/$ASSET"; then
+  die "下载失败。确认 ${REPO} 已发布含 ${ASSET} 的 Release（首次发版前还没有）。"
+fi
+
+# --- extract ---------------------------------------------------------------
+info "安装到 $INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
+if command -v unzip >/dev/null 2>&1; then
+  unzip -oq "$TMP/$ASSET" -d "$INSTALL_DIR"
+elif tar -xf "$TMP/$ASSET" -C "$INSTALL_DIR" 2>/dev/null; then
+  : # bsdtar can read zip
+else
+  die "需要 unzip 或 tar 来解压，装一个再重试。"
+fi
+# ensure executable bits (zip may not preserve them)
+chmod +x "$INSTALL_DIR/node" 2>/dev/null || true
+chmod +x "$INSTALL_DIR/agentcli" 2>/dev/null || true
+
+# --- PATH ------------------------------------------------------------------
+ensure_path() {
+  case ":$PATH:" in
+    *":$INSTALL_DIR:"*) return 0 ;;
   esac
-}
-
-install_node() {
-  info "未找到 Node.js，正在自动安装 Node.js ${MIN_NODE_VERSION} ..."
-
-  if [ "$OS" = "macOS" ]; then
-    if command -v brew &>/dev/null; then
-      brew install node@${MIN_NODE_VERSION}
-      brew link --overwrite node@${MIN_NODE_VERSION} 2>/dev/null || true
-    else
-      info "未找到 Homebrew，先安装 Homebrew ..."
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-      eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
-      brew install node@${MIN_NODE_VERSION}
-      brew link --overwrite node@${MIN_NODE_VERSION} 2>/dev/null || true
+  local line="export PATH=\"$INSTALL_DIR:\$PATH\""
+  for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.profile"; do
+    [ -f "$rc" ] || continue
+    if ! grep -qF "$INSTALL_DIR" "$rc" 2>/dev/null; then
+      printf '\n# added by agentcli installer\n%s\n' "$line" >> "$rc"
+      ok "已写入 $rc（重开终端生效）"
+      return
     fi
-  else
-    if command -v apt-get &>/dev/null; then
-      curl -fsSL https://deb.nodesource.com/setup_${MIN_NODE_VERSION}.x | sudo -E bash -
-      sudo apt-get install -y nodejs
-    elif command -v dnf &>/dev/null; then
-      curl -fsSL https://rpm.nodesource.com/setup_${MIN_NODE_VERSION}.x | sudo bash -
-      sudo dnf install -y nodejs
-    elif command -v yum &>/dev/null; then
-      curl -fsSL https://rpm.nodesource.com/setup_${MIN_NODE_VERSION}.x | sudo bash -
-      sudo yum install -y nodejs
-    else
-      error "无法自动安装 Node.js，请手动安装 Node.js >= ${MIN_NODE_VERSION} 后重试。"
-    fi
-  fi
-
-  if ! command -v node &>/dev/null; then
-    error "Node.js 安装失败，请手动安装后重试。"
-  fi
-  success "Node.js $(node -v) 安装成功"
+  done
+  printf '\n# added by agentcli installer\n%s\n' "$line" >> "$HOME/.profile"
+  ok "已写入 ~/.profile（重开终端生效）"
 }
+ensure_path
 
-check_node() {
-  if ! command -v node &>/dev/null; then
-    install_node
-    return
-  fi
-
-  local ver
-  ver=$(node -v | sed 's/^v//' | cut -d. -f1)
-  if [ "$ver" -lt "$MIN_NODE_VERSION" ]; then
-    warn "Node.js 版本过低 (v${ver})，需要 >= ${MIN_NODE_VERSION}，正在升级 ..."
-    install_node
-  fi
-}
-
-check_npm() {
-  if ! command -v npm &>/dev/null; then
-    error "未找到 npm。请确认 Node.js 安装完整。"
-  fi
-}
-
-install_package() {
-  info "正在安装 ${PACKAGE} ..."
-
-  if npm install -g "${PACKAGE}" 2>&1; then
-    success "安装完成！"
-  else
-    warn "全局安装失败，尝试使用 sudo ..."
-    sudo npm install -g "${PACKAGE}" || error "安装失败，请检查权限或网络。"
-    success "安装完成！"
-  fi
-}
-
-verify_install() {
-  if command -v agentcli &>/dev/null; then
-    local ver
-    ver=$(agentcli --version 2>/dev/null || echo "unknown")
-    printf "\n"
-    success "✓ AgentCli 已安装成功"
-    info "  版本: ${ver}"
-    info "  运行: agentcli"
-    printf "\n"
-  else
-    warn "安装似乎成功但 agentcli 命令未找到。"
-    warn "请确认 npm 全局 bin 目录在 PATH 中："
-    warn "  npm config get prefix"
-    warn "  export PATH=\"\$(npm config get prefix)/bin:\$PATH\""
-  fi
-}
-
-main() {
-  printf "\n"
-  printf "${BOLD}  AgentCli 安装程序${RESET}\n"
-  printf "  ─────────────────────\n\n"
-
-  detect_os
-  info "系统: ${OS} ($(uname -m))"
-
-  check_node
-  info "Node.js: $(node -v)"
-
-  check_npm
-  install_package
-  verify_install
-}
-
-main "$@"
+ok "安装完成 → $INSTALL_DIR"
+printf '\n%s\n' "$(c 32 '开一个新终端，运行:') agentcli"
+printf '（或当前终端先: export PATH="%s:$PATH"）\n' "$INSTALL_DIR"

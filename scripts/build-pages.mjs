@@ -227,11 +227,15 @@ const html = `<!DOCTYPE html>
 
     <div class="install-box">
       <div class="install-tabs">
-        <button class="install-tab active" data-target="tab-curl">macOS / Linux</button>
+        <button class="install-tab active" data-target="tab-win">Windows</button>
+        <button class="install-tab" data-target="tab-curl">macOS / Linux</button>
         <button class="install-tab" data-target="tab-npm">npm</button>
         <button class="install-tab" data-target="tab-npx">npx（免安装）</button>
       </div>
-      <div class="install-content active" id="tab-curl">
+      <div class="install-content active" id="tab-win">
+        <div class="install-cmd">irm https://yancyuu.github.io/agentcli/install.ps1 | iex</div>
+      </div>
+      <div class="install-content" id="tab-curl">
         <div class="install-cmd">curl -fsSL https://yancyuu.github.io/agentcli/install.sh | bash</div>
       </div>
       <div class="install-content" id="tab-npm">
@@ -538,6 +542,7 @@ rmSync(OUT_DIR, { recursive: true, force: true });
 mkdirSync(OUT_DIR, { recursive: true });
 writeText('index.html', html);
 copyFile('scripts/install.sh', 'install.sh');
+copyFile('scripts/install.ps1', 'install.ps1');
 copyFile('public/icon.png', 'icon.png');
 
 console.log(`Built GitHub Pages site at ${OUT_DIR}`);

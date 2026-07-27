@@ -172,8 +172,36 @@ import type {
 } from '@shared/types/team';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(readFileSync(path.join(__dirname, '../../package.json'), 'utf-8'));
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
+
+// Resolve the repo root by walking up to the package.json named
+// @yancyyu/agentcli. Robust to layout: works when running from source
+// (src/main/), from the precompiled bundle (dist/server.bundle.mjs), and later
+// from a SEA exe — all of which live somewhere under the package directory.
+// (A hardcoded `../..` only worked for the src/main/ layout and broke the
+// bundle, which sits in dist/.)
+function findAgentCliRoot(startDir: string): string {
+  let dir = startDir;
+  for (let i = 0; i < 12; i++) {
+    try {
+      if (
+        JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf-8')).name ===
+        '@yancyyu/agentcli'
+      ) {
+        return dir;
+      }
+    } catch {
+      // missing or malformed package.json — keep walking up
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // Fallback: original src/main layout (two levels up).
+  return path.resolve(startDir, '..', '..');
+}
+
+const REPO_ROOT = findAgentCliRoot(__dirname);
+const pkg = JSON.parse(readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf-8'));
 
 // Default to loopback so the daemon is NOT exposed to the LAN by default.
 // Set HOST=0.0.0.0 explicitly (and put a reverse proxy / origin allowlist in

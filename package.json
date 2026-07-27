@@ -11,13 +11,13 @@
     "name": "yancyyu",
     "email": "yancyyu.ok@gmail.com"
   },
-  "homepage": "https://github.com/yancyyu/agentcli",
+  "homepage": "https://github.com/yancyuu/agentcli",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yancyyu/agentcli.git"
+    "url": "https://github.com/yancyuu/agentcli.git"
   },
   "bugs": {
-    "url": "https://github.com/yancyyu/agentcli/issues"
+    "url": "https://github.com/yancyuu/agentcli/issues"
   },
   "bin": {
     "agentcli": "./bin/hermit.mjs"
@@ -27,6 +27,7 @@
     "scripts/report-lark-credentials-once.mjs",
     "scripts/diagnose-lark-report.ps1",
     "src/",
+    "dist/",
     "dist-renderer/",
     "vendor/cc-connect/",
     "branding.json",
@@ -41,8 +42,10 @@
     "dev:web": "vite --config vite.web.config.ts",
     "build:web": "vite build --config vite.web.config.ts --outDir ../../dist-renderer --emptyOutDir",
     "build:pages": "node ./scripts/build-pages.mjs",
+    "build:server": "node ./scripts/build-server.mjs",
+    "build:standalone": "node ./scripts/build-standalone-package.mjs",
     "postinstall": "node ./bin/postinstall.mjs",
-    "prepack": "node ./scripts/fetch-vendor-cc-connect.mjs && pnpm build:web",
+    "prepack": "node ./scripts/fetch-vendor-cc-connect.mjs && pnpm build:web && pnpm build:server",
     "fetch:vendor": "node ./scripts/fetch-vendor-cc-connect.mjs",
     "release:checklist": "node ./scripts/release-checklist.mjs",
     "start": "node bin/hermit.mjs",
@@ -146,6 +149,7 @@
     "date-fns": "^3.6.0",
     "diff": "^8.0.3",
     "dompurify": "^3.3.1",
+    "esbuild": "^0.28.1",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.4",

@@ -12,7 +12,33 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
+
+// Resolve the agentcli package root by walking up to the package.json whose
+// name is @yancyyu/agentcli. Robust to layout (source src/main/ vs precompiled
+// bundle dist/ vs future SEA exe) -- a hardcoded `../../..` only worked in
+// source and broke in the bundle.
+function findAgentCliRoot(startDir: string): string {
+  let dir = startDir;
+  for (let i = 0; i < 12; i++) {
+    try {
+      if (
+        JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf-8')).name ===
+        '@yancyyu/agentcli'
+      ) {
+        return dir;
+      }
+    } catch {
+      // missing or malformed package.json: keep walking up
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // Fallback: original src/main layout (three levels up from this file).
+  return path.resolve(startDir, '..', '..', '..');
+}
+
+const REPO_ROOT = findAgentCliRoot(__dirname);
 
 export interface VersionInfo {
   currentVersion: string;

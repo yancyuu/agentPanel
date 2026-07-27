@@ -42,10 +42,10 @@ AgentCli 是一个**本地优先的 AI 数字员工工作台**。它让你像管
 
 先把本机 AI 运行时管起来，需要团队化时再接入 AgentBus。
 
-| 产品 | 定位 | 适用场景 |
-|:--|:--|:--|
-| **AgentCli** | 本地优先的 CLI + Web 工作台。你现在就能装、立刻能用。 | 单机使用、脚本化、自动化、本地数字员工团队 |
-| **AgentBus** | 中心化数据总线，把单机工具升级成团队 / 企业平台。 | 多人 / 多团队协作、IM 触发任务、企业级用量看板 |
+| 产品         | 定位                                                  | 适用场景                                       |
+| :----------- | :---------------------------------------------------- | :--------------------------------------------- |
+| **AgentCli** | 本地优先的 CLI + Web 工作台。你现在就能装、立刻能用。 | 单机使用、脚本化、自动化、本地数字员工团队     |
+| **AgentBus** | 中心化数据总线，把单机工具升级成团队 / 企业平台。     | 多人 / 多团队协作、IM 触发任务、企业级用量看板 |
 
 > 关系一句话：**AgentCli 是本地操作面，AgentBus 是协调骨干。** 不接 Bus = 单机模式，照样完整能跑；接入 Bus 才解锁多人协作与企业能力。
 
@@ -53,24 +53,30 @@ AgentCli 是一个**本地优先的 AI 数字员工工作台**。它让你像管
 
 ## 30 秒快速体验
 
+**一行安装（自带 Node 运行时，无需额外装环境）：**
+
 ```bash
-npx @yancyyu/agentcli@latest init
+# Windows（PowerShell）
+irm https://yancyuu.github.io/agentcli/install.ps1 | iex
+
+# macOS / Linux
+curl -fsSL https://yancyuu.github.io/agentcli/install.sh | bash
 ```
 
-这会默认快速启动 Web 工作台和用量后台 worker（worker 默认开机自启）。打开 [http://127.0.0.1:5680](http://127.0.0.1:5680)，创建你的第一个数字员工团队。
+装完**开一个新终端**运行 `agentcli`，浏览器打开 [http://127.0.0.1:5680](http://127.0.0.1:5680) 创建你的第一个数字员工团队。
+
+<details>
+<summary>或者用 npm / npx（适合已装 Node 的开发者）</summary>
 
 ```bash
+# 免安装直接运行
+npx @yancyyu/agentcli@latest init
+
 # 或全局安装
 npm install -g @yancyyu/agentcli@latest
 agentcli
 ```
 
-<details>
-<summary>macOS / Linux 一键安装脚本</summary>
-
-```bash
-curl -fsSL https://yancyuu.github.io/agentcli/install.sh | bash
-```
 </details>
 
 ---
@@ -106,46 +112,46 @@ agentcli usage today                          # 今日本地用量摘要（不�
 
 ### 启动与状态
 
-| 命令 | 说明 |
-|:--|:--|
-| `agentcli` | 打开终端导航（控制面菜单）：工作台、用量同步、用户、token 池(beta) |
-| 菜单「工作台 → 开通数字员工」 | 快速创建数字员工并绑定飞书；仅支持 Claude Code / Codex。通过 lark-cli 为本次应用申请创建者的个人 `as user` 授权，并校验数字员工必需权限；成功后会静默尝试一次凭证上报（失败不影响创建） |
-| `agentcli init` | 快速初始化：默认启动 Web 工作台 + 用量后台 worker（worker 默认开机自启） |
-| `agentcli web` | 直接启动 Web 工作台（默认 127.0.0.1:5680）；加 `--daemon` 后台运行 |
-| `agentcli --daemon --port 8080` | 后台运行并指定端口 |
-| `agentcli status` | 查看后台 daemon / Web 运行状态 |
-| `agentcli doctor` | 只读本地诊断：配置、服务、路径 |
-| `agentcli stop` | 显示停止指引（不会主动关闭 Web / 用量 worker） |
-| `agentcli restart` | 重启 Web daemon + 用量 worker（更新或改配置后用它让新代码生效；本地命令，免登录） |
+| 命令                            | 说明                                                                                                                                                                                    |
+| :------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agentcli`                      | 打开终端导航（控制面菜单）：工作台、用量同步、用户、token 池(beta)                                                                                                                      |
+| 菜单「工作台 → 开通数字员工」   | 快速创建数字员工并绑定飞书；仅支持 Claude Code / Codex。通过 lark-cli 为本次应用申请创建者的个人 `as user` 授权，并校验数字员工必需权限；成功后会静默尝试一次凭证上报（失败不影响创建） |
+| `agentcli init`                 | 快速初始化：默认启动 Web 工作台 + 用量后台 worker（worker 默认开机自启）                                                                                                                |
+| `agentcli web`                  | 直接启动 Web 工作台（默认 127.0.0.1:5680）；加 `--daemon` 后台运行                                                                                                                      |
+| `agentcli --daemon --port 8080` | 后台运行并指定端口                                                                                                                                                                      |
+| `agentcli status`               | 查看后台 daemon / Web 运行状态                                                                                                                                                          |
+| `agentcli doctor`               | 只读本地诊断：配置、服务、路径                                                                                                                                                          |
+| `agentcli stop`                 | 显示停止指引（不会主动关闭 Web / 用量 worker）                                                                                                                                          |
+| `agentcli restart`              | 重启 Web daemon + 用量 worker（更新或改配置后用它让新代码生效；本地命令，免登录）                                                                                                       |
 
 ### 用户授权（上报前提）
 
-| 命令 | 说明 |
-|:--|:--|
-| `agentcli auth status` | 查看 AgentBus 用户授权状态 |
-| `agentcli auth login` | 飞书授权登录 AgentBus；登录后用量才有上报目标 |
+| 命令                   | 说明                                          |
+| :--------------------- | :-------------------------------------------- |
+| `agentcli auth status` | 查看 AgentBus 用户授权状态                    |
+| `agentcli auth login`  | 飞书授权登录 AgentBus；登录后用量才有上报目标 |
 | `agentcli auth logout` | 退出 AgentBus 用户（不影响本地 runtime 登录） |
 
 ### 用量采集与上报
 
-| 命令 | 说明 |
-|:--|:--|
-| `agentcli usage status` | 后台 worker 是否运行、消息上报是否开启、上报运行时 |
-| `agentcli usage today` | 查看今日本地 usage 摘要（不上传） |
-| `agentcli usage start` | 开启轻量后台采集，默认配置开机自启；仅扫描本机 JSONL |
-| `agentcli usage stop` | 停止后台采集（默认关闭开机自启，`--keep-autostart` 保留） |
-| `agentcli usage report` | 立即扫描并按服务端游标增量上报；`--full` 全量重扫补传历史 |
-| `agentcli usage autostart status\|enable\|disable` | 管理开机自启（macOS launchd） |
+| 命令                                               | 说明                                                      |
+| :------------------------------------------------- | :-------------------------------------------------------- |
+| `agentcli usage status`                            | 后台 worker 是否运行、消息上报是否开启、上报运行时        |
+| `agentcli usage today`                             | 查看今日本地 usage 摘要（不上传）                         |
+| `agentcli usage start`                             | 开启轻量后台采集，默认配置开机自启；仅扫描本机 JSONL      |
+| `agentcli usage stop`                              | 停止后台采集（默认关闭开机自启，`--keep-autostart` 保留） |
+| `agentcli usage report`                            | 立即扫描并按服务端游标增量上报；`--full` 全量重扫补传历史 |
+| `agentcli usage autostart status\|enable\|disable` | 管理开机自启（macOS launchd）                             |
 
 ### 团队 / 任务 / 维护
 
-| 命令 | 说明 |
-|:--|:--|
-| `agentcli teams list` | 列出本地团队（不启动 Web） |
-| `agentcli teams create` | 创建本地团队元数据；支持 `--name` / `--harness` / `--bind-project` / `--work-dir` |
-| `agentcli tasks list --team <t>` | 查看某团队活跃任务 |
-| `agentcli update` | 检查并自更新到最新版本 |
-| `agentcli add <plugin>` | 安装能力插件到 MCP library（例：`add worker-society`） |
+| 命令                             | 说明                                                                              |
+| :------------------------------- | :-------------------------------------------------------------------------------- |
+| `agentcli teams list`            | 列出本地团队（不启动 Web）                                                        |
+| `agentcli teams create`          | 创建本地团队元数据；支持 `--name` / `--harness` / `--bind-project` / `--work-dir` |
+| `agentcli tasks list --team <t>` | 查看某团队活跃任务                                                                |
+| `agentcli update`                | 检查并自更新到最新版本                                                            |
+| `agentcli add <plugin>`          | 安装能力插件到 MCP library（例：`add worker-society`）                            |
 
 ### 快速创建数字员工
 
@@ -171,10 +177,10 @@ agentcli usage today                          # 今日本地用量摘要（不�
 
 AgentCli 无侵入扫描本地会话日志：
 
-| 运行时 | 数据位置 | 采集内容 |
-|:--|:--|:--|
+| 运行时      | 数据位置                        | 采集内容                                 |
+| :---------- | :------------------------------ | :--------------------------------------- |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | token 用量、会话数、消息量；支持 IM 归因 |
-| Codex | `~/.codex/sessions/**/*.jsonl` | token 用量（output_tokens 为主） |
+| Codex       | `~/.codex/sessions/**/*.jsonl`  | token 用量（output_tokens 为主）         |
 
 ### 把网关 Key 写进 Claude / Codex（token 池认领）
 
@@ -195,19 +201,19 @@ AgentCli 无侵入扫描本地会话日志：
 
 ## 默认路径与端口
 
-| 项目 | 默认值 | 说明 |
-|:--|:--|:--|
-| Web UI | `http://127.0.0.1:5680/teams` | 团队工作台入口 |
-| 本地状态 | `~/.hermit/` | 团队、任务、消息、设置、审计 |
-| Claude Code 会话 | `~/.claude/projects` | 用量和会话数据来源 |
-| Codex 会话 | `~/.codex/sessions` | Codex 用量数据来源 |
+| 项目             | 默认值                        | 说明                         |
+| :--------------- | :---------------------------- | :--------------------------- |
+| Web UI           | `http://127.0.0.1:5680/teams` | 团队工作台入口               |
+| 本地状态         | `~/.hermit/`                  | 团队、任务、消息、设置、审计 |
+| Claude Code 会话 | `~/.claude/projects`          | 用量和会话数据来源           |
+| Codex 会话       | `~/.codex/sessions`           | Codex 用量数据来源           |
 
 ---
 
 ## 支持的 AI 运行时
 
-| 一等适配 | 兼容注册 |
-|:---|:---|
+| 一等适配                                         | 兼容注册                             |
+| :----------------------------------------------- | :----------------------------------- |
 | Claude Code, Codex, Gemini CLI, Cursor, OpenCode | Devin, Qoder, Kimi, iFlow, ACP, tmux |
 
 ---
@@ -225,11 +231,11 @@ AgentCli 无侵入扫描本地会话日志：
   企业管理者 / 团队成员
 ```
 
-| 组件 | 是什么 | 怎么启动 |
-|:--|:--|:--|
-| **CLI** (`agentcli`) | 终端控制面。交互式导航菜单 + 全部子命令。 | `agentcli` 进菜单，或 `agentcli <command>` |
-| **Web 工作台** | 本地浏览器面板。团队、看板、运行时、用量、代码评审。 | `agentcli web` / `agentcli --daemon` |
-| **Bus（团队总线）** | 协调骨干。团队元数据、IM→团队路由、任务池、跨团队派发、审计、用量收敛。由独立商业项目 **agentbus** 提供。 | 企业版：`agentcli auth login` 接入 |
+| 组件                 | 是什么                                                                                                    | 怎么启动                                   |
+| :------------------- | :-------------------------------------------------------------------------------------------------------- | :----------------------------------------- |
+| **CLI** (`agentcli`) | 终端控制面。交互式导航菜单 + 全部子命令。                                                                 | `agentcli` 进菜单，或 `agentcli <command>` |
+| **Web 工作台**       | 本地浏览器面板。团队、看板、运行时、用量、代码评审。                                                      | `agentcli web` / `agentcli --daemon`       |
+| **Bus（团队总线）**  | 协调骨干。团队元数据、IM→团队路由、任务池、跨团队派发、审计、用量收敛。由独立商业项目 **agentbus** 提供。 | 企业版：`agentcli auth login` 接入         |
 
 > CLI 和 Web 都是 Bus 的操作面——CLI 适合命令行与自动化，Web 适合可视化；两者读写同一份本地数据。
 
@@ -355,6 +361,7 @@ npm install -g @yancyyu/agentcli@latest --prefer-online
 `agentcli stop` 只显示停止指引，不会主动关闭 Web / 用量 worker。
 
 还不行就杀掉残留 node 进程（只杀 agentcli / hermit 相关），或直接重启电脑后重装。
+
 </details>
 
 <details>
@@ -368,6 +375,7 @@ sudo chown -R $(whoami) ~/.npm-global   # npm global 目录也报错时
 ```
 
 预防：不要用 `sudo` 运行 `agentcli` 或 `npm install -g`。
+
 </details>
 
 <details>
@@ -378,18 +386,21 @@ npm 全局 bin 目录不在 PATH。添加到 `~/.zshrc` 或 `~/.bashrc`：
 ```bash
 export PATH="$(npm config get prefix)/bin:$PATH"
 ```
+
 </details>
 
 <details>
 <summary><b>会上传代码或消息内容吗？</b></summary>
 
 默认 **metadata-only**：不上传消息正文、助手回复、工具输入输出、cron prompt 或密钥。只上报 token 数、时间戳、维度。具体上报范围取决于 AgentBus 管理员配置。
+
 </details>
 
 <details>
 <summary><b>AgentCli 和 AgentBus 是什么关系？收费吗？</b></summary>
 
 **AgentCli** 是本地 CLI + Web 工作台，单机完整可用。**AgentBus** 提供团队协作、企业用量看板、IM 路由、跨团队派发、审计等能力。不接 Bus 不影响本地使用。
+
 </details>
 
 ---
