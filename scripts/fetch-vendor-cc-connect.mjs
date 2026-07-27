@@ -24,6 +24,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -31,6 +32,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -112,10 +114,22 @@ function extract(buffer, target, outDir) {
     writeFileSync(tmp, buffer);
     if (target.ext === '.tar.gz') {
       execFileSync('tar', ['xzf', tmp, '-C', outDir], { stdio: 'pipe' });
-    } else {
-      try { execFileSync('tar', ['xf', tmp, '-C', outDir], { stdio: 'pipe' }); }
-      catch { execFileSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -Force -LiteralPath '${tmp}' -DestinationPath '${outDir}'`], { stdio: 'pipe' }); }
+      return;
     }
+    // .zip — cross-platform cascade. GNU tar (ubuntu) can't read zip and the
+    // host may lack powershell; try common extractors in order, first success wins.
+    const attempts = [
+      ['unzip', ['-o', '-q', tmp, '-d', outDir]],
+      ['tar', ['xf', tmp, '-C', outDir]],
+      ['7z', ['x', '-y', '-bd', `-o${outDir}`, tmp]],
+      ['powershell', ['-NoProfile', '-Command', `Expand-Archive -Force -LiteralPath '${tmp}' -DestinationPath '${outDir}'`]],
+    ];
+    let lastErr;
+    for (const [cmd, args] of attempts) {
+      try { execFileSync(cmd, args, { stdio: 'pipe' }); return; }
+      catch (e) { lastErr = e; }
+    }
+    throw lastErr;
   } finally { rmSync(tmp, { force: true }); }
 }
 
@@ -158,7 +172,14 @@ async function fetchOne(target, version) {
   const extracted = locateBinary(work, target);
   if (!extracted) throw new Error(`${target.binary} not found in archive`);
   rmSync(binPath, { force: true });
-  renameSync(extracted, binPath);
+  // renameSync fails across drives/devices (Windows EXDEV: temp on C: → vendor on D:).
+  try {
+    renameSync(extracted, binPath);
+  } catch (e) {
+    if (e.code !== 'EXDEV') throw e;
+    copyFileSync(extracted, binPath);
+    unlinkSync(extracted);
+  }
   if (target.os !== 'windows') execFileSync('chmod', ['+x', binPath], { stdio: 'pipe' });
   if (target.os === 'darwin') { try { execFileSync('xattr', ['-d', 'com.apple.quarantine', binPath], { stdio: 'pipe' }); } catch {} }
   rmSync(work, { force: true, recursive: true });
