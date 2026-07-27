@@ -30,43 +30,8 @@ jobs:
             --draft=false 2>/dev/null \
             || echo "Release $TAG already exists, skipping creation"
 
-  release-docker:
-    needs: [create-release]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract version
-        shell: bash
-        run: |
-          echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
-          echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+  # Docker 镜像发布已移除：仓库内没有 docker/Dockerfile，该 job 一直引用不存在的文件而失败。
+  # 需要发布容器镜像时，先编写 docker/Dockerfile，再恢复 release-docker job。
 
   # Build self-contained portable packages (bundle Node — no Node install for
   # end users) for each platform and attach them to the Release. The one-line
