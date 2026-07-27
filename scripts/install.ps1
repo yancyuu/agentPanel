@@ -29,13 +29,13 @@ try {
 } catch {}
 
 # --- download --------------------------------------------------------------
-$tmp = New-TemporaryFile
+$tmp = Join-Path $env:TEMP 'agentcli-install.zip'
 $downloaded = $false
 foreach ($prefix in $Mirrors) {
   $url = "${prefix}https://github.com/$Repo/releases/latest/download/$Asset"
   Info "尝试 $url"
   try {
-    Invoke-WebRequest -Uri $url -OutFile $tmp.FullName -UseBasicParsing
+    Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
     $downloaded = $true
     break
   } catch {
@@ -49,7 +49,7 @@ if (-not $downloaded) {
 # --- extract ---------------------------------------------------------------
 Info "安装到 $InstallDir"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-Expand-Archive -Path $tmp.FullName -DestinationPath $InstallDir -Force
+Expand-Archive -Path $tmp -DestinationPath $InstallDir -Force
 Remove-Item $tmp
 
 # --- PATH ------------------------------------------------------------------
