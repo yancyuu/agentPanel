@@ -15,7 +15,8 @@ $Repo = 'yancyuu/agentcli'
 $InstallDir = if ($env:AGENTCLI_HOME) { $env:AGENTCLI_HOME } else { Join-Path $env:LOCALAPPDATA 'agentcli' }
 $Arch = 'x64'
 $Asset = "agentcli-windows-$Arch.zip"
-$Url = "https://github.com/$Repo/releases/latest/download/$Asset"
+# GitHub 镜像前缀（国内 / 企业防火墙）；留空 = 直连 github.com，按顺序尝试。
+$Mirrors = @('https://gh-proxy.com/', 'https://ghproxy.net/', '')
 
 function Info($m) { Write-Host "► $m" -ForegroundColor Cyan }
 function Ok($m)   { Write-Host "✓ $m" -ForegroundColor Green }
@@ -24,16 +25,25 @@ function Die($m)  { Write-Host "✗ $m" -ForegroundColor Red; exit 1 }
 # --- detect arch (fallback x64) -------------------------------------------
 try {
   $pa = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
-  if ($pa -eq 'Arm64') { $Arch = 'arm64'; $Asset = "agentcli-windows-$Arch.zip"; $Url = "https://github.com/$Repo/releases/latest/download/$Asset" }
+  if ($pa -eq 'Arm64') { $Arch = 'arm64'; $Asset = "agentcli-windows-$Arch.zip" }
 } catch {}
 
 # --- download --------------------------------------------------------------
-Info "下载 $Url"
 $tmp = New-TemporaryFile
-try {
-  Invoke-WebRequest -Uri $Url -OutFile $tmp.FullName -UseBasicParsing
-} catch {
-  Die "下载失败。确认 $Repo 已发布含 $Asset 的 Release（首次发版前还没有）。"
+$downloaded = $false
+foreach ($prefix in $Mirrors) {
+  $url = "${prefix}https://github.com/$Repo/releases/latest/download/$Asset"
+  Info "尝试 $url"
+  try {
+    Invoke-WebRequest -Uri $url -OutFile $tmp.FullName -UseBasicParsing
+    $downloaded = $true
+    break
+  } catch {
+    Write-Host "  └ 跳过（失败），尝试下一个镜像" -ForegroundColor DarkGray
+  }
+}
+if (-not $downloaded) {
+  Die "下载失败。确认 $Repo 已发布含 $Asset 的 Release（首次发版前还没有），或当前网络无法访问 GitHub。"
 }
 
 # --- extract ---------------------------------------------------------------

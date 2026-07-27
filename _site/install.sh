@@ -37,15 +37,24 @@ case "$(uname -m)" in
 esac
 
 ASSET="agentcli-${OS}-${ARCH}.zip"
-URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"
+# GitHub 镜像前缀（国内 / 企业防火墙）。留空 = 直连 github.com；按顺序尝试，首个成功即用。
+# 可用环境变量覆盖，例: AGENTCLI_MIRROR=https://ghproxy.net/
+MIRRORS=("${AGENTCLI_MIRROR:-}" "https://gh-proxy.com/" "https://ghproxy.net/" "")
 
 # --- download --------------------------------------------------------------
-info "下载 $URL"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-if ! curl -fSL "$URL" -o "$TMP/$ASSET"; then
-  die "下载失败。确认 ${REPO} 已发布含 ${ASSET} 的 Release（首次发版前还没有）。"
-fi
+downloaded=0
+for prefix in "${MIRRORS[@]}"; do
+  URL="${prefix}https://github.com/${REPO}/releases/latest/download/${ASSET}"
+  info "下载 $URL"
+  if curl -fSL "$URL" -o "$TMP/$ASSET"; then
+    ok "下载成功（镜像: ${prefix:-直连 github.com}）"
+    downloaded=1
+    break
+  fi
+done
+[ "$downloaded" -eq 1 ] || die "下载失败。确认 ${REPO} 已发布含 ${ASSET} 的 Release（首次发版前还没有），或当前网络无法访问 GitHub。"
 
 # --- extract ---------------------------------------------------------------
 info "安装到 $INSTALL_DIR"

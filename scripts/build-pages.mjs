@@ -233,10 +233,10 @@ const html = `<!DOCTYPE html>
         <button class="install-tab" data-target="tab-npx">npx（免安装）</button>
       </div>
       <div class="install-content active" id="tab-win">
-        <div class="install-cmd">irm https://yancyuu.github.io/agentcli/install.ps1 | iex</div>
+        <div class="install-cmd">irm https://gh-proxy.com/https://raw.githubusercontent.com/yancyuu/agentcli/master/scripts/install.ps1 | iex</div>
       </div>
       <div class="install-content" id="tab-curl">
-        <div class="install-cmd">curl -fsSL https://yancyuu.github.io/agentcli/install.sh | bash</div>
+        <div class="install-cmd">curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/yancyuu/agentcli/master/scripts/install.sh | bash</div>
       </div>
       <div class="install-content" id="tab-npm">
         <div class="install-cmd">npm install -g @yancyyu/agentcli</div>
@@ -244,6 +244,9 @@ const html = `<!DOCTYPE html>
       <div class="install-content" id="tab-npx">
         <div class="install-cmd"><span class="comment"># 无需安装，直接运行</span><br/>npx @yancyyu/agentcli</div>
       </div>
+    </div>
+    <div class="install-help">
+      <strong>国内 / 无法访问 GitHub？</strong> 上面的安装命令已默认走 GitHub 镜像：<code>curl</code> / <code>irm</code> 经由 <code>gh-proxy.com</code> 取安装脚本，脚本内部下载便携包时也会依次尝试 <code>gh-proxy.com</code> → <code>ghproxy.net</code> → 直连，全链路不依赖直连 GitHub。想换镜像可用环境变量：<code>AGENTCLI_MIRROR=https://ghproxy.net/ bash &lt;(curl -fsSL .../install.sh)</code>。
     </div>
     <div class="install-help">
       <strong>安装 / 更新报错？</strong> Windows 遇到 <code>EBUSY: resource busy or locked</code> 不是权限问题（别用 sudo / 管理员），通常是 Web daemon 或用量 worker 还占着文件。先按需停掉后台服务再装：
