@@ -49,7 +49,8 @@
 
 ### Task 0.5: Extract Workbench Route Domains
 
-- [ ] 抽取 setup/workers routes
+- [x] 抽取 setup/platform routes
+- [ ] 抽取 workers routes
 - [x] 抽取 editor routes
 - [ ] 抽取 schedules routes
 - [x] 抽取 projects/dashboard/graph/context routes

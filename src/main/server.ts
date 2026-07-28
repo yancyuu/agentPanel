@@ -125,6 +125,7 @@ import { registerGraphRoutes } from './routes/graphRoutes';
 import { registerHarnessRoutes } from './routes/harnessRoutes';
 import { registerHermitConfigRoutes } from './routes/hermitConfigRoutes';
 import { registerMcpRoutes } from './routes/mcpRoutes';
+import { registerPlatformSetupRoutes } from './routes/platformSetupRoutes';
 import { registerEditorRoutes } from './routes/editorRoutes';
 import { registerHeartbeatRoutes } from './routes/heartbeatRoutes';
 import { registerWorkbenchNotFoundHandler } from './routes/notFoundHandler';
@@ -2463,199 +2464,22 @@ app.post<{ Params: { name: string } }>('/api/teams/:name/stop', async (request) 
 // These endpoints proxy to cc-connect /api/v1/setup/* APIs
 // ===========================================================================
 
-async function handleSetupSaveRestart(result: {
-  data?: unknown;
-  error?: unknown;
-}): Promise<unknown> {
-  const resultData =
-    result && typeof result.data === 'object' && result.data !== null ? result.data : result;
-  if (!resultData || typeof resultData !== 'object') return result;
-  const data = resultData as Record<string, unknown>;
-  if ('error' in data || data.restart_handled === true) return result;
-
-  // A successful QR setup creates or updates a channel project. cc-connect must
-  // reload that project before the new long-connection can receive messages, even
-  // when an older upstream reports restart_required=false. AgentCli owns this
-  // restart so CLI and renderer callers cannot leave a freshly-created worker idle.
-  await restartHermitBridgeAndReconnect();
-  const restarted = { ...data, restart_required: false, restart_handled: true };
-  return result.data && typeof result.data === 'object'
-    ? { ...result, data: restarted }
-    : restarted;
-}
-
-// Feishu/Lark setup
-app.post('/api/setup/feishu/begin', async (request, reply) => {
-  try {
-    const result = await (
-      await fetch(`${runtimeConfig.ccBaseUrl}/api/v1/setup/feishu/begin`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(runtimeConfig.ccToken ? { Authorization: `Bearer ${runtimeConfig.ccToken}` } : {}),
-        },
-        body: JSON.stringify(request.body ?? {}),
-      })
-    ).json();
-    return result;
-  } catch (err) {
-    return reply500(err);
-  }
-});
-
-app.post('/api/setup/feishu/poll', async (request, reply) => {
-  try {
-    const result = await (
-      await fetch(`${runtimeConfig.ccBaseUrl}/api/v1/setup/feishu/poll`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(runtimeConfig.ccToken ? { Authorization: `Bearer ${runtimeConfig.ccToken}` } : {}),
-        },
-        body: JSON.stringify(request.body ?? {}),
-      })
-    ).json();
-    return result;
-  } catch (err) {
-    return reply500(err);
-  }
-});
-
-app.post('/api/setup/feishu/save', async (request, reply) => {
-  try {
-    const requestBody = (request.body ?? {}) as Record<string, unknown>;
-    const response = await fetch(`${runtimeConfig.ccBaseUrl}/api/v1/setup/feishu/save`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(runtimeConfig.ccToken ? { Authorization: `Bearer ${runtimeConfig.ccToken}` } : {}),
-      },
-      body: JSON.stringify(requestBody),
-    });
-    const result = (await response.json()) as { data?: unknown; error?: unknown };
-    if (!response.ok) {
-      return reply.code(response.status).send(result);
-    }
-    const resultData = result && typeof result.data === 'object' ? result.data : result;
-    if (resultData && typeof resultData === 'object' && !('error' in resultData)) {
-      await persistPlatformRoutingMetadataForProject(
-        typeof requestBody.project === 'string' ? requestBody.project : '',
-        typeof requestBody.platform_type === 'string' ? requestBody.platform_type : 'feishu',
-        requestBody
-      );
-    }
-    // await is required: a bare `return promise` lets a restart rejection bypass
-    // the surrounding try/catch and surface as fastify's default 500
-    // ("Internal Server Error") even though the platform save itself succeeded.
-    return await handleSetupSaveRestart(result);
-  } catch (err) {
-    return reply500(err);
-  }
-});
-
-// Weixin setup
-app.post('/api/setup/weixin/begin', async (request, reply) => {
-  try {
-    const result = await (
-      await fetch(`${runtimeConfig.ccBaseUrl}/api/v1/setup/weixin/begin`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(runtimeConfig.ccToken ? { Authorization: `Bearer ${runtimeConfig.ccToken}` } : {}),
-        },
-        body: JSON.stringify(request.body ?? {}),
-      })
-    ).json();
-    return result;
-  } catch (err) {
-    return reply500(err);
-  }
-});
-
-app.post('/api/setup/weixin/poll', async (request, reply) => {
-  try {
-    const result = await (
-      await fetch(`${runtimeConfig.ccBaseUrl}/api/v1/setup/weixin/poll`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(runtimeConfig.ccToken ? { Authorization: `Bearer ${runtimeConfig.ccToken}` } : {}),
-        },
-        body: JSON.stringify(request.body ?? {}),
-      })
-    ).json();
-    return result;
-  } catch (err) {
-    return reply500(err);
-  }
-});
-
-app.post('/api/setup/weixin/save', async (request, reply) => {
-  try {
-    const requestBody = (request.body ?? {}) as Record<string, unknown>;
-    const response = await fetch(`${runtimeConfig.ccBaseUrl}/api/v1/setup/weixin/save`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(runtimeConfig.ccToken ? { Authorization: `Bearer ${runtimeConfig.ccToken}` } : {}),
-      },
-      body: JSON.stringify(requestBody),
-    });
-    const result = (await response.json()) as { data?: unknown; error?: unknown };
-    if (!response.ok) {
-      return reply.code(response.status).send(result);
-    }
-    const resultData = result && typeof result.data === 'object' ? result.data : result;
-    if (resultData && typeof resultData === 'object' && !('error' in resultData)) {
-      await persistPlatformRoutingMetadataForProject(
-        typeof requestBody.project === 'string' ? requestBody.project : '',
-        'weixin',
-        requestBody
-      );
-    }
-    // await is required: a bare `return promise` lets a restart rejection bypass
-    // the surrounding try/catch and surface as fastify's default 500
-    // ("Internal Server Error") even though the platform save itself succeeded.
-    return await handleSetupSaveRestart(result);
-  } catch (err) {
-    return reply500(err);
-  }
-});
-
-// Generic platform add (manual credential form)
-app.post<{
-  Params: { name: string };
-  Body: { type: string; options?: Record<string, unknown>; work_dir?: string; agent_type?: string };
-}>('/api/projects/:name/add-platform', async (request, reply) => {
-  try {
-    const existingProject = await cc.getProject(request.params.name).catch(() => null);
-    const result = await cc.createProject(
-      request.params.name,
-      request.body.agent_type ?? existingProject?.agent_type ?? 'claudecode',
-      request.body.work_dir ?? existingProject?.work_dir ?? '',
-      request.body.type,
-      (request.body.options ?? {}) as Record<string, string>
-    );
-
-    await persistPlatformRoutingMetadataForProject(
-      request.params.name,
-      request.body.type,
-      request.body.options ?? {}
-    );
-
-    if (result.restart_required) {
-      // Adding Feishu/Lark/other platform engines only writes cc-connect config; a restart is
-      // required before cc-connect listens to the new long-connection and Hermit must reconnect
-      // its Bridge adapter after that restart. Do it here so callers cannot accidentally leave
-      // cc-connect showing “connected” while Hermit is not listening.
-      await restartHermitBridgeAndReconnect();
-      return { ok: true, data: { ...result, restart_required: false, restart_handled: true } };
-    }
-
-    return { ok: true, data: { ...result, restart_handled: false } };
-  } catch (err) {
-    return reply500(err);
-  }
+registerPlatformSetupRoutes(app, {
+  getRuntimeConfig: () => ({
+    ccBaseUrl: runtimeConfig.ccBaseUrl,
+    ccToken: runtimeConfig.ccToken,
+  }),
+  persistPlatformMetadata: persistPlatformRoutingMetadataForProject,
+  restartBridge: restartHermitBridgeAndReconnect,
+  getProject: (projectName) => serverContext.services.bridgeClient.getProject(projectName),
+  createProject: (projectName, agentType, workDir, platformType, options) =>
+    serverContext.services.bridgeClient.createProject(
+      projectName,
+      agentType as HermitBridgeAgentType,
+      workDir,
+      platformType,
+      options
+    ),
 });
 
 // ===========================================================================
