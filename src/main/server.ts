@@ -127,6 +127,7 @@ import { registerScheduleRoutes } from './routes/scheduleRoutes';
 import { registerSseRoutes } from './routes/sseRoutes';
 import { registerStaticRoutes } from './routes/staticRoutes';
 import { registerSystemManagerRoutes } from './routes/systemManagerRoutes';
+import { registerTaskBusSettingsRoutes } from './routes/taskBusSettingsRoutes';
 import { registerTerminalRoutes } from './routes/terminalRoutes';
 import { registerToolApprovalRoutes } from './routes/toolApprovalRoutes';
 import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
@@ -3903,94 +3904,13 @@ registerWorkerRoutes(app, {
   buildFallbackSessionKey,
 });
 
-// GET /api/settings/task-bus → full config including telemetry
-app.get('/api/settings/task-bus', async () => {
-  const configPath = HERMIT_SETTINGS_FILE;
-  try {
-    const raw = await fs.readFile(configPath, 'utf-8');
-    const settings = JSON.parse(raw);
-    return (
-      settings.taskBus ?? {
-        enabled: false,
-        telemetry: { enabled: false, platform: 'claudecode' },
-      }
-    );
-  } catch {
-    return {
-      enabled: false,
-      telemetry: { enabled: false, platform: 'claudecode' },
-    };
-  }
-});
-
-// PUT /api/settings/task-bus → save config + start/stop telemetry
-app.put<{ Body: TelemetryConfig }>('/api/settings/task-bus', async (request) => {
-  const config =
-    request.body && 'taskBus' in (request.body as unknown as Record<string, unknown>)
-      ? (request.body as unknown as { taskBus: TelemetryConfig }).taskBus
-      : request.body;
-  const configPath = HERMIT_SETTINGS_FILE;
-  let settings: Record<string, unknown> = {};
-  try {
-    const raw = await fs.readFile(configPath, 'utf-8');
-    settings = JSON.parse(raw);
-  } catch {
-    // File doesn't exist yet
-  }
-  settings.taskBus = config;
-  await fs.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.writeFile(configPath, JSON.stringify(settings, null, 2));
-
-  // Sync telemetry service. The lightweight usage worker owns scans when active;
-  // avoid starting a duplicate Web-bound telemetry interval.
-  if (config.telemetry?.enabled) {
-    if (await isExternalTelemetryWorkerRunning()) {
-      await stopTelemetry();
-    } else {
-      await startTelemetry(config);
-    }
-  } else {
-    await stopTelemetry();
-  }
-
-  // Keep CLAUDE.md team instructions aligned with the collaboration toggle.
-  const syncTeamInstructions = async (enabled: boolean): Promise<void> => {
-    const projects = await cc.listProjects();
-    for (const p of projects) {
-      let workDir = '';
-      let slug = p.name;
-      try {
-        const meta = await svc.readTeamManifest(p.name);
-        if (typeof meta.workDir === 'string') workDir = meta.workDir.trim();
-        if (meta.slug) slug = meta.slug;
-      } catch {
-        /* no local manifest */
-      }
-      if (!workDir) {
-        try {
-          const detail = await cc.getProject(p.name);
-          if (typeof detail.work_dir === 'string') workDir = detail.work_dir.trim();
-        } catch {
-          // ignore
-        }
-      }
-      if (!workDir) continue;
-      if (enabled) {
-        await svc.injectTeamInstructions(workDir, slug);
-      } else {
-        await svc.removeTeamInstructions(workDir);
-      }
-    }
-  };
-
-  // Per-team collaboration flag controls CLAUDE.md instruction injection.
-  try {
-    await syncTeamInstructions(config?.collaboration === true);
-  } catch (err) {
-    request.log.warn({ err }, 'CLAUDE.md team instruction sync failed');
-  }
-
-  return { ok: true, connected: false, message: '设置已保存' };
+registerTaskBusSettingsRoutes(app, {
+  settingsFile: HERMIT_SETTINGS_FILE,
+  bridgeClient: serverContext.services.bridgeClient,
+  teamProvisioning: serverContext.services.teamProvisioning,
+  isExternalTelemetryWorkerRunning,
+  startTelemetry,
+  stopTelemetry,
 });
 
 interface TelemetryProjectRow {
