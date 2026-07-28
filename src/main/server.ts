@@ -116,6 +116,7 @@ import {
 import { WorkflowPromptService } from './services/system-manager/WorkflowPromptService';
 import { ClaudeBinaryResolver } from './services/team/ClaudeBinaryResolver';
 import { TeamProvisioningService } from './services/team-management';
+import { createServerShutdown, installServerProcessHandlers } from './serverProcessLifecycle';
 import { HERMIT_OPS_GUIDE_URL } from './services/team-management/OpsRunbookContext';
 import { UpdateService } from './services/UpdateService';
 import {
@@ -7772,32 +7773,21 @@ try {
   process.exit(1);
 }
 
-// graceful shutdown
-const shutdown = async () => {
-  try {
-    imLiveWatcher.stop();
-    directCliManager.shutdown();
-    bridgeLauncher.stop();
-    bridge.dispose?.();
-    // Bound app.close() so a stuck SSE/websocket client can't hold the process
-    // alive forever on SIGINT/SIGTERM (which would otherwise need kill -9 and
-    // leak orphan claude subprocesses that the sync exit hook can't reap).
-    await Promise.race([app.close(), new Promise((resolve) => setTimeout(resolve, 3000).unref())]);
-    process.exit(0);
-  } catch {
-    process.exit(1);
-  }
-};
-// Last-resort safety net: log unhandled rejections instead of letting them
-// kill the process (Node 16+ default). Without this, any fire-and-forget async
-// (telemetry interval, redis message handler, …) that rejects on a transient
-// IO error would crash the whole server. Concrete call sites still get their
-// own .catch; this is the catch-all backstop.
-process.on('unhandledRejection', (reason) => {
-  app.log.error({ reason }, 'unhandledRejection (logged, not crashing)');
+const shutdown = createServerShutdown({
+  app,
+  imLiveWatcher,
+  directCliManager,
+  bridgeLauncher,
+  bridge,
+  processTarget: process,
 });
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
-// Sync backstop: reap direct-CLI subprocesses on any exit path that skips the async
-// shutdown (e.g. process killed without a delivered signal). child.kill() is synchronous.
-process.on('exit', () => directCliManager.shutdown());
+
+// Last-resort safety net: log unhandled rejections instead of letting them
+// kill the process, and reap direct-CLI subprocesses on any exit path that
+// skips the asynchronous shutdown path.
+installServerProcessHandlers({
+  app,
+  directCliManager,
+  processTarget: process,
+  shutdown,
+});
