@@ -1,22 +1,54 @@
-/**
- * SettingsView - Main settings panel.
- * Terminal-style layout matching the control console aesthetic.
- */
-
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useStore } from '@renderer/store';
 import { PRODUCT_NAME } from '@shared/constants';
-import { Loader2, SlidersHorizontal } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { TaskBusSection } from './sections/TaskBusSection';
 import { useSettingsConfig, useSettingsHandlers } from './hooks';
 import { AdvancedSection, GeneralSection, HarnessSection } from './sections';
-import { type SettingsSection, SettingsTabs } from './SettingsTabs';
+import { SETTINGS_CATEGORIES, type SettingsSection, SettingsTabs } from './SettingsTabs';
+
+const COMPACT_NAVIGATION_WIDTH = 720;
+
+function useCompactSettingsNavigation(
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  enabled: boolean
+): boolean {
+  const [compact, setCompact] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateWidth = (width: number): void => {
+      setCompact(width < COMPACT_NAVIGATION_WIDTH);
+    };
+    const measureContainer = (): void => {
+      updateWidth(container.getBoundingClientRect().width);
+    };
+
+    measureContainer();
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) updateWidth(entry.contentRect.width);
+    });
+    observer.observe(container);
+    window.addEventListener('resize', measureContainer);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measureContainer);
+    };
+  }, [containerRef, enabled]);
+
+  return compact;
+}
 
 export const SettingsView = (): React.JSX.Element | null => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
+  const pageRef = useRef<HTMLDivElement>(null);
   const { pendingSettingsSection, clearPendingSettingsSection } = useStore(
     useShallow((s) => ({
       pendingSettingsSection: s.pendingSettingsSection,
@@ -32,7 +64,7 @@ export const SettingsView = (): React.JSX.Element | null => {
         pendingSettingsSection === 'advanced'
           ? pendingSettingsSection
           : 'general';
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- pending navigation intentionally synchronizes the local category once
       setActiveSection(nextSection);
       clearPendingSettingsSection();
     }
@@ -59,16 +91,22 @@ export const SettingsView = (): React.JSX.Element | null => {
     setOptimisticConfig,
     updateConfig,
   });
+  const compactNavigation = useCompactSettingsNavigation(pageRef, !loading && Boolean(config));
+
+  const activeCategory = useMemo(
+    () => SETTINGS_CATEGORIES.find((category) => category.id === activeSection)!,
+    [activeSection]
+  );
 
   if (loading) {
     return (
       <div
-        className="flex flex-1 items-center justify-center font-mono"
+        className="flex flex-1 items-center justify-center"
         style={{ backgroundColor: 'var(--color-surface)' }}
       >
-        <div className="flex items-center gap-3" style={{ color: 'var(--color-text-muted)' }}>
+        <div className="flex items-center gap-3 text-[var(--color-text-muted)]">
           <Loader2 className="size-4 animate-spin" />
-          <span className="text-xs">loading settings...</span>
+          <span className="text-xs">正在加载设置…</span>
         </div>
       </div>
     );
@@ -77,20 +115,17 @@ export const SettingsView = (): React.JSX.Element | null => {
   if (error && !config) {
     return (
       <div
-        className="flex flex-1 items-center justify-center font-mono"
+        className="flex flex-1 items-center justify-center"
         style={{ backgroundColor: 'var(--color-surface)' }}
       >
         <div className="text-center">
           <p className="mb-4 text-xs text-red-400">{error}</p>
           <button
+            type="button"
             onClick={() => window.location.reload()}
-            className="rounded border px-3 py-1.5 text-xs transition-colors"
-            style={{
-              borderColor: 'var(--color-border)',
-              color: 'var(--color-text-muted)',
-            }}
+            className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
           >
-            retry
+            重新加载
           </button>
         </div>
       </div>
@@ -100,61 +135,74 @@ export const SettingsView = (): React.JSX.Element | null => {
   if (!config) return null;
 
   return (
-    <div className="flex-1 overflow-auto" style={{ backgroundColor: 'var(--color-surface)' }}>
-      {/* Control-console settings shell */}
-      <div
-        className="mx-auto flex min-h-full max-w-4xl flex-col p-6"
-        style={{
-          backgroundColor: 'var(--color-surface)',
-        }}
-      >
-        <div
-          className="bg-[var(--color-surface-raised)]/60 mb-5 overflow-hidden rounded-2xl border shadow-sm shadow-black/10"
-          style={{ borderColor: 'var(--color-border-subtle)' }}
-        >
-          <div className="pointer-events-none h-px bg-gradient-to-r from-transparent via-[var(--color-accent-border)] to-transparent" />
-          <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="shadow-[var(--color-accent-glow)]/20 flex size-9 shrink-0 items-center justify-center rounded-xl border border-[var(--color-accent-border)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] shadow-sm">
-                <SlidersHorizontal className="size-4" />
-              </div>
-              <div>
-                <h2 className="text-base font-semibold text-[var(--color-text)]">设置 Helm Loop</h2>
-                <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
-                  配置 {PRODUCT_NAME} 运行时、外观、数字员工渠道和本地控制行为。
-                </p>
-              </div>
-            </div>
-            <SettingsTabs activeSection={activeSection} onSectionChange={setActiveSection} />
+    <div
+      ref={pageRef}
+      data-settings-layout={compactNavigation ? 'compact' : 'rail'}
+      className="flex-1 overflow-y-auto overflow-x-hidden bg-[var(--color-surface)]"
+    >
+      <div className="mx-auto min-h-full w-full max-w-[1120px] px-4 py-5 sm:p-6">
+        <header className="border-b border-[var(--color-border)] pb-5">
+          <h1 className="text-base font-semibold text-[var(--color-text)]">设置</h1>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--color-text-muted)]">
+            管理 {PRODUCT_NAME} 的偏好、Agent 运行时与本地服务。
+          </p>
+          {error ? (
+            <p role="alert" className="mt-3 text-xs text-red-400">
+              {error}
+            </p>
+          ) : null}
+        </header>
+
+        <div className={compactNavigation ? 'mt-5 min-w-0' : 'mt-6 flex min-w-0 items-start gap-8'}>
+          <div className={compactNavigation ? 'min-w-0' : 'sticky top-5 shrink-0'}>
+            <SettingsTabs
+              activeSection={activeSection}
+              compact={compactNavigation}
+              onSectionChange={setActiveSection}
+            />
           </div>
-          {error && <div className="px-4 pb-3 text-[10px] text-red-400">{error}</div>}
-        </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto duration-200 animate-in fade-in slide-in-from-bottom-1">
-          {activeSection === 'general' && (
-            <GeneralSection
-              safeConfig={safeConfig}
-              saving={saving}
-              onGeneralToggle={handlers.handleGeneralToggle}
-              onThemeChange={handlers.handleThemeChange}
-              onLanguageChange={handlers.handleLanguageChange}
-            />
-          )}
+          <main
+            id={`settings-panel-${activeSection}`}
+            role="tabpanel"
+            aria-labelledby={`settings-tab-${activeSection}`}
+            className={`${compactNavigation ? 'mt-5' : ''} min-w-0 max-w-3xl flex-1`}
+          >
+            <div className="border-b border-[var(--color-border)] pb-4">
+              <h2 className="text-sm font-semibold text-[var(--color-text)]">
+                {activeCategory.label}
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
+                {activeCategory.description}
+              </p>
+            </div>
 
-          {activeSection === 'harness' && <HarnessSection />}
+            <div className="mt-5 min-w-0 duration-150 animate-in fade-in">
+              {activeSection === 'general' && (
+                <GeneralSection
+                  safeConfig={safeConfig}
+                  saving={saving}
+                  onGeneralToggle={handlers.handleGeneralToggle}
+                  onThemeChange={handlers.handleThemeChange}
+                  onLanguageChange={handlers.handleLanguageChange}
+                />
+              )}
 
-          {activeSection === 'task-bus' && <TaskBusSection />}
+              {activeSection === 'harness' && <HarnessSection />}
 
-          {activeSection === 'advanced' && (
-            <AdvancedSection
-              saving={saving}
-              onResetToDefaults={handlers.handleResetToDefaults}
-              onExportConfig={handlers.handleExportConfig}
-              onImportConfig={handlers.handleImportConfig}
-              onOpenInEditor={handlers.handleOpenInEditor}
-            />
-          )}
+              {activeSection === 'task-bus' && <TaskBusSection />}
+
+              {activeSection === 'advanced' && (
+                <AdvancedSection
+                  saving={saving}
+                  onResetToDefaults={handlers.handleResetToDefaults}
+                  onExportConfig={handlers.handleExportConfig}
+                  onImportConfig={handlers.handleImportConfig}
+                  onOpenInEditor={handlers.handleOpenInEditor}
+                />
+              )}
+            </div>
+          </main>
         </div>
       </div>
     </div>
