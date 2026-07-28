@@ -1488,7 +1488,7 @@ export const TeamDetailView = ({
       }
       return nextMember;
     });
-  }, [leadBranch, members, trackedBranches]);
+  }, [data, leadBranch, members, trackedBranches]);
   const resolvedMemberColorMap = useMemo(
     () => buildMemberColorMap(membersWithLiveBranches),
     [membersWithLiveBranches]
@@ -1738,7 +1738,7 @@ export const TeamDetailView = ({
       setSelectedMember(member);
     }
     useStore.getState().closeMemberProfile();
-  }, [pendingMemberProfile, membersWithLiveBranches]);
+  }, [data, pendingMemberProfile, membersWithLiveBranches]);
 
   const handleViewChanges = useCallback(
     (taskId: string) => {

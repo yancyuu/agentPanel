@@ -49,7 +49,7 @@ const testState = vi.hoisted(() => {
   const asyncNoop = vi.fn(() => Promise.resolve(undefined));
   const store = {
     selectedTeamName: 'team-alpha',
-    selectedTeamData: snapshot,
+    selectedTeamData: snapshot as typeof snapshot | null,
     selectedTeamLoading: false,
     selectedTeamError: null,
     projects: [],
@@ -337,6 +337,7 @@ async function renderView(): Promise<{
 
 describe('TeamDetailView member roster interactions', () => {
   beforeEach(() => {
+    testState.store.selectedTeamData = testState.snapshot;
     testState.store.pendingMemberProfile = null;
     testState.createTeamTask.mockClear();
     testState.closeMemberProfile.mockReset();
@@ -429,10 +430,21 @@ describe('TeamDetailView member roster interactions', () => {
     });
   });
 
-  it('opens a pending member profile and acknowledges the pending request', async () => {
+  it('opens a pending member profile after cached members receive team data', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    testState.store.selectedTeamData = null;
     testState.store.pendingMemberProfile = 'bob';
     const { host, root } = await renderView();
+
+    expect(host.querySelector('[aria-label="成员详情"]')).toBeNull();
+    expect(testState.closeMemberProfile).not.toHaveBeenCalled();
+
+    testState.store.selectedTeamData = testState.snapshot;
+    await act(async () => {
+      root.render(<TeamDetailView teamName="team-alpha" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     expect(host.querySelector('[aria-label="成员详情"]')?.textContent).toContain('bob');
     expect(testState.closeMemberProfile).toHaveBeenCalledTimes(1);
