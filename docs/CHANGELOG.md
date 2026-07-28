@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [1.9.80] - 2026-07-28
+
+### Changed
+
+- AgentCli 终端的「工作台」菜单不再提供「开通数字员工」快捷向导；数字员工创建和管理统一引导到 Web 工作台。底层 `create-digital-worker` 命令暂时保留，兼容已有脚本和自动化流程。
+
+### Fixed
+
+- ESLint 现在能正确解析 `bin/` 和 `test/` 下的 JavaScript/MJS 测试，并移除了配置中的重复规则键。
+
 ## [1.9.32] - 2026-07-22
 
 ### Added

@@ -14,11 +14,10 @@ export const NAV_ACTIONS = [
   {
     id: 'web',
     label: '本地工作台',
-    description: '本地 CC/Codex session → IM，把本机 Agent 会话接入企业版 IM 协作',
+    description: '打开本机 Web 工作台；数字员工请在 Web 端创建和管理',
     recommended: true,
     children: [
-      { id: 'toggle-web', label: '开启/关闭 AgentCli 工作台', toggle: 'web', description: '启动/停止本机 AgentCli Web 工作台；用于本地 CC/Codex session → IM 的配置与管理' },
-      { id: 'quick-create-assistant', label: '开通数字员工', description: '进入向导：创建数字员工团队并绑定外部渠道' },
+      { id: 'toggle-web', label: '开启/关闭 AgentCli 工作台', toggle: 'web', description: '启动/停止本机 AgentCli Web 工作台；请在 Web 工作台创建和管理数字员工' },
       { id: 'workbench-status', label: '查看本地工作台状态', description: '查看 AgentCli 工作台运行状态' },
     ],
   },

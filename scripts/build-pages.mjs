@@ -6,7 +6,22 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, '_site');
 
 // 说明书版本号跟随 package.json，避免落后于发版（此前硬编码在 v1.9.11）。
-const PKG_VERSION = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
+function readPackageVersion() {
+  try {
+    const packageJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+    if (typeof packageJson.version === 'string' && packageJson.version.trim()) {
+      return packageJson.version;
+    }
+    console.error('[build-pages] package.json 缺少有效 version');
+  } catch (error) {
+    console.error(
+      `[build-pages] 无法读取 package.json：${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+  process.exit(1);
+}
+
+const PKG_VERSION = readPackageVersion();
 
 function writeText(relativePath, content) {
   const target = join(OUT_DIR, relativePath);
@@ -321,7 +336,7 @@ npm uninstall -g @yancyyu/agentcli</code></pre>
     <div class="commands-list">
       <div class="command-group-title">启动与状态</div>
       <div class="command-row"><code class="cmd">agentcli</code><span class="cmd-desc">打开终端导航（控制面菜单）：工作台、用量同步、用户、token 池(beta)</span></div>
-      <div class="command-row"><code class="cmd">工作台 → 开通数字员工</code><span class="cmd-desc">快速创建并绑定飞书；仅支持 Claude Code / Codex。以 lark-cli 的个人 as user 身份校验数字员工必需权限，成功后静默尝试一次凭证上报</span></div>
+      <div class="command-row"><code class="cmd">Web 工作台 → 创建数字员工</code><span class="cmd-desc">运行 agentcli web 后在浏览器中创建和管理数字员工；终端工作台菜单不再提供快速创建入口</span></div>
       <div class="command-row"><code class="cmd">agentcli init</code><span class="cmd-desc">快速初始化：默认启动 Web 工作台 + 用量后台 worker（默认开机自启）</span></div>
       <div class="command-row"><code class="cmd">agentcli web</code><span class="cmd-desc">直接启动 Web 工作台（默认 127.0.0.1:5680）；加 <code>--daemon</code> 后台运行</span></div>
       <div class="command-row"><code class="cmd">agentcli status · doctor</code><span class="cmd-desc">查看后台运行状态 / 只读本地诊断</span></div>
@@ -347,8 +362,8 @@ npm uninstall -g @yancyyu/agentcli</code></pre>
       <div class="command-row"><code class="cmd">agentcli add &lt;plugin&gt;</code><span class="cmd-desc">安装能力插件到 MCP library</span></div>
     </div>
     <div class="callout">
-      <div class="callout-title">快速创建数字员工</div>
-      <p>运行 <code>agentcli</code>，进入「工作台 → 开通数字员工」：填写名称与描述，选择 Claude Code 或 Codex，并绑定飞书。系统以本次飞书应用对应的 <code>lark-cli</code> profile 为创建者申请个人 <code>as user</code> 授权（新 profile 固定为 <code>agentcli-user-&lt;appId&gt;</code>）。<code>--domain all</code> 只能请求 lark-cli、飞书应用与租户允许授予的权限，完成后仍必须通过文档、云盘、消息收发、通讯录与用户信息的权限校验；仅有 <code>contact:user.basic_profile:readonly</code> 不会通过。CLI 优先在终端显示二维码，并同时尝试打开默认浏览器；无法渲染二维码或自动打开浏览器时，仍会显示完整授权链接。校验成功后会静默尝试一次凭证上报到 AgentBus；上报失败不影响本地授权和数字员工创建，也不会打印凭证。若仍缺权限，请更新 <code>lark-cli</code>，再在飞书应用和租户后台启用/审批缺失权限后重试。成员、权限与高级参数可随后在 Web 工作台调整。</p>
+      <div class="callout-title">在 Web 工作台创建数字员工</div>
+      <p>终端工作台菜单不再提供「开通数字员工」快捷向导。运行 <code>agentcli web</code>，浏览器打开 <code>http://127.0.0.1:5680</code> 后，在 Web 工作台使用「创建数字员工」完成创建、运行时选择和后续管理。底层 <code>create-digital-worker</code> 命令暂时保留，以兼容已有脚本和自动化流程。</p>
     </div>
   </section>
 

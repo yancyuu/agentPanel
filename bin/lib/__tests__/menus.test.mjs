@@ -26,7 +26,7 @@ describe('menus — scan action re-reports the last 24h', () => {
   });
 });
 
-describe('menus — 本地工作台提供 AgentCli 工作台和数字员工入口', () => {
+describe('menus — 本地工作台只提供 Web 工作台入口', () => {
   const web = NAV_ACTIONS.find((a) => a.id === 'web');
 
   it('keeps a single workbench-status entry', () => {
@@ -36,11 +36,16 @@ describe('menus — 本地工作台提供 AgentCli 工作台和数字员工入�
     expect(ids).not.toContain('feishu-bridge-status');
   });
 
-  it('removes Feishu bridge and lark-cli quick install entries', () => {
+  it('removes Digital Worker onboarding and points users to the Web workbench', () => {
     const ids = web.children.map((c) => c.id);
-    expect(ids).toEqual(['toggle-web', 'quick-create-assistant', 'workbench-status']);
+    expect(ids).toEqual(['toggle-web', 'workbench-status']);
+    expect(ids).not.toContain('quick-create-assistant');
     expect(ids).not.toContain('install-lark-cli');
     expect(ids).not.toContain('toggle-feishu-bridge');
+
+    const toggleWeb = web.children.find((child) => child.id === 'toggle-web');
+    expect(toggleWeb.description).toContain('Web 工作台');
+    expect(toggleWeb.description).toContain('创建和管理数字员工');
   });
 });
 
@@ -61,12 +66,11 @@ describe('menus — 用户菜单不重复提供在线说明书', () => {
     expect(manual.description).toContain('本地脱敏配置');
   });
 
-  it('exposes digital worker onboarding from the AgentCli workbench group', () => {
+  it('does not expose digital worker onboarding from the AgentCli workbench group', () => {
     const web = NAV_ACTIONS.find((a) => a.id === 'web');
     const action = findMenuAction(web.children, 'quick-create-assistant');
 
-    expect(action).toBeTruthy();
-    expect(action.label).toBe('开通数字员工');
+    expect(action).toBeNull();
   });
 
   it('does not expose digital worker onboarding from the user account group', () => {

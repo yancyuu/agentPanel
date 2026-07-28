@@ -641,6 +641,39 @@ export default defineConfig([
     },
   },
 
+  // The CLI is plain JS/MJS and is not part of tsconfig.json. Disable
+  // type-aware rules while keeping Node globals available.
+  {
+    name: 'plain-js-cli-files',
+    files: ['bin/**/*.{js,mjs}'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+      parserOptions: {
+        projectService: false,
+      },
+    },
+  },
+
+  // Plain JS/MJS tests under bin/test are not part of tsconfig.json. Disable
+  // type-aware rules for them while keeping Node/Vitest globals available.
+  {
+    name: 'plain-js-test-files',
+    files: ['test/**/*.{js,mjs}', '**/*.test.{js,mjs}', '**/*.spec.{js,mjs}'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.vitest,
+      },
+      parserOptions: {
+        projectService: false,
+      },
+    },
+  },
+
   // Plain JS/MJS assets inside src (workflow scripts, shared constants):
   // not part of any tsconfig project, so type-aware linting cannot parse them
   {
@@ -682,7 +715,7 @@ export default defineConfig([
 
       // === TypeScript Import/Export rules ===
       '@typescript-eslint/consistent-type-imports': [
-        'error',
+        'warn',
         {
           prefer: 'type-imports',
           fixStyle: 'inline-type-imports',
@@ -709,7 +742,7 @@ export default defineConfig([
 
       // Allow numbers/booleans in template literals (common pattern)
       '@typescript-eslint/restrict-template-expressions': [
-        'error',
+        'warn',
         {
           allowNumber: true,
           allowBoolean: true,
@@ -722,7 +755,7 @@ export default defineConfig([
 
       // Allow floating promises in event handlers (common in Electron)
       '@typescript-eslint/no-floating-promises': [
-        'error',
+        'warn',
         {
           ignoreVoid: true,
           ignoreIIFE: true,
@@ -771,7 +804,7 @@ export default defineConfig([
       '@typescript-eslint/explicit-module-boundary-types': 'warn',
 
       // Prevent variable shadowing
-      '@typescript-eslint/no-shadow': 'error',
+      '@typescript-eslint/no-shadow': 'warn',
 
       // === Naming Conventions ===
       '@typescript-eslint/naming-convention': [
@@ -880,20 +913,16 @@ export default defineConfig([
       'sonarjs/no-control-regex': 'warn',
       'sonarjs/no-nested-functions': 'warn',
       'sonarjs/no-all-duplicated-branches': 'warn',
-      '@typescript-eslint/no-shadow': 'warn',
       '@typescript-eslint/no-unsafe-member-access': 'warn',
       '@typescript-eslint/no-unsafe-call': 'warn',
       '@typescript-eslint/no-unsafe-assignment': 'warn',
       '@typescript-eslint/no-unsafe-return': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
-      '@typescript-eslint/restrict-template-expressions': 'warn',
       '@typescript-eslint/no-base-to-string': 'warn',
       '@typescript-eslint/no-redundant-type-constituents': 'warn',
       '@typescript-eslint/prefer-promise-reject-errors': 'warn',
       '@typescript-eslint/no-require-imports': 'warn',
-      '@typescript-eslint/consistent-type-imports': 'warn',
       '@typescript-eslint/prefer-optional-chain': 'warn',
-      '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/array-type': 'warn',
       'no-useless-escape': 'warn',
       'no-unsafe-finally': 'warn',
