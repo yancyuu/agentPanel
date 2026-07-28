@@ -8,6 +8,17 @@ import { ensureCcConnectBinary } from '../CcConnectBinaryFetcher';
 // Full download is exercised manually against a real release.
 
 describe('ensureCcConnectBinary', () => {
+  it('rejects an already-aborted preparation before filesystem or network work', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      ensureCcConnectBinary('/tmp/hermit-test', controller.signal)
+    ).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+  });
+
   it('returns null for an unsupported platform/arch combo', async () => {
     // Force an unsupported combination via process override shim.
     const origPlatform = process.platform;

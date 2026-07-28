@@ -86,8 +86,8 @@
 
 Phase 0 最终证据（2026-07-28）：
 
-- 运行时组装后的 Fastify app 与静态清单均为 235 个唯一 method/path 对，`test/main/server` 45 个文件、179 项测试通过；
-- shutdown 会先触发 `app.close()` 停止接收请求，再等待在途请求后清理依赖；sidecar startup 可取消并纳入 lifecycle；direct CLI shutdown 为终态且等待 pending spawn；
+- 运行时组装后的 Fastify app 与完整静态 method/path 基线逐项相等，均为 235 个唯一路由（GET 97、POST 108、PUT 5、PATCH 13、DELETE 9、ALL 3）；`test/main/server` 45 个文件、181 项测试通过；
+- shutdown 会先触发 `app.close()` 停止接收请求，再等待在途请求后清理依赖；sidecar 的二进制诊断和启动任务共享 AbortSignal、纳入 lifecycle，并能在 readiness/download promise 不结束时由 abort 立即收敛且阻止后续 spawn；direct CLI shutdown 为终态且等待 pending spawn；
 - editor routes 已覆盖 symlink 逃逸的 read/write/create/readDir 拒绝；
 - `pnpm typecheck`、`pnpm build:server`、目标 ESLint（0 error）、Prettier 和 `git diff --check` 通过；
 - 标准 `pnpm test` 运行 30 分钟未自行退出：观察到 376 个文件通过、1 个无关 `larkSecrets` 断言失败，另有既存 `feishuAssistant.test.mjs` 单文件不退出。排除这两个既存 bin 测试后的有界完整回归为 378 个文件、3459 项测试全部通过。Phase 0 的 server/route/lifecycle/editor/telemetry 覆盖未被排除。

@@ -24,8 +24,8 @@
 
 ## Phase 0 完成证据
 
-- `test/main/server`：45 个测试文件、179 项测试通过，覆盖 factory/import side effect、235 routes、优先级、Origin、SSE/static/fallback、startup/shutdown 和各 route domain；
-- `workbenchServer.test.ts` 通过 Fastify `onRoute` hook 验证实际组装 app 恰好注册 235 个唯一 method/path 对，避免静态扫描遗漏 registrar 条件或插件行为；
+- `test/main/server`：45 个测试文件、181 项测试通过，覆盖 factory/import side effect、235 routes、优先级、Origin、SSE/static/fallback、startup/shutdown 和各 route domain；
+- `workbenchServer.test.ts` 通过 Fastify `onRoute` hook 收集实际组装 app 的完整 method/path 集合，并与 `routeManifestBaseline.ts` 从最终 composition root 及启用 route modules 提取的完整静态集合逐项排序对比；同时锁定 GET 97、POST 108、PUT 5、PATCH 13、DELETE 9、ALL 3。该测试证明默认 standalone composition 的条件/分阶段 registrar 最终恰好装配这 235 个路由，而不只证明总数或抽样端点；
 - `serverProcessLifecycle.test.ts`、`serverStartup.test.ts` 与 `DirectCliSessionManager.test.ts` 覆盖在途请求、可取消 sidecar startup 和 pending direct-CLI spawn 的关闭竞态；
 - `editorRoutes.test.ts` 覆盖项目内 symlink 指向外部目录时 read/write/create/readDir 均拒绝，且外部文件不被修改；
 - `pnpm typecheck` 与 `pnpm build:server` 通过；排除两个与 Phase 0 无关的既存 bin 测试后，完整 Vitest 回归为 378 个文件、3459 项测试通过；
@@ -33,7 +33,7 @@
 
 ## 建议的最小 baseline 测试分层
 
-1. **Route manifest test**：从组装后的 Fastify app 探测 route，断言总数与方法统计为 235，并保存 method/path 快照。
+1. **Route manifest test**：静态提取最终 composition root 与启用 route modules 的完整 method/path 基线，再从组装后的 Fastify app 通过 `onRoute` 探测运行时集合；逐项比较两份排序集合，并锁定 235 总数及各方法统计。
 2. **Router precedence test**：专测 `/api/v1/system/readiness` vs `/api/v1/*`，以及所有 `/api/teams/<static>` vs `:name` 冲突点。
 3. **Domain contract tests**：每个高风险域用 fake context + `app.inject()` 覆盖最小成功、校验失败、依赖失败。
 4. **Lifecycle test**：对 context factory、server factory、standalone start、shutdown 分层测试，证明实例数和清理顺序。

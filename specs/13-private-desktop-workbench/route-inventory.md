@@ -372,7 +372,7 @@ wc -l /tmp/routes.tsv
 ## Phase 0 最终对照（2026-07-28）
 
 - `src/main/server.ts` 已收缩为 33 行的受保护进程入口；所有路由装配移至 `src/main/workbenchServer.ts`。
-- `test/main/server/routeManifest.test.ts` 从最终 composition root 与已启用 route modules 重新提取路由，仍为 235 条：GET 97、POST 108、PUT 5、PATCH 13、DELETE 9、ALL 3。
+- `test/main/server/routeManifestBaseline.ts` 从最终 composition root 与已启用 route modules 提取完整静态 method/path 基线；`workbenchServer.test.ts` 再通过 Fastify `onRoute` 收集默认 standalone composition 的完整运行时集合，并逐项验证两者相等。两边均为 235 条：GET 97、POST 108、PUT 5、PATCH 13、DELETE 9、ALL 3，因此条件/分阶段 registrar 的实际装配也在验收范围内。
 - 最终清单不存在重复 method/path，也不存在已抽取但未由 composition root 调用的孤立 registrar。
 - `createWorkbenchServer(context, options)` 只构建 Fastify、注册安全 hook/route/static 和 listener，不调用 `listen()`；standalone 监听仅由显式 `startStandaloneServer()` 触发。
 

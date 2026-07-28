@@ -1,97 +1,17 @@
-/* eslint-disable security/detect-non-literal-fs-filename -- test scans repository-controlled paths */
-import { readdirSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-
-import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-const SERVER_PATH = resolve(process.cwd(), 'src/main/server.ts');
-const WORKBENCH_PATH = resolve(process.cwd(), 'src/main/workbenchServer.ts');
-const OPERATIONS_PATH = resolve(process.cwd(), 'src/main/serverOperations.ts');
-const STANDALONE_PATH = resolve(process.cwd(), 'src/main/serverStandalone.ts');
-const ROUTES_DIR = resolve(process.cwd(), 'src/main/routes');
-const STARTUP_PATH = resolve(process.cwd(), 'src/main/serverStartup.ts');
-const SERVER_SOURCE = readFileSync(SERVER_PATH, 'utf8');
-const WORKBENCH_SOURCE = readFileSync(WORKBENCH_PATH, 'utf8');
-const OPERATIONS_SOURCE = readFileSync(OPERATIONS_PATH, 'utf8');
-const STANDALONE_SOURCE = readFileSync(STANDALONE_PATH, 'utf8');
-const STARTUP_SOURCE = readFileSync(STARTUP_PATH, 'utf8');
-const ROUTE_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'all']);
-
-function collectTypeScriptFiles(directory: string): string[] {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const entryPath = join(directory, entry.name);
-    if (entry.isDirectory()) return collectTypeScriptFiles(entryPath);
-    return entry.isFile() && entry.name.endsWith('.ts') ? [entryPath] : [];
-  });
-}
-
-const ROUTE_MODULES = collectTypeScriptFiles(ROUTES_DIR).map((sourcePath) => {
-  const sourceText = readFileSync(sourcePath, 'utf8');
-  const registrar = /export (?:async )?function (register[A-Za-z0-9]+Routes)\s*\(/.exec(
-    sourceText
-  )?.[1];
-  return { sourcePath, sourceText, registrar };
-});
-const ACTIVE_ROUTE_MODULES = ROUTE_MODULES.filter(
-  (module) => module.registrar && WORKBENCH_SOURCE.includes(`${module.registrar}(`)
-);
-const ROUTE_SOURCE_PATHS = [
-  WORKBENCH_PATH,
-  ...ACTIVE_ROUTE_MODULES.map((module) => module.sourcePath),
-];
-
-interface RouteRegistration {
-  file: string;
-  method: string;
-  path: string;
-  line: number;
-}
-
-function collectRouteRegistrations(): RouteRegistration[] {
-  return ROUTE_SOURCE_PATHS.flatMap((sourcePath) => {
-    const sourceText = readFileSync(sourcePath, 'utf8');
-    const sourceFile = ts.createSourceFile(
-      sourcePath,
-      sourceText,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS
-    );
-    const routes: RouteRegistration[] = [];
-
-    function visit(node: ts.Node): void {
-      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-        const receiver = node.expression.expression;
-        const method = node.expression.name.text;
-        const routePath = node.arguments[0];
-
-        if (
-          ts.isIdentifier(receiver) &&
-          receiver.text === 'app' &&
-          ROUTE_METHODS.has(method) &&
-          routePath &&
-          (ts.isStringLiteral(routePath) || ts.isNoSubstitutionTemplateLiteral(routePath))
-        ) {
-          routes.push({
-            file: sourcePath,
-            method: method.toUpperCase(),
-            path: routePath.text,
-            line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
-          });
-        }
-      }
-      ts.forEachChild(node, visit);
-    }
-
-    visit(sourceFile);
-    return routes;
-  });
-}
-
-function routeKey(route: Pick<RouteRegistration, 'method' | 'path'>): string {
-  return `${route.method} ${route.path}`;
-}
+import {
+  collectRouteRegistrations,
+  OPERATIONS_SOURCE,
+  routeKey,
+  type RouteRegistration,
+  ROUTE_METHODS,
+  ROUTE_MODULES,
+  SERVER_SOURCE,
+  STANDALONE_SOURCE,
+  STARTUP_SOURCE,
+  WORKBENCH_SOURCE,
+} from './routeManifestBaseline';
 
 describe('server route manifest baseline', () => {
   const routes = collectRouteRegistrations();

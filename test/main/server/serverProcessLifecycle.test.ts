@@ -8,6 +8,7 @@ import {
   installServerProcessHandlers,
   type ServerProcessTarget,
 } from '../../../src/main/serverProcessLifecycle';
+import { HermitBridgeLauncher } from '../../../src/main/services/hermitBridge/HermitBridgeLauncher';
 
 function createProcessTarget() {
   const emitter = new EventEmitter() as EventEmitter & {
@@ -192,6 +193,52 @@ describe('server process lifecycle', () => {
       'direct.shutdown',
       'launcher.stop',
     ]);
+  });
+
+  it('aborts and drains a never-settling bridge probe during lifecycle shutdown', async () => {
+    const startupAbortController = new AbortController();
+    const spawn = vi.fn(() => ({ pid: 42, kill: vi.fn() }));
+    const bridgeLauncher = new HermitBridgeLauncher({
+      resolveBinary: () => '/fake/cc-connect',
+      spawn,
+    });
+    const startupTask = bridgeLauncher
+      .ensureRunning({
+        client: { listProjects: () => new Promise(() => undefined) },
+        configPath: '/tmp/config.toml',
+        signal: startupAbortController.signal,
+      })
+      .then(() => undefined)
+      .catch((error) => {
+        if (startupAbortController.signal.aborted) return;
+        throw error;
+      });
+    const lifecycle = {
+      listenerDisposers: [],
+      backgroundStartupTasks: new Set([startupTask]),
+      startupAbortController,
+      startPromise: null,
+      disposePromise: null,
+    };
+    const shutdown = createWorkbenchShutdown({
+      app: { close: vi.fn(() => Promise.resolve()), log: { error: vi.fn() } },
+      lifecycle,
+      imLiveWatcher: { stop: vi.fn() },
+      directCliManager: { shutdown: vi.fn() },
+      bridgeLauncher,
+      bridge: {},
+    });
+
+    await expect(
+      Promise.race([
+        shutdown(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('lifecycle shutdown timed out')), 100)
+        ),
+      ])
+    ).resolves.toBeUndefined();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(lifecycle.backgroundStartupTasks.size).toBe(0);
   });
 
   it('registers signal, rejection and synchronous exit handlers', () => {

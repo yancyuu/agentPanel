@@ -29,17 +29,12 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import {
-  createWriteStream,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { get as httpGet } from 'node:http';
+import { get as httpsGet } from 'node:https';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 
 import { createLogger } from '@shared/utils/logger';
 
@@ -49,6 +44,16 @@ const logger = createLogger('CcConnectBinaryFetcher');
 const UPSTREAM_REPO = 'chenhg5/cc-connect';
 
 const DEFAULT_MIRROR_PREFIXES = ['https://gh-proxy.com/', 'https://ghproxy.net/'];
+
+function abortError(): Error {
+  const error = new Error('cc-connect binary preparation cancelled');
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortError();
+}
 
 interface PlatformTarget {
   os: string; // cc-connect release naming: darwin | linux | windows
@@ -134,53 +139,72 @@ function buildCandidateUrls(filename: string, version: string): string[] {
   return [...prefixes.map((p) => `${p}${base}`), base];
 }
 
-async function fetchToBuffer(url: string, redirectsLeft = 5): Promise<Buffer> {
+async function fetchToBuffer(
+  url: string,
+  redirectsLeft = 5,
+  signal?: AbortSignal
+): Promise<Buffer> {
+  throwIfAborted(signal);
   if (redirectsLeft <= 0) throw new Error('Too many redirects');
-  const isHttps = url.startsWith('https');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const mod = require(isHttps ? 'node:https' : 'node:http');
+  const request = url.startsWith('https') ? httpsGet : httpGet;
   return new Promise((resolve, reject) => {
-    const req = mod.get(
+    let settled = false;
+    const finish = <T>(callback: (value: T) => void, value: T) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', handleAbort);
+      callback(value);
+    };
+    const req = request(
       url,
       { headers: { 'User-Agent': 'agentcli-cc-connect-fetcher' }, timeout: 60_000 },
-      (res: {
-        statusCode?: number;
-        headers: { location?: string };
-        resume: () => void;
-        on: (e: string, cb: (c?: Buffer) => void) => void;
-      }) => {
+      (res) => {
         if ((res.statusCode ?? 0) >= 300 && (res.statusCode ?? 0) < 400 && res.headers.location) {
           res.resume();
           const next = new URL(res.headers.location, url).href;
-          void resolve(fetchToBuffer(next, redirectsLeft - 1));
+          fetchToBuffer(next, redirectsLeft - 1, signal).then(
+            (buffer) => finish(resolve, buffer),
+            (error) => finish(reject, error)
+          );
           return;
         }
         if (res.statusCode !== 200) {
           res.resume();
-          reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+          finish(reject, new Error(`HTTP ${String(res.statusCode)} for ${url}`));
           return;
         }
         const chunks: Buffer[] = [];
-        res.on('data', (c?: Buffer) => chunks.push(c ?? Buffer.alloc(0)));
-        res.on('end', () => resolve(Buffer.concat(chunks)));
-        res.on('error', reject);
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => finish(resolve, Buffer.concat(chunks)));
+        res.on('error', (error: Error) => finish(reject, error));
       }
     );
-    req.on('error', reject);
+    const handleAbort = (): void => {
+      req.destroy(abortError());
+    };
+    signal?.addEventListener('abort', handleAbort, { once: true });
+    req.on('error', (error: Error) => finish(reject, error));
     req.on('timeout', () => req.destroy(new Error(`timeout fetching ${url}`)));
+    if (signal?.aborted) handleAbort();
   });
 }
 
-async function downloadWithMirrors(filename: string, version: string): Promise<Buffer> {
+async function downloadWithMirrors(
+  filename: string,
+  version: string,
+  signal?: AbortSignal
+): Promise<Buffer> {
   const urls = buildCandidateUrls(filename, version);
   let lastErr: unknown;
   for (const url of urls) {
+    throwIfAborted(signal);
     try {
       logger.info(`downloading cc-connect binary from ${url}`);
-      const buf = await fetchToBuffer(url);
+      const buf = await fetchToBuffer(url, 5, signal);
       logger.info(`downloaded ${(buf.length / 1024 / 1024).toFixed(1)} MB`);
       return buf;
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') throw err;
       logger.warn(`download failed: ${(err as Error).message}, trying next source`);
       lastErr = err;
     }
@@ -277,7 +301,11 @@ export interface FetchResult {
  * @returns absolute path to the usable binary, or null if the current platform
  *          is unsupported / the expected version cannot be determined.
  */
-export async function ensureCcConnectBinary(hermitHome: string): Promise<FetchResult | null> {
+export async function ensureCcConnectBinary(
+  hermitHome: string,
+  signal?: AbortSignal
+): Promise<FetchResult | null> {
+  throwIfAborted(signal);
   const target = detectPlatformTarget();
   if (!target) {
     logger.warn(`unsupported platform ${process.platform}/${process.arch}; skipping binary fetch`);
@@ -299,7 +327,8 @@ export async function ensureCcConnectBinary(hermitHome: string): Promise<FetchRe
   }
 
   const filename = `cc-connect-v${version}-${target.os}-${target.arch}${target.ext}`;
-  const buffer = await downloadWithMirrors(filename, version);
+  const buffer = await downloadWithMirrors(filename, version, signal);
+  throwIfAborted(signal);
 
   const workDir = path.join(
     tmpdir(),
@@ -309,26 +338,30 @@ export async function ensureCcConnectBinary(hermitHome: string): Promise<FetchRe
   rmSync(workDir, { force: true, recursive: true });
   mkdirSync(workDir, { recursive: true });
 
-  extractArchive(buffer, target, workDir);
-  const extracted = locateBinary(workDir, target);
-  if (!extracted) {
-    rmSync(workDir, { force: true, recursive: true });
-    throw new Error(`binary ${target.binaryName} not found in archive after extract`);
-  }
-
-  rmSync(binaryPath, { force: true });
-  renameSync(extracted, binaryPath);
-  if (process.platform !== 'win32') {
-    execFileSync('chmod', ['+x', binaryPath], { stdio: 'pipe' });
-  }
-  if (process.platform === 'darwin') {
-    try {
-      execFileSync('xattr', ['-d', 'com.apple.quarantine', binaryPath], { stdio: 'pipe' });
-    } catch {
-      /* quarantine attribute absent is fine */
+  try {
+    extractArchive(buffer, target, workDir);
+    throwIfAborted(signal);
+    const extracted = locateBinary(workDir, target);
+    if (!extracted) {
+      throw new Error(`binary ${target.binaryName} not found in archive after extract`);
     }
+
+    throwIfAborted(signal);
+    rmSync(binaryPath, { force: true });
+    renameSync(extracted, binaryPath);
+    if (process.platform !== 'win32') {
+      execFileSync('chmod', ['+x', binaryPath], { stdio: 'pipe' });
+    }
+    if (process.platform === 'darwin') {
+      try {
+        execFileSync('xattr', ['-d', 'com.apple.quarantine', binaryPath], { stdio: 'pipe' });
+      } catch {
+        /* quarantine attribute absent is fine */
+      }
+    }
+  } finally {
+    rmSync(workDir, { force: true, recursive: true });
   }
-  rmSync(workDir, { force: true, recursive: true });
 
   logger.info(`cc-connect v${version} installed to ${binaryPath}`);
   return { binaryPath, version, newlyDownloaded: true };

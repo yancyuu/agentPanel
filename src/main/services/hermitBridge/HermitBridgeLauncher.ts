@@ -52,6 +52,10 @@ export interface EnsureRunningOptions extends BridgeLaunchOptions {
   signal?: AbortSignal;
 }
 
+interface EnsureBinaryReadyOptions extends BridgeLaunchOptions {
+  signal?: AbortSignal;
+}
+
 export interface EnsureRunningResult {
   launched: boolean;
   alreadyRunning: boolean;
@@ -70,7 +74,7 @@ export interface BridgeCommand {
  */
 export function resolveHermitBridgeBinaryName(
   platform: NodeJS.Platform = process.platform,
-  arch: NodeJS.Architecture = process.arch
+  _arch: NodeJS.Architecture = process.arch
 ): string | null {
   // cc-connect ships a single cross-platform binary named `cc-connect`
   // (the Go binary is the canonical cc-connect, identical to hermit-bridge).
@@ -213,21 +217,24 @@ function defaultSpawn(
  */
 export class HermitBridgeLauncher {
   private child: SpawnedBridge | null = null;
+  private readonly binaryReadyTasks = new Map<string, Promise<BridgeCommand>>();
 
   constructor(
     private readonly deps: {
       now?: () => number;
       spawn?: SpawnFn;
       resolveBinary?: ResolveBinaryFn;
+      ensureBinary?: typeof ensureCcConnectBinary;
     } = {}
   ) {}
 
   /** True when the cc-connect management API responds. */
-  async isRunning(client: BridgeManagementProbe): Promise<boolean> {
+  async isRunning(client: BridgeManagementProbe, signal?: AbortSignal): Promise<boolean> {
     try {
-      await client.listProjects();
+      await this.awaitWithAbort(client.listProjects(), signal);
       return true;
-    } catch {
+    } catch (error) {
+      if (this.isAbortError(error)) throw error;
       return false;
     }
   }
@@ -241,44 +248,29 @@ export class HermitBridgeLauncher {
    * instead of a silently broken workbench where every config save fails with
    * a cryptic "fetch failed".
    *
-   * Split out from ensureRunning() so the boot path can enforce it
-   * synchronously before app.listen(), while still letting the (slow) service
-   * readiness wait stay fire-and-forget.
+   * Split out from ensureRunning() so the boot path can report binary
+   * diagnostics independently while sharing the same deduplicated preparation
+   * and lifecycle cancellation as the non-blocking service readiness wait.
    */
   async ensureBinaryReady(
-    opts: BridgeLaunchOptions,
+    opts: EnsureBinaryReadyOptions,
     resolveBinary: ResolveBinaryFn = this.deps.resolveBinary ?? resolveHermitBridgeRunner
   ): Promise<BridgeCommand> {
-    try {
-      return resolveBridgeCommand(opts, resolveBinary);
-    } catch {
-      // cc-connect npm package not present (the classic silent-optional-failure
-      // case). Self-heal: download the binary directly into HERMIT_HOME from
-      // mirror-proxied GitHub releases.
-      const hermitHome = process.env.HERMIT_HOME ?? path.join(os.homedir(), '.hermit');
-      log.warn('cc-connect runner missing — attempting self-heal binary download');
-      let result: { binaryPath: string } | null = null;
-      try {
-        result = await ensureCcConnectBinary(hermitHome);
-      } catch (downloadErr) {
-        throw new Error(
-          `cc-connect is not installed and could not be downloaded automatically: ${(downloadErr as Error).message}. ` +
-            'Run `npm install -g cc-connect` manually, or set CC_CONNECT_MIRROR to a reachable GitHub-release proxy.'
-        );
-      }
-      if (!result) {
-        throw new Error(
-          'cc-connect is not installed and the current platform is unsupported for auto-download. ' +
-            'Run `npm install -g cc-connect` manually.'
-        );
-      }
-      return { cmd: result.binaryPath, args: buildBridgeArgs(opts) };
+    this.throwIfAborted(opts.signal);
+    const taskKey = JSON.stringify([opts.configPath, opts.extraArgs ?? []]);
+    let task = this.binaryReadyTasks.get(taskKey);
+    if (!task) {
+      task = this.prepareBinary(opts, resolveBinary).finally(() => {
+        if (this.binaryReadyTasks.get(taskKey) === task) this.binaryReadyTasks.delete(taskKey);
+      });
+      this.binaryReadyTasks.set(taskKey, task);
     }
+    return this.awaitWithAbort(task, opts.signal);
   }
 
   async ensureRunning(opts: EnsureRunningOptions): Promise<EnsureRunningResult> {
     this.throwIfAborted(opts.signal);
-    if (await this.isRunning(opts.client)) {
+    if (await this.isRunning(opts.client, opts.signal)) {
       this.throwIfAborted(opts.signal);
       return { launched: false, alreadyRunning: true };
     }
@@ -290,6 +282,7 @@ export class HermitBridgeLauncher {
 
     log.info({ cmd, args }, 'launching cc-connect');
     const spawnFn = this.deps.spawn ?? defaultSpawn;
+    this.throwIfAborted(opts.signal);
     this.child = spawnFn(cmd, args, { logFile: opts.logFile, env: opts.env });
     const pid = this.child.pid;
     try {
@@ -301,11 +294,73 @@ export class HermitBridgeLauncher {
     }
   }
 
-  private throwIfAborted(signal?: AbortSignal): void {
-    if (!signal?.aborted) return;
+  private async prepareBinary(
+    opts: EnsureBinaryReadyOptions,
+    resolveBinary: ResolveBinaryFn
+  ): Promise<BridgeCommand> {
+    try {
+      return resolveBridgeCommand(opts, resolveBinary);
+    } catch {
+      // cc-connect npm package not present (the classic silent-optional-failure
+      // case). Self-heal: download the binary directly into HERMIT_HOME from
+      // mirror-proxied GitHub releases.
+      const hermitHome = process.env.HERMIT_HOME ?? path.join(os.homedir(), '.hermit');
+      log.warn('cc-connect runner missing — attempting self-heal binary download');
+      let result: { binaryPath: string } | null = null;
+      try {
+        result = await (this.deps.ensureBinary ?? ensureCcConnectBinary)(hermitHome, opts.signal);
+      } catch (downloadErr) {
+        if (this.isAbortError(downloadErr)) throw downloadErr;
+        throw new Error(
+          `cc-connect is not installed and could not be downloaded automatically: ${(downloadErr as Error).message}. ` +
+            'Run `npm install -g cc-connect` manually, or set CC_CONNECT_MIRROR to a reachable GitHub-release proxy.'
+        );
+      }
+      this.throwIfAborted(opts.signal);
+      if (!result) {
+        throw new Error(
+          'cc-connect is not installed and the current platform is unsupported for auto-download. ' +
+            'Run `npm install -g cc-connect` manually.'
+        );
+      }
+      return { cmd: result.binaryPath, args: buildBridgeArgs(opts) };
+    }
+  }
+
+  private abortError(): Error {
     const error = new Error('cc-connect launch cancelled');
     error.name = 'AbortError';
-    throw error;
+    return error;
+  }
+
+  private isAbortError(error: unknown): boolean {
+    return error instanceof Error && error.name === 'AbortError';
+  }
+
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) throw this.abortError();
+  }
+
+  private awaitWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+    this.throwIfAborted(signal);
+    if (!signal) return promise;
+    return new Promise<T>((resolve, reject) => {
+      const handleAbort = (): void => {
+        signal.removeEventListener('abort', handleAbort);
+        reject(this.abortError());
+      };
+      signal.addEventListener('abort', handleAbort, { once: true });
+      promise.then(
+        (value) => {
+          signal.removeEventListener('abort', handleAbort);
+          resolve(value);
+        },
+        (error) => {
+          signal.removeEventListener('abort', handleAbort);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      );
+    });
   }
 
   private waitForDelay(delayMs: number, signal?: AbortSignal): Promise<void> {
@@ -315,12 +370,10 @@ export class HermitBridgeLauncher {
         signal?.removeEventListener('abort', handleAbort);
         resolve();
       }, delayMs);
-      const handleAbort = () => {
+      const handleAbort = (): void => {
         clearTimeout(timeout);
         signal?.removeEventListener('abort', handleAbort);
-        const error = new Error('cc-connect launch cancelled');
-        error.name = 'AbortError';
-        reject(error);
+        reject(this.abortError());
       };
       signal?.addEventListener('abort', handleAbort, { once: true });
     });
@@ -334,7 +387,7 @@ export class HermitBridgeLauncher {
     while (now() < deadline) {
       await this.waitForDelay(interval, opts.signal);
       this.throwIfAborted(opts.signal);
-      if (await this.isRunning(opts.client)) return;
+      if (await this.isRunning(opts.client, opts.signal)) return;
       this.throwIfAborted(opts.signal);
     }
     throw new Error(`cc-connect did not become ready within ${timeoutMs}ms`);

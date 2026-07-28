@@ -27,7 +27,11 @@ interface BridgeLaunchResult {
 interface StandaloneServerStartupDependencies<TBridgeClient> {
   app: StartupServerApp;
   bridgeLauncher: {
-    ensureBinaryReady(options: { configPath: string; extraArgs: string[] }): Promise<BridgeCommand>;
+    ensureBinaryReady(options: {
+      configPath: string;
+      extraArgs: string[];
+      signal?: AbortSignal;
+    }): Promise<BridgeCommand>;
     ensureRunning(options: {
       client: TBridgeClient;
       configPath: string;
@@ -77,26 +81,40 @@ export async function startStandaloneServerRuntime<TBridgeClient>({
   bridgeWsUrl,
   lifecycle,
 }: StandaloneServerStartupDependencies<TBridgeClient>): Promise<void> {
-  bridgeLauncher
+  // Binary diagnostics and sidecar readiness remain non-blocking for HTTP
+  // startup, but share one abort signal and are both lifecycle-owned. The
+  // launcher deduplicates their binary preparation so boot never starts two
+  // downloads for the same command.
+  const startupAbortController = new AbortController();
+  lifecycle.startupAbortController = startupAbortController;
+  const binaryCheck = bridgeLauncher
     .ensureBinaryReady({
       configPath: bridgeConfigPath,
       extraArgs: ['--force'],
+      signal: startupAbortController.signal,
     })
     .then((command) => {
       markBridgeBinaryCheck({ status: 'ok', cmd: command.cmd });
     })
     .catch((error) => {
+      if (startupAbortController.signal.aborted) return;
       markBridgeBinaryCheck({
         status: 'degraded',
         reason: error instanceof Error ? error.message : String(error),
         remediation: BRIDGE_BINARY_REMEDIATION,
       });
+    })
+    .finally(() => {
+      lifecycle.backgroundStartupTasks.delete(binaryCheck);
+      if (
+        lifecycle.startupAbortController === startupAbortController &&
+        lifecycle.backgroundStartupTasks.size === 0
+      ) {
+        lifecycle.startupAbortController = null;
+      }
     });
+  lifecycle.backgroundStartupTasks.add(binaryCheck);
 
-  // Sidecar readiness remains non-blocking for HTTP startup, but it is owned by
-  // the lifecycle so shutdown can abort and await it before stopping the launcher.
-  const startupAbortController = new AbortController();
-  lifecycle.startupAbortController = startupAbortController;
   const sidecarStartup = bridgeLauncher
     .ensureRunning({
       client: bridgeClient,
@@ -125,7 +143,10 @@ export async function startStandaloneServerRuntime<TBridgeClient>({
     })
     .finally(() => {
       lifecycle.backgroundStartupTasks.delete(sidecarStartup);
-      if (lifecycle.startupAbortController === startupAbortController) {
+      if (
+        lifecycle.startupAbortController === startupAbortController &&
+        lifecycle.backgroundStartupTasks.size === 0
+      ) {
         lifecycle.startupAbortController = null;
       }
     });

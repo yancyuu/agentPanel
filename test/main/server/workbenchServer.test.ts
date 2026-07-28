@@ -12,6 +12,7 @@ import {
 } from '../../../src/main/serverComposition';
 import { startStandaloneServer } from '../../../src/main/serverStandalone';
 import { createWorkbenchServer } from '../../../src/main/workbenchServer';
+import { methodCounts, sortedRouteKeys } from './routeManifestBaseline';
 
 const tempDirectories: string[] = [];
 
@@ -77,7 +78,7 @@ describe('workbench server factory', () => {
     await server.shutdown();
   });
 
-  it('assembles exactly 235 unique runtime method/path registrations', async () => {
+  it('assembles the complete checked static method/path manifest at runtime', async () => {
     const harness = await createHarness();
     const runtimeRoutes: string[] = [];
     const allMethods = new Set(['DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT']);
@@ -101,12 +102,21 @@ describe('workbench server factory', () => {
       },
     });
 
-    expect(runtimeRoutes).toHaveLength(235);
-    expect(new Set(runtimeRoutes).size).toBe(235);
-    expect(runtimeRoutes).toContain('ALL /api/v1/*');
-    expect(runtimeRoutes).toContain('GET /api/teams');
-    expect(runtimeRoutes).toContain('GET /api/events');
-    expect(runtimeRoutes).toContain('GET /api/extensions/plugins');
+    const expectedRoutes = sortedRouteKeys();
+    const actualRoutes = [...runtimeRoutes].sort((left, right) => left.localeCompare(right));
+
+    expect(actualRoutes).toHaveLength(235);
+    expect(new Set(actualRoutes).size).toBe(235);
+    expect(actualRoutes).toEqual(expectedRoutes);
+    expect(methodCounts(actualRoutes)).toEqual({
+      ALL: 3,
+      DELETE: 9,
+      GET: 97,
+      PATCH: 13,
+      POST: 108,
+      PUT: 5,
+    });
+    expect(methodCounts(actualRoutes)).toEqual(methodCounts(expectedRoutes));
     await server.shutdown();
   });
 

@@ -5,8 +5,8 @@
  * fix path instead of surfacing later as a cryptic "fetch failed".
  *
  * Lifecycle:
- *   - server boot calls markBridgeBinaryCheck() with the ensureBinaryReady()
- *     result (ok | degraded + reason) before app.listen(), non-blocking.
+ *   - server boot tracks a non-blocking ensureBinaryReady() diagnostic and
+ *     calls markBridgeBinaryCheck() with its eventual result (ok | degraded + reason).
  *   - the sidecar auto-launch (.then/.catch in server.ts) calls
  *     markBridgeLaunch() to record whether the sidecar actually came up.
  *   - GET /api/v1/system/readiness returns the merged view for the UI.
