@@ -89,9 +89,13 @@ import {
   registerTeamMemberStatsRoutes,
   registerTeamProvisioningCompatibilityRoutes,
 } from './routes/teamCompatibilityRoutes';
+import { registerTeamConfigRoutes } from './routes/teamConfigRoutes';
+import { registerTeamDirectoryRoutes } from './routes/teamDirectoryRoutes';
 import { registerTeamMessageRoutes } from './routes/teamMessageRoutes';
+import { CC_AGENT_TYPES, normalizePlatformAllowFrom } from './routes/teamRouteUtils';
+import { createTeamRuntimeOperations, registerTeamRuntimeRoutes } from './routes/teamRuntimeRoutes';
 import { registerTeamSessionRoutes } from './routes/teamSessionRoutes';
-import { activeTasks, registerTeamTaskRoutes, toTeamTask } from './routes/teamTaskRoutes';
+import { registerTeamTaskRoutes } from './routes/teamTaskRoutes';
 import { registerTerminalRoutes } from './routes/terminalRoutes';
 import { registerToolApprovalRoutes } from './routes/toolApprovalRoutes';
 import { createUsageTelemetryPresenter } from './routes/usageTelemetryPresenter';
@@ -104,16 +108,12 @@ import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
 import { registerWorkbenchStatusRoutes } from './routes/workbenchStatusRoutes';
 import { registerWorkerRoutes } from './routes/workerRoutes';
 import { registerWorkspaceRoutes } from './routes/workspaceRoutes';
-import { buildDirectReplyMessageId, DirectCliSessionManager } from './services/direct-cli';
+import { DirectCliSessionManager } from './services/direct-cli';
 import { buildTeamCapabilityTelemetrySnapshots } from './services/extensions/capability-packs/CapabilityPackLoaderService';
 import { httpsGetFollowRedirects } from './services/extensions/catalog/PluginCatalogService';
 import { HermitBridgeClient } from './services/hermitBridge/HermitBridgeClient';
 import { HermitBridgeConnection } from './services/hermitBridge/HermitBridgeConnection';
 import { HermitBridgeLauncher } from './services/hermitBridge/HermitBridgeLauncher';
-import {
-  isPlaceholderWorkDir,
-  needsWorkDirReconcile,
-} from './services/hermitBridge/workDirReconcile';
 import { LoopAssetsScannerService } from './services/loop-assets/LoopAssetsScannerService';
 import { ConversationTelemetryService } from './services/session-intelligence/ConversationTelemetryService';
 import { defaultImSessionsDir, ImLiveWatcher } from './services/session-intelligence/ImLiveWatcher';
@@ -169,17 +169,9 @@ import {
 } from './serverProcessLifecycle';
 import { startStandaloneServerRuntime } from './serverStartup';
 
-import type {
-  HermitBridgeAgentType,
-  HermitBridgeProjectPlatform,
-} from '../shared/types/hermitBridge';
+import type { HermitBridgeAgentType } from '../shared/types/hermitBridge';
 import type { TeamManifest } from './services/team-management/TeamWorkspaceService';
-import type {
-  AttachmentPayload,
-  SystemManagerSummary,
-  TeamLaunchRequest,
-  TelemetryConfig,
-} from '@shared/types/team';
+import type { SystemManagerSummary, TelemetryConfig } from '@shared/types/team';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -229,36 +221,8 @@ const hermitBridgeAutoLaunchTimeoutMs = Number.parseInt(
 const HERMIT_BRIDGE_AUTO_LAUNCH_TIMEOUT_MS = Number.isFinite(hermitBridgeAutoLaunchTimeoutMs)
   ? Math.max(30_000, hermitBridgeAutoLaunchTimeoutMs)
   : DEFAULT_HERMIT_BRIDGE_AUTO_LAUNCH_TIMEOUT_MS;
-const CC_AGENT_TYPES: readonly HermitBridgeAgentType[] = [
-  'claudecode',
-  'codex',
-  'cursor',
-  'gemini',
-  'iflow',
-  'kimi',
-  'devin',
-  'opencode',
-  'qoder',
-  'pi',
-  'acp',
-  'tmux',
-];
 const SYSTEM_MANAGER_DESCRIPTION =
   '项目级 Claude Code Helm Loop，负责插件、MCP、Env、数字员工和统计数据的托管管理。';
-
-function toHermitBridgeAgentType(value: string | undefined): HermitBridgeAgentType {
-  return CC_AGENT_TYPES.includes(value as HermitBridgeAgentType)
-    ? (value as HermitBridgeAgentType)
-    : 'claudecode';
-}
-
-function isReservedSystemTeamName(teamName: string): boolean {
-  return (
-    teamName === 'default' ||
-    teamName === SYSTEM_MANAGER_BIND_PROJECT ||
-    teamName === SYSTEM_MANAGER_TEAM_NAME
-  );
-}
 
 // ===========================================================================
 // Hermit runtime config — ~/.hermit/config.json
@@ -467,7 +431,7 @@ const app = Fastify({
 });
 
 const serverRuntimeState = createServerRuntimeState();
-const { sseClients, directCliRoutes, bridgeSessionTeamCache, teamStatsCache } = serverRuntimeState;
+const { sseClients, bridgeSessionTeamCache, teamStatsCache } = serverRuntimeState;
 
 // Mutable runtime config — updated via /api/hermit-config POST
 let runtimeConfig = loadConfig();
@@ -609,7 +573,7 @@ async function ensureAdminLoopInitialized(): Promise<void> {
         .catch((err) =>
           app.log.warn({ err, sessionKey }, 'helm loop init: append user message failed')
         );
-      await dispatchDirectCliMessage({
+      await teamRuntimeOperations.dispatchDirectCliMessage({
         teamName: SYSTEM_MANAGER_TEAM_NAME,
         sessionKey,
         workDir,
@@ -966,15 +930,6 @@ async function initializeTelemetryFromSettings(): Promise<void> {
   }
 }
 
-function normalizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-    .filter((entry) => entry.length > 0);
-}
-
 async function resolveTeamSlugForMention(rawName: string): Promise<string | null> {
   const normalized = rawName.trim().replace(/^@/, '');
   if (!normalized) return null;
@@ -992,41 +947,6 @@ async function resolveTeamSlugForMention(rawName: string): Promise<string | null
     return slug === lower || displayName === lower;
   });
   return matched?.slug ?? null;
-}
-
-function normalizePlatformAllowFrom(value: unknown): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-  const entries = Object.entries(value as Record<string, unknown>)
-    .map(
-      ([platform, allowFrom]) =>
-        [platform.trim(), typeof allowFrom === 'string' ? allowFrom.trim() : ''] as const
-    )
-    .filter(([platform, allowFrom]) => platform.length > 0 && allowFrom.length > 0);
-  return Object.fromEntries(entries);
-}
-
-function hasPlatformAllowDeleteMarker(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-  return Object.entries(value as Record<string, unknown>).some(
-    ([platform, allowFrom]) =>
-      platform.trim().length > 0 && (typeof allowFrom !== 'string' || allowFrom.trim().length === 0)
-  );
-}
-
-function normalizePlatformAllowUpdate(value: unknown): Record<string, string> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-  const normalized = normalizePlatformAllowFrom(value);
-  if (Object.keys(normalized).length > 0) {
-    if (normalized.lark !== undefined) delete normalized.feishu;
-    return normalized;
-  }
-  return Object.keys(value).length === 0 || hasPlatformAllowDeleteMarker(value) ? {} : undefined;
 }
 
 function readStringOption(record: Record<string, unknown>, keys: readonly string[]): string {
@@ -1090,11 +1010,6 @@ async function persistPlatformRoutingMetadataForProject(
   }
 }
 
-function isCcProjectNotFoundError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return /project not found:/i.test(message);
-}
-
 // ===========================================================================
 // SSE 客户端管理器 — 广播 bridge 事件到所有连接的前端客户端
 // ===========================================================================
@@ -1149,6 +1064,16 @@ const serverContext = createServerContext({
     extensions: ext,
   },
   state: serverRuntimeState,
+});
+
+const teamRuntimeOperations = createTeamRuntimeOperations({
+  teamProvisioning: serverContext.services.teamProvisioning,
+  bridgeClient: serverContext.services.bridgeClient,
+  directCliManager: serverContext.services.directCli,
+  directCliRoutes: serverContext.state.directCliRoutes,
+  ensureSystemManager,
+  restartBridge: restartHermitBridgeAndReconnect,
+  logger: app.log,
 });
 
 async function readEffectiveCcSettings(): Promise<Record<string, unknown>> {
@@ -1439,421 +1364,22 @@ registerSystemManagerRoutes(app, {
 registerTerminalRoutes(app, {
   assertTrustedBrowserOrigin,
   getSessionId: (sessionKey) => serverContext.services.directCli.getSessionId(sessionKey),
-  resolveWorkDir: resolveDirectCliWorkDir,
+  resolveWorkDir: teamRuntimeOperations.resolveDirectCliWorkDir,
   resolveClaudeBinary: () => ClaudeBinaryResolver.resolve(),
 });
 
 // Worker Society REST 路由（/api/society/*）—— worker 自治社会的 HTTP 接口（workers/needs/social/feed）。
 
-// GET /api/teams → Hermit 本地团队优先，裸 cc-connect project 作为历史兼容显示；过滤飞书/系统项目
-app.get('/api/teams', async () => {
-  try {
-    const [projects, localTeams] = await Promise.all([
-      cc.listProjects().catch(() => []),
-      svc.listTeams().catch(() => []),
-    ]);
-    const projectByName = new Map(projects.map((project) => [project.name, project]));
-    const shouldHideProject = (name: string): boolean =>
-      isReservedSystemTeamName(name) || name.startsWith('feishu:');
-
-    const summaries = await Promise.all(
-      localTeams
-        .filter((meta) => {
-          const bindProject = meta.bindProject || meta.slug;
-          return (
-            !isReservedSystemTeamName(meta.slug) &&
-            !shouldHideProject(bindProject) &&
-            !meta.slug.startsWith('feishu:')
-          );
-        })
-        .map(async (meta) => {
-          const bindProject = meta.bindProject || meta.slug;
-          const project = projectByName.get(bindProject);
-          // Keep the list endpoint fast: per-team cc.getProject calls are slow and
-          // block first paint. Runtime liveness is loaded separately via aliveList.
-          const workDir = (meta.workDir || '').trim();
-          const projectPath = (meta.workDir || '').trim();
-          const harness = toHermitBridgeAgentType(project?.agent_type || meta.harness);
-          const color = meta.color || 'blue';
-          const displayName = meta.displayName || meta.slug;
-          const usageStats = workDir ? getProjectStatsSnapshot(workDir) : null;
-
-          return {
-            teamName: meta.slug,
-            displayName,
-            description: meta.description || '本地数字员工',
-            color,
-            memberCount: 1,
-            members: [{ name: displayName, role: 'agent', agentId: harness, color }],
-            taskCount: 0,
-            lastActivity: null,
-            isAlive: false,
-            harness,
-            bindProject,
-            workDir,
-            projectPath: projectPath || undefined,
-            sessionsCount: project?.sessions_count ?? 0,
-            heartbeatEnabled: project?.heartbeat_enabled ?? false,
-            deletedAt: meta.deletedAt,
-            pendingDelete: meta.pendingDelete === true,
-            restartRequired: meta.restartRequired === true,
-            stats: meta.deletedAt
-              ? undefined
-              : usageStats
-                ? {
-                    sessions: usageStats.sessions,
-                    messages: usageStats.messages,
-                    tokens: usageStats.totalTokens,
-                    tokensIn: usageStats.tokensIn,
-                    tokensOut: usageStats.tokensOut,
-                    cacheRead: usageStats.cacheRead,
-                    cacheCreation: usageStats.cacheCreation,
-                    durationMs: usageStats.durationMs,
-                  }
-                : undefined,
-          };
-        })
-    );
-
-    return summaries;
-  } catch {
-    return [];
-  }
-});
-
-// POST /api/teams/create → 直接在 cc-connect 创建 project
-app.post('/api/teams/create', async (request, reply) => {
-  try {
-    const body = (request.body ?? {}) as Record<string, unknown>;
-    const bindProject = String(body.bindProject ?? '').trim();
-    const displayName = String(body.displayName ?? body.teamName ?? '').trim();
-    const harness = String(body.harness ?? 'claudecode');
-    let workDir = String(body.workDir ?? body.cwd ?? '');
-
-    if (!bindProject) return reply.code(400).send({ error: 'bindProject required' });
-    if (!displayName) return reply.code(400).send({ error: 'displayName required' });
-    if (!workDir) return reply.code(400).send({ error: 'workDir required' });
-
-    // Validate bindProject is ASCII-safe (for URL routing and cc-connect project name)
-    if (!/^[a-z0-9][a-z0-9_-]*$/.test(bindProject)) {
-      return reply.code(400).send({
-        error: '项目标识只能包含小写英文字母、数字、连字符和下划线，且必须以字母或数字开头',
-      });
-    }
-
-    // Check for duplicate bindProject (unique identifier, replaces displayName duplicate check)
-    const existingTeams = await svc.listTeams().catch(() => []);
-    const duplicateProject = existingTeams.find(
-      (t) => t.bindProject?.toLowerCase() === bindProject.toLowerCase()
-    );
-    if (duplicateProject) {
-      return reply.code(409).send({
-        error: `项目标识"${bindProject}"已被"${duplicateProject.displayName}"使用，请换一个。`,
-      });
-    }
-
-    // Normalize path: fullwidth tilde → regular tilde, expand ~ to home
-    workDir = workDir.replace(/\uff5e/g, '~');
-    if (workDir.startsWith('~')) {
-      workDir = path.join(os.homedir(), workDir.slice(1));
-    }
-
-    // 本地创建只落 Hermit 团队目录；飞书/微信等外部平台在团队内按需绑定。
-    await svc.createTeam({
-      displayName,
-      bindProject,
-      harness,
-      workDir,
-      color: typeof body.color === 'string' ? body.color : undefined,
-      description: typeof body.description === 'string' ? body.description : undefined,
-      createCcProject: false,
-    });
-
-    return { runId: `local:${bindProject}:${Date.now()}` };
-  } catch (err) {
-    return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-
-// GET /api/teams/:name/data → TeamViewSnapshot (cc-connect project 为主，本地 tasks 为辅)
-app.get<{ Params: { name: string } }>('/api/teams/:name/data', async (request, reply) => {
-  const { name } = request.params;
-
-  // 本地元数据（始终尝试读取）
-  let displayName = name; // 默认使用 team ID
-  let color = 'blue';
-  let description = '';
-  let collaboration = true;
-  let workDir = '';
-  let harness = 'claudecode';
-  let language = '';
-  let permissionMode = 'default';
-  let showContextIndicator = false;
-  let replyFooter = false;
-  let injectSender = false;
-  let managedSources = '*';
-  let disabledCommands: string[] = [];
-  let platformAllowFrom: Record<string, string> = {};
-  let platformAllowChat: Record<string, string> = {};
-  let bindProject = name;
-  try {
-    const meta = await svc.readTeamManifest(name);
-    if (meta.displayName) displayName = meta.displayName;
-    if (meta.color) color = meta.color;
-    if (meta.description) description = meta.description;
-    bindProject = meta.bindProject || name;
-    collaboration = meta.collaboration ?? true;
-    if (meta.workDir) workDir = meta.workDir;
-    if (meta.harness) harness = meta.harness;
-    if (meta.language) language = meta.language;
-    if (meta.permissionMode) permissionMode = meta.permissionMode;
-    if (typeof meta.showContextIndicator === 'boolean') {
-      showContextIndicator = meta.showContextIndicator;
-    }
-    if (typeof meta.replyFooter === 'boolean') {
-      replyFooter = meta.replyFooter;
-    }
-    if (typeof meta.injectSender === 'boolean') {
-      injectSender = meta.injectSender;
-    }
-    if (meta.managedSources) managedSources = meta.managedSources;
-    if (Array.isArray(meta.disabledCommands)) {
-      disabledCommands = normalizeStringArray(meta.disabledCommands);
-    }
-    if (meta.platformAllowFrom) {
-      platformAllowFrom = normalizePlatformAllowFrom(meta.platformAllowFrom);
-    }
-    if (meta.platformAllowChat) {
-      platformAllowChat = normalizePlatformAllowFrom(meta.platformAllowChat);
-    }
-  } catch {
-    /* no local manifest */
-  }
-
-  // 本地任务
-  const rawTasks = activeTasks(await svc.readTasks(name).catch(() => []));
-  const teamTasks = rawTasks.map(toTeamTask);
-
-  try {
-    bindProject = await resolveRouteCcProjectName(name);
-    const p = await cc.getProject(bindProject);
-    const isOnline = Array.isArray(p.platforms) && p.platforms.some((pl) => pl.connected);
-    const projectSettings = (p.settings ?? {}) as Record<string, unknown>;
-    const resolvedLanguage =
-      typeof projectSettings.language === 'string' && projectSettings.language.trim().length > 0
-        ? projectSettings.language.trim()
-        : language;
-    const resolvedManagedSources =
-      typeof projectSettings.admin_from === 'string' && projectSettings.admin_from.trim().length > 0
-        ? projectSettings.admin_from.trim()
-        : managedSources;
-    const resolvedDisabledCommands =
-      Array.isArray(projectSettings.disabled_commands) &&
-      normalizeStringArray(projectSettings.disabled_commands).length > 0
-        ? normalizeStringArray(projectSettings.disabled_commands)
-        : disabledCommands;
-    const resolvedShowContextIndicator =
-      typeof projectSettings.show_context_indicator === 'boolean'
-        ? projectSettings.show_context_indicator
-        : showContextIndicator;
-    const resolvedReplyFooter =
-      typeof projectSettings.reply_footer === 'boolean'
-        ? projectSettings.reply_footer
-        : replyFooter;
-    const resolvedInjectSender =
-      typeof projectSettings.inject_sender === 'boolean'
-        ? projectSettings.inject_sender
-        : injectSender;
-    const resolvedPlatformAllowFrom = (() => {
-      const normalized = normalizePlatformAllowFrom(projectSettings.platform_allow_from);
-      if (Object.keys(normalized).length > 0) {
-        return normalized;
-      }
-      return platformAllowFrom;
-    })();
-    const resolvedPlatformAllowChat = (() => {
-      const normalized = normalizePlatformAllowFrom(projectSettings.platform_allow_chat);
-      if (Object.keys(normalized).length > 0) {
-        return normalized;
-      }
-      return platformAllowChat;
-    })();
-    const resolvedPermissionMode =
-      typeof p.agent_mode === 'string' && p.agent_mode.trim().length > 0
-        ? p.agent_mode.trim()
-        : permissionMode;
-    const [providerRefs, globalProviders] = await Promise.all([
-      cc.getProviderRefs(bindProject).catch(() => []),
-      cc.listProviders().catch(() => []),
-    ]);
-
-    return {
-      teamName: name,
-      config: {
-        name: displayName, // 使用 displayName 作为展示名称
-        color,
-        description,
-        language: resolvedLanguage,
-        agentType: p.agent_type,
-        permissionMode: resolvedPermissionMode,
-        showContextIndicator: resolvedShowContextIndicator,
-        replyFooter: resolvedReplyFooter,
-        injectSender: resolvedInjectSender,
-        managedSources: resolvedManagedSources,
-        disabledCommands: resolvedDisabledCommands,
-        platformAllowFrom: resolvedPlatformAllowFrom,
-        platformAllowChat: resolvedPlatformAllowChat,
-        projectPath: workDir || p.work_dir,
-        members: [{ name: displayName, role: 'lead' }],
-      },
-      tasks: teamTasks,
-      members: [
-        {
-          name: displayName,
-          agentId: p.agent_type,
-          agentType: p.agent_type,
-          role: 'lead',
-          color,
-          currentTaskId: null,
-          taskCount: teamTasks.length,
-        },
-      ],
-      kanbanState: { teamName: name, reviewers: [], tasks: {} },
-      processes: [],
-      isAlive: isOnline,
-      platforms: p.platforms ?? [],
-      harness: p.agent_type,
-      bindProject,
-      collaboration,
-      description,
-      workDir: workDir || p.work_dir,
-      permissionMode: resolvedPermissionMode,
-      providerRefs,
-      globalProviders,
-      settings: {
-        ...projectSettings,
-        language: resolvedLanguage,
-        admin_from: resolvedManagedSources,
-        disabled_commands: resolvedDisabledCommands,
-        show_context_indicator: resolvedShowContextIndicator,
-        reply_footer: resolvedReplyFooter,
-        inject_sender: resolvedInjectSender,
-        platform_allow_from: resolvedPlatformAllowFrom,
-        platform_allow_chat: resolvedPlatformAllowChat,
-      },
-      heartbeat: p.heartbeat,
-      activeSessions: p.active_session_keys ?? [],
-    };
-  } catch {
-    // Project deleted from cc-connect (e.g., after stop) — return offline team data from local metadata
-    return {
-      teamName: name,
-      config: {
-        name: displayName, // 使用 displayName 作为展示名称
-        color,
-        description,
-        language,
-        agentType: harness,
-        permissionMode,
-        showContextIndicator,
-        replyFooter,
-        injectSender,
-        managedSources,
-        disabledCommands,
-        platformAllowFrom,
-        platformAllowChat,
-        projectPath: workDir,
-        members: [{ name: displayName, role: 'lead' }],
-      },
-      tasks: teamTasks,
-      members: [
-        {
-          name: displayName,
-          agentId: harness,
-          agentType: harness,
-          role: 'lead',
-          color,
-          currentTaskId: null,
-          taskCount: teamTasks.length,
-        },
-      ],
-      kanbanState: { teamName: name, reviewers: [], tasks: {} },
-      processes: [],
-      isAlive: false,
-      platforms: [] as HermitBridgeProjectPlatform[],
-      harness,
-      bindProject,
-      collaboration,
-      description,
-      workDir,
-      permissionMode,
-      providerRefs: [],
-      globalProviders: [],
-      heartbeat: null,
-      settings: {
-        language,
-        admin_from: managedSources,
-        disabled_commands: disabledCommands,
-        show_context_indicator: showContextIndicator,
-        reply_footer: replyFooter,
-        inject_sender: injectSender,
-        platform_allow_from: platformAllowFrom,
-        platform_allow_chat: platformAllowChat,
-      },
-      activeSessions: [],
-    };
-  }
-});
-
-// PATCH /api/teams/:name — 更新团队元数据
-app.patch<{
-  Params: { name: string };
-  Body: { displayName?: string; color?: string; description?: string };
-}>('/api/teams/:name', async (request, reply) => {
-  try {
-    const updated = await svc.updateTeam(request.params.name, request.body ?? {});
-    return { ok: true, data: updated };
-  } catch (err) {
-    return reply.code(404).send(reply500(err));
-  }
-});
-
-// DELETE /api/teams/:name
-app.delete<{ Params: { name: string }; Querystring: { deleteFiles?: string } }>(
-  '/api/teams/:name',
-  async (request, reply) => {
-    const teamName = request.params.name;
-    if (isReservedSystemTeamName(teamName)) {
-      return reply.code(403).send({ error: 'Helm Loop 不可删除' });
-    }
-    try {
-      const restartRequired = false;
-      let ccProjectName = teamName;
-      let localTeamName = teamName;
-      try {
-        const manifest = await svc.readTeamManifestByProject(teamName);
-        ccProjectName = manifest.bindProject || teamName;
-        localTeamName = manifest.slug || teamName;
-      } catch {
-        // Team may only exist in cc-connect or local metadata may already be gone.
-      }
-      if (isReservedSystemTeamName(ccProjectName) || isReservedSystemTeamName(localTeamName)) {
-        return reply.code(403).send({ error: 'Helm Loop 不可删除' });
-      }
-      try {
-        await svc.deleteTeam(localTeamName, { deleteFiles: request.query.deleteFiles === 'true' });
-      } catch (err) {
-        request.log.warn(
-          { err, teamName, localTeamName },
-          'delete local team metadata failed or already missing'
-        );
-      }
-
-      return { ok: true, restartRequired };
-    } catch (err) {
-      return reply.code(500).send(reply500(err));
-    }
-  }
+registerTeamDirectoryRoutes(
+  app,
+  {
+    teamProvisioning: serverContext.services.teamProvisioning,
+    bridgeClient: serverContext.services.bridgeClient,
+    resolveProjectName: resolveRouteCcProjectName,
+    getProjectStatsSnapshot,
+    reply500,
+  },
+  { routes: ['core'] }
 );
 
 // ===========================================================================
@@ -1883,20 +1409,19 @@ registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['core'] });
 // 协同开关 — PATCH /api/teams/:name/collaboration
 // ===========================================================================
 
-app.patch<{ Params: { name: string }; Body: { collaboration: boolean } }>(
-  '/api/teams/:name/collaboration',
-  async (request, reply) => {
-    const { collaboration } = request.body ?? {};
-    if (typeof collaboration !== 'boolean') {
-      return reply.code(400).send({ error: 'collaboration must be boolean' });
-    }
-    try {
-      const updated = await svc.updateTeam(request.params.name, { collaboration });
-      return { ok: true, data: { collaboration: updated.collaboration } };
-    } catch (err) {
-      return reply.code(404).send(reply500(err));
-    }
-  }
+registerTeamRuntimeRoutes(
+  app,
+  {
+    teamProvisioning: serverContext.services.teamProvisioning,
+    bridgeClient: serverContext.services.bridgeClient,
+    loopAssetsScanner: serverContext.services.loopAssetsScanner,
+    directCliManager: serverContext.services.directCli,
+    operations: teamRuntimeOperations,
+    resolveProjectName: resolveRouteCcProjectName,
+    restartBridge: restartHermitBridgeAndReconnect,
+    reply500,
+  },
+  { routes: ['collaboration'] }
 );
 
 registerHeartbeatRoutes(app, {
@@ -1914,329 +1439,20 @@ registerHarnessRoutes(app, {
   listProjects: () => serverContext.services.bridgeClient.listProjects(),
 });
 
-app.get<{ Params: { name: string } }>('/api/teams/:name/loop-assets', async (request, reply) => {
-  try {
-    const name = request.params.name;
-    const manifest = await svc.readTeamManifest(name);
-    let bindProject = manifest.bindProject || name;
-    let workDir = manifest.workDir || '';
-    let platforms: { type: string; connected?: boolean }[] = [];
-
-    try {
-      bindProject = await resolveRouteCcProjectName(name);
-      const project = await cc.getProject(bindProject).catch(() => null);
-      if (!workDir && project?.work_dir) workDir = project.work_dir;
-      platforms = Array.isArray(project?.platforms)
-        ? project.platforms.map((platform) => ({
-            type: platform.type,
-            connected: platform.connected,
-          }))
-        : [];
-    } catch {
-      /* Local manifest data is enough for a best-effort scan. */
-    }
-
-    const [tasks, messages] = await Promise.all([
-      svc.readTasks(name).catch(() => []),
-      svc.readMessages(name).catch(() => []),
-    ]);
-
-    return await loopAssetsScanner.scanTeam({
-      teamName: name,
-      displayName: manifest.displayName,
-      bindProject,
-      workDir,
-      teamRoot: manifest.rootPath,
-      memberCount: 1,
-      taskCount: activeTasks(tasks).length,
-      messageCount: messages.length,
-      platforms,
-    });
-  } catch (err) {
-    return reply.code(404).send({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-
-async function ensureLoopSessionProjectReady(teamName: string): Promise<{
-  bindProject: string;
-  projectExists: boolean;
-  isOnline: boolean;
-}> {
-  if (teamName === SYSTEM_MANAGER_TEAM_NAME) {
-    await ensureSystemManager();
-  }
-
-  let manifest: TeamManifest | null = null;
-  try {
-    manifest = await svc.readTeamManifestByProject(teamName);
-  } catch {
-    // Route name may already be a cc-connect project name.
-  }
-
-  const bindProject = manifest?.bindProject?.trim() || teamName;
-  let projectExists = false;
-  let isOnline = false;
-  let workDir = manifest?.workDir?.trim() || '';
-  const harness = manifest?.harness || 'claudecode';
-  const platformType = manifest?.platform || 'bridge';
-  const platformOptions = manifest?.platformOptions ?? {};
-
-  let projectWorkDir = '';
-  try {
-    const project = await cc.getProject(bindProject);
-    projectExists = true;
-    isOnline =
-      Array.isArray(project.platforms) && project.platforms.some((platform) => platform.connected);
-    if (typeof project.work_dir === 'string') projectWorkDir = project.work_dir.trim();
-    // Only inherit the project's work_dir when the manifest has none AND it isn't the
-    // cc-connect default template placeholder — adopting the placeholder would keep the
-    // agent pointed at a non-existent directory and break every session.
-    if (!workDir && !isPlaceholderWorkDir(projectWorkDir)) {
-      workDir = projectWorkDir;
-    }
-  } catch {
-    // Project can be missing after cc-connect reset; create it below when possible.
-  }
-
-  // Reconcile work_dir: cc-connect spawns the agent with chdir(work_dir), so a stale or
-  // placeholder work_dir makes every session fail with "启动 Agent 会话失败" — the session
-  // record is created (so the user sees the success message) but the agent never starts.
-  // This runs whether or not the project is "online": the Helm Loop's bind project is
-  // `my-project`, which is online via bridge yet still carries the template placeholder
-  // work_dir, so the isOnline branch below would skip it. The PATCH updates the live agent
-  // immediately and persists to config.toml (no restart required).
-  if (projectExists && workDir && needsWorkDirReconcile(projectWorkDir, workDir)) {
-    try {
-      await cc.updateProject(bindProject, { work_dir: workDir });
-      projectWorkDir = workDir;
-    } catch (err) {
-      app.log.warn({ err, bindProject, workDir }, 'cc-connect work_dir reconcile failed');
-    }
-  }
-
-  if (!isOnline) {
-    if (!projectExists) {
-      if (!workDir) {
-        throw new Error('团队缺少项目路径，无法启动 Loop runtime');
-      }
-      await cc.createProject(bindProject, harness, workDir, platformType, platformOptions);
-      projectExists = true;
-    }
-
-    await restartHermitBridgeAndReconnect();
-    try {
-      const project = await cc.getProject(bindProject);
-      isOnline =
-        Array.isArray(project.platforms) &&
-        project.platforms.some((platform) => platform.connected);
-    } catch {
-      isOnline = false;
-    }
-  }
-
-  return { bindProject, projectExists, isOnline };
-}
-
-/**
- * Resolve the work_dir for a direct-CLI session WITHOUT cc-connect side effects (no
- * project create / restart). Prefers the team manifest's workDir; falls back to the
- * cc-connect project work_dir only when it is a real path (never the template
- * placeholder). The system-manager workDir is synced into its manifest from the runtime
- * config, so this reads the same source for admin and team loops.
- */
-async function resolveDirectCliWorkDir(teamName: string): Promise<string> {
-  if (teamName === SYSTEM_MANAGER_TEAM_NAME) {
-    await ensureSystemManager().catch(() => undefined);
-  }
-  let manifest: TeamManifest | null = null;
-  try {
-    manifest = await svc.readTeamManifestByProject(teamName);
-  } catch {
-    // Route name may already be a cc-connect project name.
-  }
-  const manifestWorkDir = manifest?.workDir?.trim() || '';
-  if (manifestWorkDir) return manifestWorkDir;
-  try {
-    const bindProject = manifest?.bindProject?.trim() || teamName;
-    const project = await cc.getProject(bindProject);
-    if (typeof project.work_dir === 'string') {
-      const dir = project.work_dir.trim();
-      if (dir && !isPlaceholderWorkDir(dir)) return dir;
-    }
-  } catch {
-    // Project may not exist — that's fine for direct-CLI.
-  }
-  return '';
-}
-
-/**
- * Register a direct-CLI session route and dispatch a user turn to it. The subprocess
- * spawns lazily (resuming a persisted claude session when possible) and this resolves
- * once the turn is on stdin; the streamed reply arrives later via the manager event
- * listener above.
- */
-async function dispatchDirectCliMessage(params: {
-  teamName: string;
-  sessionKey: string;
-  workDir: string;
-  from: string;
-  to: string;
-  text: string;
-  attachments?: AttachmentPayload[];
-  messageId: string;
-}): Promise<void> {
-  directCliRoutes.set(params.sessionKey, {
-    teamName: params.teamName,
-    from: params.from,
-    to: params.to,
-  });
-  await directCliManager.send(params.sessionKey, {
-    text: params.text,
-    attachments: params.attachments,
-    messageId: params.messageId,
-    workDir: params.workDir,
-  });
-}
-
-app.post<{
-  Params: { name: string };
-  Body: { sessionName?: unknown; message?: unknown; reuse?: unknown };
-}>('/api/teams/:name/loop-session', async (request, reply) => {
-  try {
-    const teamName = request.params.name;
-    const message = typeof request.body?.message === 'string' ? request.body.message.trim() : '';
-    const reuse = request.body?.reuse === true;
-    const requestedSessionName =
-      typeof request.body?.sessionName === 'string' ? request.body.sessionName.trim() : '';
-    const sessionName =
-      requestedSessionName || `Loop ${new Date().toISOString().replace(/[:.]/g, '-')}`;
-
-    const workDir = await resolveDirectCliWorkDir(teamName);
-    if (!workDir) {
-      return reply.code(400).send({ error: '团队缺少项目路径，无法启动 Loop runtime' });
-    }
-
-    // One long-lived lead subprocess per team, resumed across sends (--resume keeps the
-    // claude conversation continuous, like an interactive terminal session).
-    const sessionKey = `${teamName}:lead`;
-    // "Reused" means the claude conversation continues (--resume), which is true
-    // whenever a session id is known — in-memory OR persisted in the store. The
-    // in-memory-only `has()` would wrongly report false right after a Hermit
-    // restart even though the subprocess resumes the same conversation.
-    const reused = reuse && directCliManager.getSessionId(sessionKey) != null;
-
-    let messageSent = false;
-    if (message) {
-      const messageId = buildDirectReplyMessageId(sessionKey);
-      await dispatchDirectCliMessage({
-        teamName,
-        sessionKey,
-        workDir,
-        from: teamName,
-        to: 'user',
-        text: message,
-        messageId,
-      });
-      messageSent = true;
-    }
-
-    return {
-      session: {
-        id: directCliManager.getSessionId(sessionKey) ?? sessionKey,
-        name: sessionName,
-        session_key: sessionKey,
-        title: sessionName,
-      },
-      reused,
-      messageSent,
-    };
-  } catch (err) {
-    return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-
-// ===========================================================================
-// 团队启动 — 直接通过 cc-connect 激活 project/runtime
-// POST /api/teams/:name/launch  → 补建 project（如缺失）并 restart cc-connect
-// POST /api/teams/:name/stop    → 无需操作（cc-connect 自管理），返回 ok
-// ===========================================================================
-
-app.post<{ Params: { name: string }; Body: Partial<TeamLaunchRequest> }>(
-  '/api/teams/:name/launch',
-  async (request, reply) => {
-    try {
-      const name = request.params.name;
-      const body = request.body ?? {};
-      let manifest: TeamManifest | null = null;
-      try {
-        manifest = await svc.readTeamManifestByProject(name);
-      } catch {
-        // Team may only exist in cc-connect.
-      }
-      const bindProject = manifest?.bindProject ?? name;
-      const workDir = body.cwd ?? manifest?.workDir ?? '';
-      const harness = manifest?.harness ?? 'claudecode';
-      const platformType = manifest?.platform ?? 'bridge';
-      const platformOptions = manifest?.platformOptions ?? {};
-      let isOnline = false;
-      let projectExists = false;
-      try {
-        const p = await cc.getProject(bindProject);
-        projectExists = true;
-        isOnline = Array.isArray(p.platforms) && p.platforms.some((pl) => pl.connected);
-      } catch {
-        /* project 不存在 */
-      }
-
-      if (!isOnline) {
-        if (!projectExists) {
-          if (!workDir) {
-            return reply.code(400).send({ error: '团队缺少项目路径，无法启动 cc-connect project' });
-          }
-          try {
-            await cc.createProject(bindProject, harness, workDir, platformType, platformOptions);
-            projectExists = true;
-          } catch {
-            /* CC Connect project creation is best-effort */
-          }
-        }
-        // Restart cc-connect to (re-)activate platform connections.
-        // Covers: newly created project, existing project with disconnected platform,
-        // Feishu/Lark IM that lost connection after cc-connect restart, etc.
-        try {
-          await restartHermitBridgeAndReconnect();
-        } catch (err) {
-          request.log.warn(
-            { err, bindProject },
-            'cc-connect restart/bridge reconnect failed during team launch'
-          );
-        }
-      }
-
-      return {
-        runId: `cc-connect:${bindProject}:${Date.now()}`,
-        ok: true,
-        data: { teamName: name, bindProject, projectExists, isOnline },
-      };
-    } catch (err) {
-      return reply.code(404).send(reply500(err));
-    }
-  }
+registerTeamRuntimeRoutes(
+  app,
+  {
+    teamProvisioning: serverContext.services.teamProvisioning,
+    bridgeClient: serverContext.services.bridgeClient,
+    loopAssetsScanner: serverContext.services.loopAssetsScanner,
+    directCliManager: serverContext.services.directCli,
+    operations: teamRuntimeOperations,
+    resolveProjectName: resolveRouteCcProjectName,
+    restartBridge: restartHermitBridgeAndReconnect,
+    reply500,
+  },
+  { routes: ['runtime'] }
 );
-
-app.post<{ Params: { name: string } }>('/api/teams/:name/stop', async (request) => {
-  const name = request.params.name;
-  const bindProject = await resolveRouteCcProjectName(name);
-  // Stop = delete project from cc-connect (best-effort, no restart)
-  try {
-    await cc.deleteProject(bindProject);
-  } catch {
-    /* project may not exist in cc-connect */
-  }
-  // Keep local team metadata intact by not deleting it
-  // The team will show as offline (isAlive: false) on next data fetch
-  return { ok: true };
-});
 
 // ===========================================================================
 // cc-connect setup proxy — QR code & platform binding flows
@@ -2395,8 +1611,8 @@ const teamMessageRouteDependencies = {
   buildFallbackSessionKey,
   sendHarnessMessageViaBridge,
   readEffectiveCcSettings,
-  resolveDirectCliWorkDir,
-  dispatchDirectCliMessage,
+  resolveDirectCliWorkDir: teamRuntimeOperations.resolveDirectCliWorkDir,
+  dispatchDirectCliMessage: teamRuntimeOperations.dispatchDirectCliMessage,
   broadcastSse,
 };
 registerTeamMessageRoutes(app, teamMessageRouteDependencies, { routes: ['read'] });
@@ -2426,472 +1642,29 @@ registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['actions'] });
 
 registerTeamMemberCompatibilityRoutes(app);
 
-// restore / permanent delete
-app.post<{ Params: { name: string } }>('/api/teams/:name/restore', async (request, reply) => {
-  try {
-    await svc.restoreTeam(request.params.name);
-    return { ok: true };
-  } catch (err) {
-    return reply.code(404).send(reply500(err));
-  }
-});
-app.delete<{
-  Params: { name: string };
-  Querystring: { strictExternal?: string };
-}>('/api/teams/:name/permanent', async (request, reply) => {
-  const teamName = request.params.name;
-  const strictExternal = request.query.strictExternal === 'true';
-  if (isReservedSystemTeamName(teamName)) {
-    return reply.code(403).send({ error: 'Helm Loop 不可删除' });
-  }
-  try {
-    const manifest = await svc.readTeamManifestByProject(teamName);
-    const ccProjectName = manifest.bindProject || teamName;
-    if (isReservedSystemTeamName(ccProjectName) || isReservedSystemTeamName(manifest.slug)) {
-      return reply.code(403).send({ error: 'Helm Loop 不可删除' });
-    }
-    let restartRequired = false;
-    try {
-      const result = await cc.deleteProject(ccProjectName);
-      restartRequired = result.restart_required === true;
-    } catch (err) {
-      if (isCcProjectNotFoundError(err)) {
-        request.log.info(
-          { teamName, ccProjectName },
-          'cc-connect project already missing while permanently deleting team'
-        );
-      } else if (strictExternal) {
-        request.log.warn(
-          { err, teamName, ccProjectName },
-          'strict cc-connect project deletion failed'
-        );
-        return reply.code(502).send({
-          error: `删除渠道项目失败，本地团队已保留：${err instanceof Error ? err.message : String(err)}`,
-        });
-      } else {
-        request.log.warn({ err, teamName, ccProjectName }, 'delete cc-connect project failed');
-      }
-    }
-    await svc.deleteTeam(manifest.slug, { deleteFiles: true });
-    return { ok: true, restartRequired };
-  } catch (err) {
-    return reply.code(500).send(reply500(err));
-  }
-});
+registerTeamDirectoryRoutes(
+  app,
+  {
+    teamProvisioning: serverContext.services.teamProvisioning,
+    bridgeClient: serverContext.services.bridgeClient,
+    resolveProjectName: resolveRouteCcProjectName,
+    getProjectStatsSnapshot,
+    reply500,
+  },
+  { routes: ['restore'] }
+);
 
-// config operations
-async function applyTeamConfigUpdate(
-  teamName: string,
-  body: Record<string, unknown>
-): Promise<Record<string, unknown>> {
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  const description = typeof body.description === 'string' ? body.description.trim() : '';
-  const color = typeof body.color === 'string' ? body.color.trim() : '';
-  const agentType = typeof body.agentType === 'string' ? body.agentType.trim() : '';
-  const workDir = typeof body.workDir === 'string' ? body.workDir.trim() : '';
-  const permissionMode = typeof body.permissionMode === 'string' ? body.permissionMode.trim() : '';
-  const language = typeof body.language === 'string' ? body.language.trim() : '';
-  const managedSources = typeof body.managedSources === 'string' ? body.managedSources.trim() : '';
-  const showContextIndicator =
-    typeof body.showContextIndicator === 'boolean' ? body.showContextIndicator : undefined;
-  const replyFooter = typeof body.replyFooter === 'boolean' ? body.replyFooter : undefined;
-  const injectSender = typeof body.injectSender === 'boolean' ? body.injectSender : undefined;
-  const disabledCommands = Array.isArray(body.disabledCommands)
-    ? normalizeStringArray(body.disabledCommands)
-    : undefined;
-  const providerRefs = Array.isArray(body.providerRefs)
-    ? normalizeStringArray(body.providerRefs)
-    : undefined;
-  const resetOnIdleMins =
-    typeof body.resetOnIdleMins === 'number'
-      ? Math.max(0, Math.round(body.resetOnIdleMins))
-      : undefined;
-  const platformOptionsUpdate =
-    body.platformOptions &&
-    typeof body.platformOptions === 'object' &&
-    !Array.isArray(body.platformOptions)
-      ? (body.platformOptions as Record<string, Record<string, string>>)
-      : undefined;
-  const platformAllowFrom = normalizePlatformAllowUpdate(body.platformAllowFrom);
-  const platformAllowChat = normalizePlatformAllowUpdate(body.platformAllowChat);
+const teamConfigRouteDependencies = {
+  teamProvisioning: serverContext.services.teamProvisioning,
+  bridgeClient: serverContext.services.bridgeClient,
+  resolveProjectName: resolveRouteCcProjectName,
+  readConfigTomlRaw: readHermitBridgeConfigTomlRaw,
+  writeConfigTomlRaw: writeHermitBridgeConfigTomlRaw,
+  reply500,
+  agentTypes: CC_AGENT_TYPES,
+};
 
-  // Validate agent type before checking CLI availability.
-  if (agentType && !CC_AGENT_TYPES.includes(agentType as HermitBridgeAgentType)) {
-    throw new Error(`${agentType} 不是支持的运行时类型。`);
-  }
-  if (agentType && agentType !== 'claudecode') {
-    try {
-      const { execFileSync } = await import('node:child_process');
-      execFileSync(process.platform === 'win32' ? 'where' : 'which', [agentType], {
-        stdio: 'pipe',
-        timeout: 5000,
-        windowsHide: true,
-      });
-    } catch {
-      throw new Error(
-        `${agentType} CLI 未安装，无法切换到 ${agentType} 模式。请先安装对应的 CLI 工具。`
-      );
-    }
-  }
-
-  const localPatch: Record<string, unknown> = {};
-  if (name) localPatch.displayName = name;
-  if (description) localPatch.description = description;
-  if (color) localPatch.color = color;
-  if (agentType) localPatch.harness = agentType;
-  if (workDir) {
-    localPatch.workDir = workDir;
-  }
-  if (permissionMode) localPatch.permissionMode = permissionMode;
-  if (language) localPatch.language = language;
-  if (managedSources) localPatch.managedSources = managedSources;
-  if (disabledCommands) localPatch.disabledCommands = disabledCommands;
-  if (platformAllowFrom !== undefined) localPatch.platformAllowFrom = platformAllowFrom;
-  if (platformAllowChat !== undefined) localPatch.platformAllowChat = platformAllowChat;
-  if (showContextIndicator !== undefined) localPatch.showContextIndicator = showContextIndicator;
-  if (replyFooter !== undefined) localPatch.replyFooter = replyFooter;
-  if (injectSender !== undefined) localPatch.injectSender = injectSender;
-
-  if (Object.keys(localPatch).length > 0) {
-    try {
-      await svc.updateTeam(teamName, localPatch);
-    } catch {
-      // If the team only exists in cc-connect, create Hermit metadata now so displayName can persist.
-      const project = await cc.getProject(teamName);
-      await svc.createTeam({
-        displayName: name || teamName,
-        bindProject: teamName,
-        harness: agentType || project.agent_type || 'claudecode',
-        workDir: workDir || project.work_dir || '',
-        color: color || undefined,
-        description: description || undefined,
-        createCcProject: false,
-      });
-      await svc.updateTeam(teamName, localPatch);
-    }
-  }
-
-  const ccPatch: Record<string, unknown> = {};
-  if (agentType) ccPatch.agent_type = agentType;
-  if (workDir) ccPatch.work_dir = workDir;
-  if (permissionMode) ccPatch.mode = permissionMode;
-  if (language) ccPatch.language = language;
-  if (managedSources) ccPatch.admin_from = managedSources;
-  if (disabledCommands) ccPatch.disabled_commands = disabledCommands;
-  if (platformAllowFrom !== undefined) ccPatch.platform_allow_from = platformAllowFrom;
-  if (platformAllowChat !== undefined) ccPatch.platform_allow_chat = platformAllowChat;
-  if (showContextIndicator !== undefined) ccPatch.show_context_indicator = showContextIndicator;
-  if (replyFooter !== undefined) ccPatch.reply_footer = replyFooter;
-  if (injectSender !== undefined) ccPatch.inject_sender = injectSender;
-
-  let ccSyncError: string | null = null;
-  let bindProject: string;
-  try {
-    bindProject = await resolveRouteCcProjectName(teamName);
-  } catch {
-    bindProject = teamName;
-  }
-
-  if (Object.keys(ccPatch).length > 0) {
-    try {
-      const updateResult = await cc.updateProject(
-        bindProject,
-        ccPatch as Parameters<HermitBridgeClient['updateProject']>[1]
-      );
-      if (updateResult.restart_required) {
-        try {
-          await cc.reload();
-        } catch {
-          /* best effort */
-        }
-      }
-    } catch (err) {
-      if (!isCcProjectNotFoundError(err)) {
-        ccSyncError = err instanceof Error ? err.message : String(err);
-      }
-    }
-  }
-  if (providerRefs !== undefined) {
-    try {
-      await cc.setProviderRefs(bindProject, providerRefs);
-    } catch (err) {
-      if (!isCcProjectNotFoundError(err)) {
-        ccSyncError = err instanceof Error ? err.message : String(err);
-      }
-    }
-  }
-
-  if (resetOnIdleMins !== undefined) {
-    try {
-      const { content: tomlRaw } = readHermitBridgeConfigTomlRaw();
-      const projectPattern = new RegExp(
-        `(\\[\\[projects\\]\\]\\s*\\n(?:[^\\[]*?)?name\\s*=\\s*"${bindProject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^\\[]*?)(?=\\[\\[|$)`,
-        's'
-      );
-      const projectMatch = projectPattern.exec(tomlRaw);
-      if (projectMatch) {
-        let section = projectMatch[1];
-        if (/^reset_on_idle_mins\s*=/m.exec(section)) {
-          section = section.replace(/^(reset_on_idle_mins\s*=\s*)\d+/m, `$1${resetOnIdleMins}`);
-        } else {
-          section = section.replace(
-            /(\[\[projects\]\]\s*\n)/,
-            `$1reset_on_idle_mins = ${resetOnIdleMins}\n`
-          );
-        }
-        const updatedToml = tomlRaw.replace(projectPattern, section);
-        writeHermitBridgeConfigTomlRaw(updatedToml);
-        try {
-          await cc.reload();
-        } catch {
-          /* best effort */
-        }
-      }
-    } catch (err) {
-      if (!ccSyncError) {
-        ccSyncError = `reset_on_idle_mins: ${err instanceof Error ? err.message : String(err)}`;
-      }
-    }
-  }
-
-  if (platformOptionsUpdate && Object.keys(platformOptionsUpdate).length > 0) {
-    try {
-      const { content: tomlRaw } = readHermitBridgeConfigTomlRaw();
-      let updatedToml = tomlRaw;
-      for (const [pType, opts] of Object.entries(platformOptionsUpdate)) {
-        for (const [key, value] of Object.entries(opts)) {
-          const platformSection = new RegExp(
-            `(\\[\\[projects\\.platforms\\]\\]\\s*\\ntype\\s*=\\s*"${pType}"[^\\[]*?\\[projects\\.platforms\\.options\\]\\s*\\n)([^\\[]*)`,
-            's'
-          ).exec(updatedToml);
-          if (platformSection) {
-            const optContent = platformSection[2];
-            const tomlValue = value === 'true' || value === 'false' ? value : `"${value}"`;
-            if (new RegExp(`^${key}\\s*=`, 'm').exec(optContent)) {
-              updatedToml = updatedToml.replace(
-                new RegExp(
-                  `(\\[\\[projects\\.platforms\\]\\]\\s*\\ntype\\s*=\\s*"${pType}"[^\\[]*?\\[projects\\.platforms\\.options\\]\\s*\\n[^\\[]*?)^(${key}\\s*=\\s*).*$`,
-                  'ms'
-                ),
-                `$1$2${tomlValue}`
-              );
-            } else {
-              updatedToml = updatedToml.replace(
-                new RegExp(
-                  `(\\[\\[projects\\.platforms\\]\\]\\s*\\ntype\\s*=\\s*"${pType}"[^\\[]*?\\[projects\\.platforms\\.options\\]\\s*\\n)`,
-                  's'
-                ),
-                `$1${key} = ${tomlValue}\n`
-              );
-            }
-          }
-        }
-      }
-      if (updatedToml !== tomlRaw) {
-        writeHermitBridgeConfigTomlRaw(updatedToml);
-        try {
-          await cc.reload();
-        } catch {
-          /* best effort */
-        }
-      }
-    } catch (err) {
-      if (!ccSyncError) {
-        ccSyncError = `platformOptions: ${err instanceof Error ? err.message : String(err)}`;
-      }
-    }
-  }
-
-  return {
-    name: name || teamName,
-    displayName: name || teamName,
-    description: description || undefined,
-    color: color || undefined,
-    projectPath: workDir || undefined,
-    agentType: agentType || undefined,
-    permissionMode: permissionMode || undefined,
-    language: language || undefined,
-    managedSources: managedSources || undefined,
-    disabledCommands: disabledCommands ?? [],
-    showContextIndicator: showContextIndicator ?? false,
-    replyFooter: replyFooter ?? false,
-    injectSender: injectSender ?? false,
-    platformAllowFrom: platformAllowFrom ?? {},
-    platformAllowChat: platformAllowChat ?? {},
-    providerRefs: providerRefs ?? [],
-    ccSyncError,
-  };
-}
-
-app.get<{ Params: { name: string } }>('/api/teams/:name/config', async (request, reply) => {
-  try {
-    const name = request.params.name;
-    const bindProject = await resolveRouteCcProjectName(name);
-    const p = await cc.getProject(bindProject);
-    // local metadata overlay
-    let color = 'blue';
-    let description = '';
-    let language = '';
-    let managedSources = '*';
-    let disabledCommands: string[] = [];
-    let showContextIndicator = false;
-    let replyFooter = false;
-    let injectSender = false;
-    let permissionMode = 'default';
-    let platformAllowFrom: Record<string, string> = {};
-    let platformAllowChat: Record<string, string> = {};
-    try {
-      const meta = await svc.readTeamManifest(name);
-      color = meta.color ?? color;
-      description = meta.description ?? description;
-      language = meta.language ?? language;
-      managedSources = meta.managedSources ?? managedSources;
-      disabledCommands = normalizeStringArray(meta.disabledCommands);
-      showContextIndicator = meta.showContextIndicator ?? showContextIndicator;
-      replyFooter = meta.replyFooter ?? replyFooter;
-      injectSender = meta.injectSender ?? injectSender;
-      permissionMode = meta.permissionMode ?? permissionMode;
-      platformAllowFrom = normalizePlatformAllowFrom(meta.platformAllowFrom);
-      platformAllowChat = normalizePlatformAllowFrom(meta.platformAllowChat);
-    } catch {
-      /* ok */
-    }
-    const projectSettings = (p.settings ?? {}) as Record<string, unknown>;
-    const resolvedLanguage =
-      typeof projectSettings.language === 'string' && projectSettings.language.trim().length > 0
-        ? projectSettings.language.trim()
-        : language;
-    const resolvedManagedSources =
-      typeof projectSettings.admin_from === 'string' && projectSettings.admin_from.trim().length > 0
-        ? projectSettings.admin_from.trim()
-        : managedSources;
-    const resolvedDisabledCommands =
-      Array.isArray(projectSettings.disabled_commands) &&
-      normalizeStringArray(projectSettings.disabled_commands).length > 0
-        ? normalizeStringArray(projectSettings.disabled_commands)
-        : disabledCommands;
-    const resolvedShowContextIndicator =
-      typeof projectSettings.show_context_indicator === 'boolean'
-        ? projectSettings.show_context_indicator
-        : showContextIndicator;
-    const resolvedReplyFooter =
-      typeof projectSettings.reply_footer === 'boolean'
-        ? projectSettings.reply_footer
-        : replyFooter;
-    const resolvedInjectSender =
-      typeof projectSettings.inject_sender === 'boolean'
-        ? projectSettings.inject_sender
-        : injectSender;
-    const resolvedPlatformAllowFrom = (() => {
-      const normalized = normalizePlatformAllowFrom(projectSettings.platform_allow_from);
-      if (Object.keys(normalized).length > 0) {
-        return normalized;
-      }
-      return platformAllowFrom;
-    })();
-    const resolvedPlatformAllowChat = (() => {
-      const normalized = normalizePlatformAllowFrom(projectSettings.platform_allow_chat);
-      if (Object.keys(normalized).length > 0) {
-        return normalized;
-      }
-      return platformAllowChat;
-    })();
-    const resolvedPermissionMode =
-      typeof p.agent_mode === 'string' && p.agent_mode.trim().length > 0
-        ? p.agent_mode.trim()
-        : permissionMode;
-    const [providerRefs, globalProviders] = await Promise.all([
-      cc.getProviderRefs(bindProject).catch(() => []),
-      cc.listProviders().catch(() => []),
-    ]);
-    let resetOnIdleMins: number | undefined;
-    const platformOptions: Record<string, Record<string, string>> = {};
-    try {
-      const { content: tomlRaw } = readHermitBridgeConfigTomlRaw();
-      const projectPattern = new RegExp(
-        `\\[\\[projects\\]\\]\\s*\\n(?:[^\\[]*?)?name\\s*=\\s*"${bindProject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^\\[]*?(?=\\[\\[projects\\]\\]|$)`,
-        's'
-      );
-      const projectSection = projectPattern.exec(tomlRaw);
-      if (projectSection) {
-        const section = projectSection[0];
-        const idleMatch = /^reset_on_idle_mins\s*=\s*(\d+)/m.exec(section);
-        if (idleMatch) resetOnIdleMins = Number(idleMatch[1]);
-
-        const platformBlocks = section.matchAll(
-          /\[\[projects\.platforms\]\]\s*\n([^\[]*?)(?=\[\[|$)/gs
-        );
-        for (const block of platformBlocks) {
-          const content = block[1];
-          const typeMatch = /^type\s*=\s*"([^"]*)"/m.exec(content);
-          if (!typeMatch) continue;
-          const pType = typeMatch[1];
-          const opts: Record<string, string> = {};
-          const optSection = /\[projects\.platforms\.options\]\s*\n([^\[]*?)(?=\[|$)/s.exec(
-            content
-          );
-          if (optSection) {
-            const optLines = optSection[1];
-            for (const line of optLines.split('\n')) {
-              const kv = /^\s*(\w+)\s*=\s*(?:"([^"]*)"|(\w+))/.exec(line);
-              if (kv) opts[kv[1]] = kv[2] ?? kv[3];
-            }
-          }
-          if (Object.keys(opts).length > 0) {
-            platformOptions[pType] = { ...platformOptions[pType], ...opts };
-          }
-        }
-      }
-    } catch {
-      /* TOML read may fail if file missing */
-    }
-    return {
-      name,
-      color,
-      projectPath: p.work_dir || '',
-      description,
-      agentType: p.agent_type,
-      workDir: p.work_dir ?? '',
-      language: resolvedLanguage,
-      managedSources: resolvedManagedSources,
-      disabledCommands: resolvedDisabledCommands,
-      showContextIndicator: resolvedShowContextIndicator,
-      replyFooter: resolvedReplyFooter,
-      injectSender: resolvedInjectSender,
-      permissionMode: resolvedPermissionMode,
-      platformAllowFrom: resolvedPlatformAllowFrom,
-      platformAllowChat: resolvedPlatformAllowChat,
-      providerRefs,
-      globalProviders,
-      resetOnIdleMins,
-      platformOptions,
-      settings: {
-        ...projectSettings,
-        language: resolvedLanguage,
-        admin_from: resolvedManagedSources,
-        disabled_commands: resolvedDisabledCommands,
-        show_context_indicator: resolvedShowContextIndicator,
-        reply_footer: resolvedReplyFooter,
-        inject_sender: resolvedInjectSender,
-        platform_allow_from: resolvedPlatformAllowFrom,
-        platform_allow_chat: resolvedPlatformAllowChat,
-      },
-    };
-  } catch {
-    return reply.code(404).send({ error: 'not found' });
-  }
-});
-app.patch<{ Params: { name: string } }>('/api/teams/:name/config', async (request, reply) => {
-  try {
-    const data = await applyTeamConfigUpdate(
-      request.params.name,
-      (request.body as Record<string, unknown>) ?? {}
-    );
-    return data;
-  } catch (err) {
-    return reply.code(400).send(reply500(err));
-  }
-});
+registerTeamConfigRoutes(app, teamConfigRouteDependencies, { routes: ['core'] });
 
 registerTeamProvisioningCompatibilityRoutes(app);
 
@@ -2903,18 +1676,7 @@ registerTeamMessageRoutes(app, teamMessageRouteDependencies, { routes: ['send'] 
 
 registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['review-aliases'] });
 
-// updateConfig: 前端调用 PUT /config（服务端原有 PATCH，补充 PUT 别名）
-app.put<{ Params: { name: string } }>('/api/teams/:name/config', async (request, reply) => {
-  try {
-    const data = await applyTeamConfigUpdate(
-      request.params.name,
-      (request.body as Record<string, unknown>) ?? {}
-    );
-    return data;
-  } catch (err) {
-    return reply.code(400).send(reply500(err));
-  }
-});
+registerTeamConfigRoutes(app, teamConfigRouteDependencies, { routes: ['put'] });
 
 registerTeamActionCompatibilityRoutes(app, { routes: ['member-skip'] });
 registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['late-aliases'] });
@@ -2939,7 +1701,7 @@ registerToolApprovalRoutes(app, {
 registerWorkerRoutes(app, {
   discoverTeams: () => svc.discoverTeams(),
   resolveTeamSlugForMention,
-  ensureLoopSessionProjectReady,
+  ensureLoopSessionProjectReady: teamRuntimeOperations.ensureLoopSessionProjectReady,
   listSessions: (projectName) => cc.listSessions(projectName),
   createSession: (projectName, name, sessionKey) => cc.createSession(projectName, name, sessionKey),
   sendHarnessMessageViaBridge,

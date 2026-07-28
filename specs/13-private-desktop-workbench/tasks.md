@@ -50,18 +50,18 @@
 ### Task 0.5: Extract Workbench Route Domains
 
 - [x] 抽取 setup/platform routes
-- [ ] 抽取 workers routes
+- [x] 抽取 workers routes
 - [x] 抽取 editor routes
-- [ ] 抽取 schedules routes
+- [x] 抽取 schedules routes
 - [x] 抽取 projects/dashboard/graph/context routes
 - [x] 抽取 extensions routes
 - [x] 每抽一个模块运行类型检查和聚焦测试
 
 ### Task 0.6: Extract High-Risk Route Domains
 
-- [ ] 抽取 teams/tasks/messages routes
-- [ ] 抽取 review/member/config routes
-- [ ] 抽取 bridge/direct-cli routes和事件监听器
+- [x] 抽取 teams/tasks/messages routes
+- [x] 抽取 review/member/config routes
+- [x] 抽取 bridge/direct-cli routes和事件监听器
 - [x] 抽取 telemetry routes，暂时保持行为以便后续明确删除
 - [ ] 验证消息 ID、`isMeta`、TaskRef 和软删除语义不变
 
