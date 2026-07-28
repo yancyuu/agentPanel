@@ -26,10 +26,17 @@ export const USAGE_UPLOAD_PROVIDER_OPTIONS = [
     label: 'Codex',
     description: `扫描本机 Codex 会话 usage，并按 ${BRAND.authProviderName} 消息上报协议分批增量上传`,
   },
+  {
+    id: 'pi',
+    label: 'Pi',
+    description: `扫描本机 Pi 会话 usage，并按 ${BRAND.authProviderName} 消息上报协议分批增量上传`,
+  },
 ];
 
 export function normalizeUploadProviders(value) {
-  const rawItems = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+  let rawItems = [];
+  if (Array.isArray(value)) rawItems = value;
+  else if (typeof value === 'string') rawItems = [value];
   const items = rawItems.flatMap((item) => String(item).split(/[,+，、\s]+/u));
   const normalized = items
     .map((item) => String(item).trim())
@@ -56,7 +63,9 @@ function parseJsonText(text) {
 }
 
 function responseBodyPreview(text) {
-  return String(text || '').replace(/(authorization\s*[:=]\s*bearer\s+)[^\s"']+/gi, '$1[hidden]').slice(0, 300);
+  return String(text || '')
+    .replace(/(authorization\s*[:=]\s*bearer\s+)[^\s"']+/gi, '$1[hidden]')
+    .slice(0, 300);
 }
 
 /**
@@ -71,21 +80,24 @@ function explainFetchError(err) {
   const msg = err instanceof Error ? err.message : String(err);
   const cause = err && typeof err === 'object' ? err.cause : undefined;
   const code = cause?.code || cause?.errno;
-  const detail = code
-    || (cause?.message ? String(cause.message).split('\n')[0] : '')
-    || '';
+  const detail = code || (cause?.message ? String(cause.message).split('\n')[0] : '') || '';
   return detail ? `${msg} (${detail})` : msg;
 }
 
 /**
  * Read-only preview of /report/usage/status channels. `providers` lets the caller pass
  * the configured upload providers (hermit.mjs currentFeatureStates). Defaults to
- * both. Parallelized across providers so one slow channel doesn't block the others.
+ * all supported local coding sources. Parallelized across providers so one slow
+ * channel doesn't block the others.
  */
-export async function fetchRemoteUsageStatus(providers = ['claudecode', 'codex']) {
+export async function fetchRemoteUsageStatus(providers = ['claudecode', 'codex', 'pi']) {
   const auth = await refreshOpenHermitAuthStatus();
   if (!auth.authorized) {
-    return { authorized: false, channels: [], errors: [{ error: auth.expired ? '登录已失效，请重新登录' : '等待登录' }] };
+    return {
+      authorized: false,
+      channels: [],
+      errors: [{ error: auth.expired ? '登录已失效，请重新登录' : '等待登录' }],
+    };
   }
   const baseUrl = resolveConversationUploadBaseUrl();
   const token = readOpenHermitAuthStore().store?.token?.accessToken;
@@ -115,8 +127,10 @@ export async function fetchRemoteUsageStatus(providers = ['claudecode', 'codex']
         }
         const body = parseJsonText(text);
         // 新协议响应通道维度为 reporter + client + scene（无 platform/mode/source）。
-        const channel = (Array.isArray(body?.channels) ? body.channels : [])
-          .find((c) => c && c.client === platform && c.scene === scene) || null;
+        const channel =
+          (Array.isArray(body?.channels) ? body.channels : []).find(
+            (c) => c && c.client === platform && c.scene === scene
+          ) || null;
         const cursor = channel?.currentCursor || null;
         const attemptedCursor = channel?.lastAttemptedCursor || null;
         return {
@@ -129,7 +143,8 @@ export async function fetchRemoteUsageStatus(providers = ['claudecode', 'codex']
           cursorFileCount: typeof cursor?.fileCount === 'number' ? cursor.fileCount : null,
           cursorGeneratedAt: cursor?.generatedAt || null,
           attemptedCursorHash: attemptedCursor?.targetCursorHash || null,
-          attemptedCursorMessageCount: typeof attemptedCursor?.messageCount === 'number' ? attemptedCursor.messageCount : null,
+          attemptedCursorMessageCount:
+            typeof attemptedCursor?.messageCount === 'number' ? attemptedCursor.messageCount : null,
           hasCursor: Boolean(cursor),
           inFlight: Number(channel?.inFlight?.count ?? 0),
           lastUploadId: channel?.lastUploadId || null,
@@ -158,7 +173,8 @@ export async function fetchRemoteUsageStatus(providers = ['claudecode', 'codex']
  */
 export async function fetchAuthoritativeUsage() {
   const auth = await refreshOpenHermitAuthStatus();
-  if (!auth.authorized) return { ok: false, error: auth.expired ? '登录已失效，请重新登录' : '等待登录' };
+  if (!auth.authorized)
+    return { ok: false, error: auth.expired ? '登录已失效，请重新登录' : '等待登录' };
   const baseUrl = resolveConversationUploadBaseUrl();
   const token = readOpenHermitAuthStore().store?.token?.accessToken;
   if (!token) return { ok: false, error: '等待登录' };

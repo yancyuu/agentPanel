@@ -17,7 +17,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 // interop shape as daemon.test.mjs (CJS default export required).
 const mocks = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('node:child_process', () => {
-  const mocked = { spawn: mocks.spawn, execSync: () => '', exec: () => {}, fork: () => {} };
+  const mocked = {
+    spawn: mocks.spawn,
+    execSync: () => '',
+    exec: () => undefined,
+    fork: () => undefined,
+  };
   return { ...mocked, default: mocked };
 });
 
@@ -42,7 +47,7 @@ describe('enableConversationUploadWithProvider — toggle ON starts the worker',
   });
 
   it('writes a worker pidfile + persists enabled settings (usageRunning must become true)', async () => {
-    const result = await enableConversationUploadWithProvider(['claudecode', 'codex']);
+    const result = await enableConversationUploadWithProvider();
     expect(result.started).toBe(true);
     expect(result.worker?.running).toBe(true);
     // The background worker actually launched → its pidfile exists in the
@@ -52,6 +57,7 @@ describe('enableConversationUploadWithProvider — toggle ON starts the worker',
     const settings = JSON.parse(readFileSync(path.join(tmpHome, 'settings.json'), 'utf-8'));
     expect(settings.taskBus.telemetry.enabled).toBe(true);
     expect(settings.taskBus.telemetry.conversationUploadEnabled).toBe(true);
+    expect(settings.taskBus.telemetry.uploadProviders).toEqual(['claudecode', 'codex', 'pi']);
   });
 });
 

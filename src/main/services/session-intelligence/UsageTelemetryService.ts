@@ -1,6 +1,6 @@
 /**
- * UsageTelemetryService - scans local Claude Code JSONL sessions as the single
- * usage telemetry source. The service intentionally stays local-only: it does
+ * UsageTelemetryService - scans local Claude Code, Codex, and Pi JSONL sessions
+ * as usage telemetry sources. The service intentionally stays local-only: it does
  * not upload usage, conversation messages, or capability snapshots.
  */
 
@@ -91,7 +91,11 @@ export function localUserRowsFromSessions(sessions: SessionEntry[]): UserUsageTe
         type: 'person' as const,
         displayName:
           projectNameForPath(session.projectPath) ||
-          (session.provider === 'codex' ? 'Local Codex' : 'Local Claude Code'),
+          (session.provider === 'codex'
+            ? 'Local Codex'
+            : session.provider === 'pi'
+              ? 'Local Pi'
+              : 'Local Claude Code'),
         confidence: `${session.provider}-jsonl`,
       },
       provider: session.provider,
@@ -122,6 +126,7 @@ function statusFromCollection(collection: UsageCollectionResult): UsageTelemetry
   const recentByProvider = {
     claudecode: emptyProviderMetrics(),
     codex: emptyProviderMetrics(),
+    pi: emptyProviderMetrics(),
   };
   for (const event of aggregate.events7d) {
     recentMessages += 1;
@@ -195,10 +200,10 @@ async function doScan(cfg?: TelemetryConfig): Promise<UsageTelemetryStatus | nul
     const canonicalUpload = telemetryCfg?.conversationUploadEnabled;
     const legacyUpload = telemetryCfg?.conversations?.uploadEnabled;
     const conversationUploadOn =
-      canonicalUpload === true || legacyUpload === true
-        ? true
-        : canonicalUpload === false || legacyUpload === false
-          ? false
+      typeof canonicalUpload === 'boolean'
+        ? canonicalUpload
+        : typeof legacyUpload === 'boolean'
+          ? legacyUpload
           : true;
     if (cfg && conversationUploadOn) {
       try {

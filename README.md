@@ -4,11 +4,11 @@
 
 <h1 align="center">AgentCli</h1>
 
-<p align="center"><strong>当前版本：v1.9.13</strong></p>
+<p align="center"><strong>当前版本：v1.10.0</strong></p>
 
 <p align="center">
   <strong>本地优先的 AI 数字员工工作台</strong><br/>
-  CLI 给 agent，Web 给人。自动采集 Claude Code / Codex / Cursor 等运行时用量，统一管理数字员工团队。<br/>
+  CLI 给 agent，Web 给人。自动采集 Claude Code / Codex / Pi 等运行时用量，统一管理数字员工团队。<br/>
   <sub>Local-first AI workforce workbench. CLI for agents, Web for humans.</sub>
 </p>
 
@@ -102,7 +102,7 @@ agentcli status                               # daemon / worker 运行中
 agentcli usage today                          # 今日本地用量摘要（不上传）
 ```
 
-> ⚠️ 自动上报需要**三要素同时满足**：已登录 + 消息上报已开启 + 后台采集运行中。「消息上报」开关只在交互菜单或 Web 里（`agentcli` →「用量同步」→「消息上报」），没有单独子命令——这是刻意设计。
+> ⚠️ 自动上报需要**三要素同时满足**：已登录 + 消息上报已开启 + 后台采集运行中。「消息上报」开关只在交互菜单或 Web 里（`agentcli` →「用量同步」→「消息上报」），没有单独子命令——这是刻意设计。开启后会按所选来源上传会话消息和 token 用量；关闭开关或执行 `agentcli usage stop` 会停止后台发送。
 
 ---
 
@@ -138,7 +138,7 @@ agentcli usage today                          # 今日本地用量摘要（不�
 | :------------------------------------------------- | :-------------------------------------------------------- |
 | `agentcli usage status`                            | 后台 worker 是否运行、消息上报是否开启、上报运行时        |
 | `agentcli usage today`                             | 查看今日本地 usage 摘要（不上传）                         |
-| `agentcli usage start`                             | 开启轻量后台采集，默认配置开机自启；仅扫描本机 JSONL      |
+| `agentcli usage start`                             | 开启轻量后台采集，默认配置开机自启；`--upload --provider pi` 可只上报 Pi |
 | `agentcli usage stop`                              | 停止后台采集（默认关闭开机自启，`--keep-autostart` 保留） |
 | `agentcli usage report`                            | 立即扫描并按服务端游标增量上报；`--full` 全量重扫补传历史 |
 | `agentcli usage autostart status\|enable\|disable` | 管理开机自启（macOS launchd）                             |
@@ -175,6 +175,7 @@ AgentCli 无侵入扫描本地会话日志：
 | :---------- | :------------------------------ | :--------------------------------------- |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | token 用量、会话数、消息量；支持 IM 归因 |
 | Codex       | `~/.codex/sessions/**/*.jsonl`  | token 用量（output_tokens 为主）         |
+| Pi          | `~/.pi/agent/sessions/**/*.jsonl` | token 用量、会话数、消息量；clone/fork 去重 |
 
 ### 把网关 Key 写进 Claude / Codex（token 池认领）
 

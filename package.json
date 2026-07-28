@@ -1,7 +1,7 @@
 {
   "name": "@yancyyu/agentcli",
   "type": "module",
-  "version": "1.9.80",
+  "version": "1.10.0",
   "description": "AgentCli: AI 工程协作平台，本地优先的用量采集与团队协作工具。",
   "license": "AGPL-3.0",
   "publishConfig": {

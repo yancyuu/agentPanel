@@ -31,8 +31,18 @@ import {
   formatUploadProviders,
   uploadProviderLabel,
 } from './usageRemote.mjs';
-import { cursorPendingRows, formatNumber, localServerRows, serverUsageUnauthorized } from './usageRows.mjs';
-import { absoluteProgressLabel, aggregateUploadProgress, foldFinishedBatches, uploadProgressLabel } from './usageProgress.mjs';
+import {
+  cursorPendingRows,
+  formatNumber,
+  localServerRows,
+  serverUsageUnauthorized,
+} from './usageRows.mjs';
+import {
+  absoluteProgressLabel,
+  aggregateUploadProgress,
+  foldFinishedBatches,
+  uploadProgressLabel,
+} from './usageProgress.mjs';
 import {
   collectDaemonStatus,
   readPidFile,
@@ -43,14 +53,8 @@ import {
   startDaemon,
   waitForOpenHermitServerReady,
 } from './daemon.mjs';
-import {
-  currentFeatureStates,
-} from './featureState.mjs';
-import {
-  readHermitSettings,
-  writeHermitSettings,
-  safeReadJson,
-} from './settings.mjs';
+import { currentFeatureStates } from './featureState.mjs';
+import { readHermitSettings, writeHermitSettings, safeReadJson } from './settings.mjs';
 import {
   resolveConversationUploadBaseUrl,
   refreshOpenHermitAuthStatus,
@@ -58,13 +62,18 @@ import {
 } from './auth.mjs';
 import { BRAND, brandLogPrefix } from '../branding.mjs';
 import { rethrowIfExitSentinel } from './exitGuard.mjs';
+import { checkExistingOpenHermitServer } from './runtime.mjs';
+import { findAnyOptionValues } from './env.mjs';
 import {
-  checkExistingOpenHermitServer,
-} from './runtime.mjs';
-import {
-  findAnyOptionValues,
-} from './env.mjs';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, openSync, closeSync, statSync } from 'node:fs';
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  unlinkSync,
+  openSync,
+  closeSync,
+  statSync,
+} from 'node:fs';
 import { spawn, execSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -120,7 +129,9 @@ export function usageDaemonPayload(server) {
 // --- Upload status helpers ---------------------------------------------------
 
 function authScopes(auth = readOpenHermitAuthStatus()) {
-  const scopes = Array.isArray(auth.scopes) ? auth.scopes : normalizeScopes({ scope: auth.scope }) || [];
+  const scopes = Array.isArray(auth.scopes)
+    ? auth.scopes
+    : normalizeScopes({ scope: auth.scope }) || [];
   return new Set(scopes);
 }
 
@@ -142,11 +153,16 @@ function normalizeScopes({ scope }) {
 // server statuses stay visible.
 function humanizeChannelStatus(status) {
   switch (status) {
-    case 'succeeded': return '已上报';
-    case 'unknown': return '上报中';
-    case 'failed': return '上报失败';
-    case 'never_reported': return '未上报';
-    default: return status || '';
+    case 'succeeded':
+      return '已上报';
+    case 'unknown':
+      return '上报中';
+    case 'failed':
+      return '上报失败';
+    case 'never_reported':
+      return '未上报';
+    default:
+      return status || '';
   }
 }
 
@@ -157,15 +173,18 @@ export function cursorStatusText(channel = {}) {
     // the message count of the last uploaded cursor batch (payload.messages.length),
     // which is far smaller than the cumulative server total and would otherwise
     // read like "total uploaded = 25" and contradict the 服务端（全量） row.
-    if (Number.isFinite(channel.cursorMessageCount)) parts.push(`本批 ${formatNumber(channel.cursorMessageCount)} msg`);
-    if (channel.cursorGeneratedAt) parts.push(new Date(channel.cursorGeneratedAt).toLocaleString('zh-CN'));
+    if (Number.isFinite(channel.cursorMessageCount))
+      parts.push(`本批 ${formatNumber(channel.cursorMessageCount)} msg`);
+    if (channel.cursorGeneratedAt)
+      parts.push(new Date(channel.cursorGeneratedAt).toLocaleString('zh-CN'));
     return parts.join(' · ');
   }
   // No committed server cursor yet. 'unknown' = the server hasn't confirmed one
   // (first upload / mid-batch) — normal, not broken. Other non-never_reported
   // statuses keep the dedup reminder.
   if (channel.status === 'unknown') return '等待服务端确认游标';
-  if (channel.status && channel.status !== 'never_reported') return '无服务端游标 · 上报最近 7 天（服务端按 eventId 去重）';
+  if (channel.status && channel.status !== 'never_reported')
+    return '无服务端游标 · 上报最近 7 天（服务端按 eventId 去重）';
   if (channel.attemptedCursorHash) {
     return `attempted ${String(channel.attemptedCursorHash).slice(0, 12)}${Number.isFinite(channel.attemptedCursorMessageCount) ? ` · 本批 ${formatNumber(channel.attemptedCursorMessageCount)} msg` : ''}`;
   }
@@ -196,7 +215,11 @@ function conversationUploadRows(_upload = {}, auth = readOpenHermitAuthStatus(),
     } else {
       rows.push([
         '服务端状态',
-        remoteErrors.length ? '读取 /report/usage/status 失败' : auth.authorized ? '等待读取 /report/usage/status' : '等待登录后读取 /report/usage/status',
+        remoteErrors.length
+          ? '读取 /report/usage/status 失败'
+          : auth.authorized
+            ? '等待读取 /report/usage/status'
+            : '等待登录后读取 /report/usage/status',
         remoteErrors.length ? 'error' : 'info',
       ]);
     }
@@ -219,7 +242,10 @@ function conversationUploadRows(_upload = {}, auth = readOpenHermitAuthStatus(),
   return rows;
 }
 
-function appendUsageServerRows(rows, { telemetry, authoritativeUsage, remoteUsage, upload, auth, uploadEnabled }) {
+function appendUsageServerRows(
+  rows,
+  { telemetry, authoritativeUsage, remoteUsage, upload, auth, uploadEnabled }
+) {
   const usageUnauthorized = serverUsageUnauthorized(authoritativeUsage, remoteUsage);
   const loginExpired = usageUnauthorized && (!auth?.authorized || auth?.expired);
   rows.push(...localServerRows(telemetry, usageUnauthorized ? undefined : authoritativeUsage));
@@ -239,21 +265,24 @@ function appendUsageServerRows(rows, { telemetry, authoritativeUsage, remoteUsag
 
 export function isUsageAuthUnavailable(result = {}) {
   if (serverUsageUnauthorized(result.authoritativeUsage, result.remoteUsage)) return true;
-  const errors = [
-    result.error,
-    result.telemetry?.conversationUpload?.lastError,
-  ]
+  const errors = [result.error, result.telemetry?.conversationUpload?.lastError]
     .filter((item) => item !== undefined && item !== null)
     .map(String);
-  return errors.some((text) => /HTTP\s*(401|403)|授权不可用|登录已过期|登录已失效|insufficient_scope|upload:read/u.test(text));
+  return errors.some((text) =>
+    /HTTP\s*(401|403)|授权不可用|登录已过期|登录已失效|insufficient_scope|upload:read/u.test(text)
+  );
 }
 
 export async function loginAfterUsageAuthExpired() {
   const { runAuthLogin } = await import('./auth.mjs');
-  printCliRows('登录已过期', [
-    ['原因', '消息上报需要重新登录', 'warn'],
-    ['下一步', '正在打开登录流程', 'info'],
-  ], '登录完成后会回到用量上报菜单。');
+  printCliRows(
+    '登录已过期',
+    [
+      ['原因', '消息上报需要重新登录', 'warn'],
+      ['下一步', '正在打开登录流程', 'info'],
+    ],
+    '登录完成后会回到用量上报菜单。'
+  );
   await runAuthLogin({ exitOnDone: false, interactiveMenu: true });
 }
 
@@ -261,9 +290,17 @@ export async function loginAfterUsageAuthExpired() {
 
 function readConversationUploadLogEvents(limit = 200) {
   if (!existsSync(telemetryWorkerLogPath)) return [];
-  const lines = readFileSync(telemetryWorkerLogPath, 'utf-8').trim().split('\n').filter(Boolean).slice(-limit);
+  const lines = readFileSync(telemetryWorkerLogPath, 'utf-8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .slice(-limit);
   return lines.flatMap((line) => {
-    try { return [JSON.parse(line)]; } catch { return []; }
+    try {
+      return [JSON.parse(line)];
+    } catch {
+      return [];
+    }
   });
 }
 
@@ -289,7 +326,10 @@ function readLogChunkSince(filePath, offset) {
 }
 
 function printStartupLogChunk(chunk) {
-  const lines = String(chunk || '').split(/\r?\n/).filter(Boolean).slice(-12);
+  const lines = String(chunk || '')
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .slice(-12);
   for (const line of lines) {
     process.stdout.write(`${ui.dim('│')} ${fitProgressLine(line)}\n`);
   }
@@ -306,27 +346,47 @@ export async function waitForOpenHermitServerReadyWithLogs(pid, timeoutMs = 30_0
     if (log.chunk) printStartupLogChunk(log.chunk);
 
     if (pid && !isPidRunning(pid)) {
-      return { ready: false, reason: '服务进程已退出，请查看日志', url: `http://127.0.0.1:${port}` };
+      return {
+        ready: false,
+        reason: '服务进程已退出，请查看日志',
+        url: `http://127.0.0.1:${port}`,
+      };
     }
     const server = await checkExistingOpenHermitServer();
     if (server.running) return { ready: true, ...server };
     process.stdout.write(`${ui.dim('… 等待 Web 服务就绪')}\n`);
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  return { ready: false, reason: '服务还没准备好，请稍后刷新或查看日志', url: `http://127.0.0.1:${port}` };
+  return {
+    ready: false,
+    reason: '服务还没准备好，请稍后刷新或查看日志',
+    url: `http://127.0.0.1:${port}`,
+  };
 }
 
 // --- Usage task-bus settings helpers ----------------------------------------
 
 function buildLocalUsageTaskBusConfig(current = {}) {
   const existing = current && typeof current === 'object' ? current : {};
-  const redis = existing.redis && typeof existing.redis === 'object'
-    ? existing.redis
-    : { host: '127.0.0.1', port: 6379 };
-  const existingTelemetry = existing.telemetry && typeof existing.telemetry === 'object' ? existing.telemetry : {};
+  const redis =
+    existing.redis && typeof existing.redis === 'object'
+      ? existing.redis
+      : { host: '127.0.0.1', port: 6379 };
+  const existingTelemetry =
+    existing.telemetry && typeof existing.telemetry === 'object' ? existing.telemetry : {};
   const { uploadEnabled: _legacyUploadEnabled, ...telemetryWithoutLegacy } = existingTelemetry;
   void _legacyUploadEnabled;
-  const uploadProviders = normalizeUploadProviders(existingTelemetry.uploadProviders || ['claudecode', 'codex']);
+  const uploadProviders = normalizeUploadProviders(
+    existingTelemetry.uploadProviders || ['claudecode', 'codex', 'pi']
+  );
+  const canonicalUpload = existingTelemetry.conversationUploadEnabled;
+  const legacyUpload = existingTelemetry.conversations?.uploadEnabled;
+  const conversationUploadEnabled =
+    typeof canonicalUpload === 'boolean'
+      ? canonicalUpload
+      : typeof legacyUpload === 'boolean'
+        ? legacyUpload
+        : true;
   return {
     ...existing,
     enabled: Boolean(existing.enabled),
@@ -339,7 +399,7 @@ function buildLocalUsageTaskBusConfig(current = {}) {
     telemetry: {
       ...telemetryWithoutLegacy,
       enabled: true,
-      conversationUploadEnabled: Boolean(existingTelemetry.conversationUploadEnabled),
+      conversationUploadEnabled,
       uploadProviders,
       platform: uploadProviders[0] || existingTelemetry.platform || 'claudecode',
     },
@@ -356,7 +416,8 @@ export function enableLocalUsageTelemetry() {
 export function disableLocalUsageTelemetry() {
   const settings = readHermitSettings();
   const existing = settings.taskBus && typeof settings.taskBus === 'object' ? settings.taskBus : {};
-  const telemetry = existing.telemetry && typeof existing.telemetry === 'object' ? existing.telemetry : {};
+  const telemetry =
+    existing.telemetry && typeof existing.telemetry === 'object' ? existing.telemetry : {};
   const taskBus = {
     ...existing,
     telemetry: {
@@ -373,8 +434,11 @@ export function setConversationUploadEnabled(enabled, providers = null) {
   const selectedProviders = providers == null ? null : normalizeUploadProviders(providers);
   const settings = readHermitSettings();
   const existing = settings.taskBus && typeof settings.taskBus === 'object' ? settings.taskBus : {};
-  const telemetry = existing.telemetry && typeof existing.telemetry === 'object' ? existing.telemetry : {};
-  const uploadProviders = selectedProviders ?? normalizeUploadProviders(telemetry.uploadProviders || ['claudecode', 'codex']);
+  const telemetry =
+    existing.telemetry && typeof existing.telemetry === 'object' ? existing.telemetry : {};
+  const uploadProviders =
+    selectedProviders ??
+    normalizeUploadProviders(telemetry.uploadProviders || ['claudecode', 'codex', 'pi']);
   const taskBus = {
     ...existing,
     telemetry: {
@@ -384,7 +448,9 @@ export function setConversationUploadEnabled(enabled, providers = null) {
       uploadProviders,
       conversationUploadEnabled: Boolean(enabled),
       conversations: {
-        ...(telemetry.conversations && typeof telemetry.conversations === 'object' ? telemetry.conversations : {}),
+        ...(telemetry.conversations && typeof telemetry.conversations === 'object'
+          ? telemetry.conversations
+          : {}),
         uploadEnabled: Boolean(enabled),
         baseUrl: resolveConversationUploadBaseUrl(telemetry.conversations?.baseUrl),
       },
@@ -398,12 +464,18 @@ export function setConversationUploadEnabled(enabled, providers = null) {
 
 function getUploadProvidersFromFlags() {
   const values = findAnyOptionValues(['--upload-provider', '--provider', '--providers']);
-  return normalizeUploadProviders(values).length ? normalizeUploadProviders(values) : ['claudecode', 'codex'];
+  return normalizeUploadProviders(values).length
+    ? normalizeUploadProviders(values)
+    : ['claudecode', 'codex', 'pi'];
 }
 
-export async function enableConversationUploadWithProvider(providers = ['claudecode', 'codex']) {
+export async function enableConversationUploadWithProvider(
+  providers = ['claudecode', 'codex', 'pi']
+) {
   const selectedProviders = normalizeUploadProviders(providers);
-  const enabledProviders = selectedProviders.length ? selectedProviders : ['claudecode', 'codex'];
+  const enabledProviders = selectedProviders.length
+    ? selectedProviders
+    : ['claudecode', 'codex', 'pi'];
   const taskBus = setConversationUploadEnabled(true, enabledProviders);
   // Actually launch the background worker so the toggle is running, not just
   // "enabled + 未运行". Mirrors the `usage start` lifecycle: the worker reads
@@ -430,7 +502,11 @@ function latestUsageWorkerSourceMtime() {
       'src/main/services/session-intelligence/AiMonitorUsageClient.ts',
       'src/main/services/auth/OpenHermitAuthClient.ts',
     ].map((rel) => {
-      try { return statSync(path.join(repoRoot, rel)).mtimeMs; } catch { return 0; }
+      try {
+        return statSync(path.join(repoRoot, rel)).mtimeMs;
+      } catch {
+        return 0;
+      }
     })
   );
 }
@@ -439,19 +515,27 @@ export function markTelemetryWorkerRestarting(reason = '正在重启 worker') {
   try {
     mkdirSync(telemetryDir, { recursive: true, mode: 0o700 });
     const previous = readTelemetryWorkerStatusFile().status;
-    writeFileSync(telemetryWorkerStatusPath, `${JSON.stringify({
-      schemaVersion: 1,
-      state: 'restarting',
-      running: false,
-      pid: null,
-      startedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      lastScan: previous?.lastScan ?? null,
-      source: 'claude-jsonl',
-      telemetryEnabled: previous?.telemetryEnabled ?? true,
-      restartReason: reason,
-      telemetry: previous?.telemetry ?? emptyUsageTelemetryStatus(),
-    }, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
+    writeFileSync(
+      telemetryWorkerStatusPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          state: 'restarting',
+          running: false,
+          pid: null,
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          lastScan: previous?.lastScan ?? null,
+          source: 'claude-jsonl',
+          telemetryEnabled: previous?.telemetryEnabled ?? true,
+          restartReason: reason,
+          telemetry: previous?.telemetry ?? emptyUsageTelemetryStatus(),
+        },
+        null,
+        2
+      )}\n`,
+      { encoding: 'utf-8', mode: 0o600 }
+    );
   } catch {}
 }
 
@@ -459,15 +543,22 @@ function readTelemetryWorkerStatusFile() {
   if (!existsSync(telemetryWorkerStatusPath)) return { status: null, error: '' };
   const { value, error } = safeReadJson(telemetryWorkerStatusPath);
   if (error) return { status: null, error };
-  return value && typeof value === 'object' ? { status: value, error: '' } : { status: null, error: 'invalid status file' };
+  return value && typeof value === 'object'
+    ? { status: value, error: '' }
+    : { status: null, error: 'invalid status file' };
 }
 
 function telemetryFromWorkerStatus(status) {
-  return status?.telemetry && typeof status.telemetry === 'object' ? status.telemetry : emptyUsageTelemetryStatus();
+  return status?.telemetry && typeof status.telemetry === 'object'
+    ? status.telemetry
+    : emptyUsageTelemetryStatus();
 }
 
 // Called by update.mjs after self-update so the live worker picks up new code.
-export async function restartUsageWorkerIfRunning({ quiet = false, reason = 'update 后重载 worker' } = {}) {
+export async function restartUsageWorkerIfRunning({
+  quiet = false,
+  reason = 'update 后重载 worker',
+} = {}) {
   const pid = readPidFile(telemetryWorkerPidPath);
   if (!pid || !isPidRunning(pid)) return { restarted: false, reason: 'no running worker' };
   return { restarted: true, ...(await restartTelemetryWorker({ quiet, reason })) };
@@ -482,7 +573,11 @@ export async function clearStaleConversationUploadLock() {
     const ageMs = Date.now() - Date.parse(lock.createdAt || '');
     let staleByPid = false;
     if (Number.isInteger(pid) && pid > 0) {
-      try { process.kill(pid, 0); } catch { staleByPid = true; }
+      try {
+        process.kill(pid, 0);
+      } catch {
+        staleByPid = true;
+      }
     }
     if (staleByPid || (Number.isFinite(ageMs) && ageMs > 30 * 60 * 1000)) unlinkSync(lockPath);
   } catch {}
@@ -511,23 +606,38 @@ export async function restartTelemetryWorker({ quiet = true, reason = '手动重
 }
 
 function isUsageWorkerCommand(command) {
-  return command.includes('src/main/telemetry/worker.ts') || command.includes('telemetry/worker.ts');
+  return (
+    command.includes('src/main/telemetry/worker.ts') || command.includes('telemetry/worker.ts')
+  );
 }
 
 function isTransientUsageWorkerCommand(command) {
-  return ['--scan-once', '--startup-once', '--report-lark-credentials-once'].some((flag) => command.includes(flag));
+  return ['--scan-once', '--startup-once', '--report-lark-credentials-once'].some((flag) =>
+    command.includes(flag)
+  );
 }
 
 function collectRunningUsageWorkerPids() {
   if (process.platform === 'win32') {
     try {
       return listProcessesWin()
-        .filter((p) => p.pid !== process.pid && isUsageWorkerCommand(p.command) && !isTransientUsageWorkerCommand(p.command))
+        .filter(
+          (p) =>
+            p.pid !== process.pid &&
+            isUsageWorkerCommand(p.command) &&
+            !isTransientUsageWorkerCommand(p.command)
+        )
         .map((p) => p.pid);
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   }
   let output = '';
-  try { output = execSync('ps -axo pid=,command=', { encoding: 'utf-8' }); } catch { return []; }
+  try {
+    output = execSync('ps -axo pid=,command=', { encoding: 'utf-8' });
+  } catch {
+    return [];
+  }
   const pids = [];
   for (const line of output.split('\n')) {
     const match = line.trim().match(/^(\d+)\s+([\s\S]+)$/);
@@ -553,25 +663,56 @@ export async function startTelemetryWorker({
     if (isPidRunning(stray)) signalDaemon(stray, 'SIGKILL');
   }
   if (!forceRestart && existingPid && isPidRunning(existingPid)) {
-    return { started: false, running: true, pid: existingPid, pidPath: telemetryWorkerPidPath, statusPath: telemetryWorkerStatusPath, logPath: telemetryWorkerLogPath };
+    return {
+      started: false,
+      running: true,
+      pid: existingPid,
+      pidPath: telemetryWorkerPidPath,
+      statusPath: telemetryWorkerStatusPath,
+      logPath: telemetryWorkerLogPath,
+    };
   }
 
   if (process.env.OPENHERMIT_USAGE_WORKER_MODE === 'test') {
     mkdirSync(telemetryDir, { recursive: true, mode: 0o700 });
-    try { try { unlinkSync(telemetryWorkerPidPath); } catch {} writeFileSync(telemetryWorkerPidPath, String(process.pid), { encoding: 'utf-8', mode: 0o600 }); } catch {}
-    writeFileSync(telemetryWorkerStatusPath, `${JSON.stringify({
-      schemaVersion: 1,
-      state: 'idle',
+    try {
+      try {
+        unlinkSync(telemetryWorkerPidPath);
+      } catch {}
+      writeFileSync(telemetryWorkerPidPath, String(process.pid), {
+        encoding: 'utf-8',
+        mode: 0o600,
+      });
+    } catch {}
+    writeFileSync(
+      telemetryWorkerStatusPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          state: 'idle',
+          running: true,
+          pid: process.pid,
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          lastScan: null,
+          source: 'claude-jsonl',
+          telemetryEnabled: true,
+          telemetry: emptyUsageTelemetryStatus(),
+        },
+        null,
+        2
+      )}\n`,
+      { encoding: 'utf-8', mode: 0o600 }
+    );
+    return {
+      started: true,
       running: true,
       pid: process.pid,
-      startedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      lastScan: null,
-      source: 'claude-jsonl',
-      telemetryEnabled: true,
-      telemetry: emptyUsageTelemetryStatus(),
-    }, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
-    return { started: true, running: true, pid: process.pid, pidPath: telemetryWorkerPidPath, statusPath: telemetryWorkerStatusPath, logPath: telemetryWorkerLogPath, mode: 'test' };
+      pidPath: telemetryWorkerPidPath,
+      statusPath: telemetryWorkerStatusPath,
+      logPath: telemetryWorkerLogPath,
+      mode: 'test',
+    };
   }
 
   mkdirSync(telemetryDir, { recursive: true, mode: 0o700 });
@@ -598,9 +739,24 @@ export async function startTelemetryWorker({
   child.unref();
   closeSync(out);
   closeSync(err);
-  try { try { unlinkSync(telemetryWorkerPidPath); } catch {} writeFileSync(telemetryWorkerPidPath, String(child.pid), { encoding: 'utf-8', mode: 0o600 }); } catch (e) { if (!quiet) console.error(`${brandLogPrefix()} 警告: 无法写入 ${telemetryWorkerPidPath}: ${e.message}`); }
+  try {
+    try {
+      unlinkSync(telemetryWorkerPidPath);
+    } catch {}
+    writeFileSync(telemetryWorkerPidPath, String(child.pid), { encoding: 'utf-8', mode: 0o600 });
+  } catch (e) {
+    if (!quiet)
+      console.error(`${brandLogPrefix()} 警告: 无法写入 ${telemetryWorkerPidPath}: ${e.message}`);
+  }
   if (!quiet) console.error(`${brandLogPrefix()} usage telemetry worker started: pid ${child.pid}`);
-  return { started: true, running: true, pid: child.pid, pidPath: telemetryWorkerPidPath, statusPath: telemetryWorkerStatusPath, logPath: telemetryWorkerLogPath };
+  return {
+    started: true,
+    running: true,
+    pid: child.pid,
+    pidPath: telemetryWorkerPidPath,
+    statusPath: telemetryWorkerStatusPath,
+    logPath: telemetryWorkerLogPath,
+  };
 }
 
 async function waitForPidExit(pid, timeoutMs) {
@@ -613,7 +769,9 @@ async function waitForPidExit(pid, timeoutMs) {
 }
 
 function removeTelemetryWorkerPidFile() {
-  try { unlinkSync(telemetryWorkerPidPath); } catch {}
+  try {
+    unlinkSync(telemetryWorkerPidPath);
+  } catch {}
 }
 
 export async function stopTelemetryWorker() {
@@ -622,10 +780,12 @@ export async function stopTelemetryWorker() {
     removeTelemetryWorkerPidFile();
     return { stopped: true, pid, running: false, mode: 'test' };
   }
-  const targets = Array.from(new Set([
-    ...(Number.isInteger(pid) && pid > 0 ? [pid] : []),
-    ...collectRunningUsageWorkerPids(),
-  ]));
+  const targets = Array.from(
+    new Set([
+      ...(Number.isInteger(pid) && pid > 0 ? [pid] : []),
+      ...collectRunningUsageWorkerPids(),
+    ])
+  );
   if (targets.length === 0) {
     removeTelemetryWorkerPidFile();
     return { stopped: false, pid: null, running: false };
@@ -660,12 +820,18 @@ async function runStartupOnceWorker() {
   const stopChild = () => {
     interrupted = true;
     if (child.pid && !child.killed) child.kill('SIGTERM');
-    setTimeout(() => { if (child.pid && !child.killed) child.kill('SIGKILL'); }, 2_000).unref();
+    setTimeout(() => {
+      if (child.pid && !child.killed) child.kill('SIGKILL');
+    }, 2_000).unref();
   };
   process.prependOnceListener('SIGINT', stopChild);
   process.prependOnceListener('SIGTERM', stopChild);
-  child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
-  child.stderr?.on('data', (chunk) => { stderr += String(chunk); });
+  child.stdout?.on('data', (chunk) => {
+    stdout += String(chunk);
+  });
+  child.stderr?.on('data', (chunk) => {
+    stderr += String(chunk);
+  });
   const code = await new Promise((resolve) => child.on('close', resolve));
   process.off('SIGINT', stopChild);
   process.off('SIGTERM', stopChild);
@@ -675,7 +841,11 @@ async function runStartupOnceWorker() {
   return parsed;
 }
 
-async function runTelemetryWorkerScanOnce({ localOnly = false, uploadDisabled = false, scanDisabled = false } = {}) {
+async function runTelemetryWorkerScanOnce({
+  localOnly = false,
+  uploadDisabled = false,
+  scanDisabled = false,
+} = {}) {
   const childArgs = await telemetryWorkerChildArgs(['--scan-once']);
   const child = spawn(process.execPath, childArgs, {
     cwd: repoRoot,
@@ -695,12 +865,18 @@ async function runTelemetryWorkerScanOnce({ localOnly = false, uploadDisabled = 
   const stopChild = () => {
     interrupted = true;
     if (child.pid && !child.killed) child.kill('SIGTERM');
-    setTimeout(() => { if (child.pid && !child.killed) child.kill('SIGKILL'); }, 2_000).unref();
+    setTimeout(() => {
+      if (child.pid && !child.killed) child.kill('SIGKILL');
+    }, 2_000).unref();
   };
   process.prependOnceListener('SIGINT', stopChild);
   process.prependOnceListener('SIGTERM', stopChild);
-  child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
-  child.stderr?.on('data', (chunk) => { stderr += String(chunk); });
+  child.stdout?.on('data', (chunk) => {
+    stdout += String(chunk);
+  });
+  child.stderr?.on('data', (chunk) => {
+    stderr += String(chunk);
+  });
   const code = await new Promise((resolve) => child.on('close', resolve));
   process.off('SIGINT', stopChild);
   process.off('SIGTERM', stopChild);
@@ -751,27 +927,45 @@ function telemetryWorkerPayload({ status = null, statusError = '', autostart = n
 
 // --- Autostart (macOS launchd / Windows Task Scheduler) ---------------------
 
-function usageLaunchdLabel() { return 'com.openhermit.telemetry'; }
-function usageLaunchdPlistPath() { return path.join(os.homedir(), 'Library', 'LaunchAgents', `${usageLaunchdLabel()}.plist`); }
-function xmlEscape(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;'); }
+function usageLaunchdLabel() {
+  return 'com.openhermit.telemetry';
+}
+function usageLaunchdPlistPath() {
+  return path.join(os.homedir(), 'Library', 'LaunchAgents', `${usageLaunchdLabel()}.plist`);
+}
+function xmlEscape(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
 
 function buildUsageLaunchdPlist() {
-  const pathValue = process.env.PATH || '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+  const pathValue =
+    process.env.PATH || '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
   return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n\t<key>Label</key>\n\t<string>${usageLaunchdLabel()}</string>\n\t<key>ProgramArguments</key>\n\t<array>\n\t\t<string>${xmlEscape(process.execPath)}</string>\n\t\t<string>${xmlEscape(fileURLToPath(import.meta.url))}</string>\n\t\t<string>__telemetry-worker</string>\n\t</array>\n\t<key>EnvironmentVariables</key>\n\t<dict>\n\t\t<key>HERMIT_HOME</key>\n\t\t<string>${xmlEscape(hermitHome)}</string>\n\t\t<key>PATH</key>\n\t\t<string>${xmlEscape(pathValue)}</string>\n\t</dict>\n\t<key>RunAtLoad</key>\n\t<true/>\n\t<key>KeepAlive</key>\n\t<dict>\n\t\t<key>SuccessfulExit</key>\n\t\t<false/>\n\t</dict>\n\t<key>ThrottleInterval</key>\n\t<integer>30</integer>\n\t<key>StandardOutPath</key>\n\t<string>${xmlEscape(telemetryWorkerLogPath)}</string>\n\t<key>StandardErrorPath</key>\n\t<string>${xmlEscape(telemetryWorkerErrorLogPath)}</string>\n</dict>\n</plist>\n`;
 }
 
 function launchctlBestEffort(args) {
   if (process.env.OPENHERMIT_SKIP_LAUNCHCTL === '1') return { ok: true, output: 'skipped' };
   try {
-    const output = execSync(`launchctl ${args.map((arg) => JSON.stringify(arg)).join(' ')}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const output = execSync(`launchctl ${args.map((arg) => JSON.stringify(arg)).join(' ')}`, {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     return { ok: true, output };
-  } catch (err) { return { ok: false, output: err instanceof Error ? err.message : String(err) }; }
+  } catch (err) {
+    return { ok: false, output: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export async function getUsageAutostartStatus() {
   const label = usageLaunchdLabel();
   const plistPath = usageLaunchdPlistPath();
-  if (process.platform !== 'darwin') return { supported: false, enabled: false, loaded: false, label, plistPath };
+  if (process.platform !== 'darwin')
+    return { supported: false, enabled: false, loaded: false, label, plistPath };
   const print = launchctlBestEffort(['print', `gui/${process.getuid?.() ?? ''}/${label}`]);
   return { supported: true, enabled: existsSync(plistPath), loaded: print.ok, label, plistPath };
 }
@@ -809,8 +1003,11 @@ async function keepUsageAutostartWithoutRunning() {
 export async function disableUsageAutostart() {
   const plistPath = usageLaunchdPlistPath();
   const uid = process.getuid?.();
-  if (process.platform === 'darwin' && uid !== undefined) launchctlBestEffort(['bootout', `gui/${uid}`, plistPath]);
-  try { unlinkSync(plistPath); } catch {}
+  if (process.platform === 'darwin' && uid !== undefined)
+    launchctlBestEffort(['bootout', `gui/${uid}`, plistPath]);
+  try {
+    unlinkSync(plistPath);
+  } catch {}
   return getUsageAutostartStatus();
 }
 
@@ -852,11 +1049,17 @@ async function withUploadProgress(label, task, { fullRescan = false } = {}) {
     const acc = foldFinishedBatches(events, finishedSeen);
     finishedSeen = acc.seen;
     const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
-    const idle = !snapshot.hasBatch && (Number(snapshot.discovered ?? 0) <= 0) && (Number(snapshot.scanFiles ?? 0) <= 0);
+    const idle =
+      !snapshot.hasBatch &&
+      Number(snapshot.discovered ?? 0) <= 0 &&
+      Number(snapshot.scanFiles ?? 0) <= 0;
     const bar = idle
       ? `扫描本地会话日志中 · 已用时 ${elapsedSec}s`
       : fullRescan
-        ? absoluteProgressLabel({ ...snapshot, completedBatches: acc.completedBatches, runUploaded: acc.runUploaded }, { elapsedSec })
+        ? absoluteProgressLabel(
+            { ...snapshot, completedBatches: acc.completedBatches, runUploaded: acc.runUploaded },
+            { elapsedSec }
+          )
         : uploadProgressLabel(snapshot, { barWidth: 26 });
     const text = fitProgressLine(`${frames[frame]} ${bar}`);
     process.stdout.write(`\r\x1b[2K${text}`);
@@ -867,12 +1070,18 @@ async function withUploadProgress(label, task, { fullRescan = false } = {}) {
   const stdin = process.stdin;
   const hadRawMode = stdin.isTTY && stdin.isRaw === true;
   if (stdin.isTTY && typeof stdin.setRawMode === 'function') {
-    try { stdin.setRawMode(false); } catch {}
+    try {
+      stdin.setRawMode(false);
+    } catch {}
   }
-  try { return await task(); } finally {
+  try {
+    return await task();
+  } finally {
     clearInterval(timer);
     if (stdin.isTTY && typeof stdin.setRawMode === 'function') {
-      try { stdin.setRawMode(hadRawMode); } catch {}
+      try {
+        stdin.setRawMode(hadRawMode);
+      } catch {}
     }
     process.stdout.write('\r\x1b[2K\x1b[1A\x1b[2K');
   }
@@ -888,7 +1097,11 @@ async function runForegroundScan({ fullRescan = false, progressText }) {
   if (workerWasRunning) await stopTelemetryWorker();
   if (fullRescan) process.env.HERMIT_USAGE_FULL_RESCAN = '1';
   try {
-    return await withUploadProgress(progressText, () => readUsageStatus({ scan: true, localOnly: false }), { fullRescan });
+    return await withUploadProgress(
+      progressText,
+      () => readUsageStatus({ scan: true, localOnly: false }),
+      { fullRescan }
+    );
   } finally {
     if (fullRescan) delete process.env.HERMIT_USAGE_FULL_RESCAN;
     if (workerWasRunning) await startTelemetryWorker({ quiet: true });
@@ -913,7 +1126,9 @@ async function fetchBackendUsageStatus() {
       telemetry,
       source: 'backend-api',
     };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 // --- Read usage status --------------------------------------------------------
@@ -935,7 +1150,11 @@ export async function readUsageStatus({
       const { status, error } = readTelemetryWorkerStatusFile();
       const autostart = await getUsageAutostartStatus();
       base = {
-        daemon: usageDaemonPayload({ running: false, url: `http://127.0.0.1:${port}`, version: '' }),
+        daemon: usageDaemonPayload({
+          running: false,
+          url: `http://127.0.0.1:${port}`,
+          version: '',
+        }),
         worker: telemetryWorkerPayload({ status, statusError: error, autostart }),
         telemetry: telemetryFromWorkerStatus(status),
         source: 'claude-jsonl',
@@ -959,15 +1178,24 @@ async function printUsageRows(title, data, hint) {
   const states = currentFeatureStates();
   const auth = await refreshOpenHermitAuthStatus();
   const uploadRaw = data.telemetry.conversationUpload;
-  const upload = uploadRaw && typeof uploadRaw === 'object' ? { ...uploadRaw, lastError: '' } : uploadRaw;
+  const upload =
+    uploadRaw && typeof uploadRaw === 'object' ? { ...uploadRaw, lastError: '' } : uploadRaw;
   const uploadEnabled = Boolean(states.conversationUploadEnabled || upload?.enabled);
-  const workerText = states.usageRunning ? `后台运行中 (pid ${states.usagePid})，每 5 分钟增量扫描` : '后台未运行';
+  const workerText = states.usageRunning
+    ? `后台运行中 (pid ${states.usagePid})，每 5 分钟增量扫描`
+    : '后台未运行';
   const uploadText = uploadEnabled
-    ? auth.authorized ? workerText : `${workerText}，等待登录授权`
+    ? auth.authorized
+      ? workerText
+      : `${workerText}，等待登录授权`
     : '关闭';
   const rows = [
     ['版本', `agentcli v${currentVersion}`, 'info'],
-    ['消息上报', uploadText, uploadEnabled ? auth.authorized ? states.usageRunning ? 'ok' : 'warn' : 'warn' : 'off'],
+    [
+      '消息上报',
+      uploadText,
+      uploadEnabled ? (auth.authorized ? (states.usageRunning ? 'ok' : 'warn') : 'warn') : 'off',
+    ],
   ];
   const serverAuth = appendUsageServerRows(rows, {
     telemetry: data.telemetry,
@@ -984,7 +1212,7 @@ async function printUsageRows(title, data, hint) {
       ? '服务端确认登录已失效。进入「用户」登录（命令行：agentcli auth login）后重试。'
       : serverAuth.usageUnauthorized
         ? '本地登录态仍有效，但上报接口返回未授权；请稍后重试，或重新登录刷新 upload 授权。'
-        : (hint || '待上报来自服务端 cursor 扫描结果；本地/服务端总账只作诊断对比。')
+        : hint || '待上报来自服务端 cursor 扫描结果；本地/服务端总账只作诊断对比。'
   );
 }
 
@@ -997,12 +1225,21 @@ export async function printUsageStatus({ exitOnDone = true } = {}) {
     );
     const result = { ok: true, command: 'usage status', hermitHome, ...data };
     if (jsonRequested) printJson(result);
-    await printUsageRows('用量上报状态', data, data.daemon.running ? '触发扫描：agentcli usage report' : '启动本地采集：agentcli usage start');
+    await printUsageRows(
+      '用量上报状态',
+      data,
+      data.daemon.running ? '触发扫描：agentcli usage report' : '启动本地采集：agentcli usage start'
+    );
     if (exitOnDone) process.exit(0);
     return result;
   } catch (err) {
     rethrowIfExitSentinel(err);
-    const result = { ok: false, command: 'usage status', hermitHome, error: err instanceof Error ? err.message : String(err) };
+    const result = {
+      ok: false,
+      command: 'usage status',
+      hermitHome,
+      error: err instanceof Error ? err.message : String(err),
+    };
     if (jsonRequested) printJson(result, 1);
     console.error(`${brandLogPrefix()} usage status 失败：${result.error}`);
     if (exitOnDone) process.exit(1);
@@ -1010,7 +1247,9 @@ export async function printUsageStatus({ exitOnDone = true } = {}) {
   }
 }
 
-function todayKey() { return new Date().toISOString().slice(0, 10); }
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function todayUsageFromStatus(status) {
   const date = todayKey();
@@ -1032,22 +1271,39 @@ export async function printUsageToday({ exitOnDone = true } = {}) {
   try {
     const data = await readUsageStatus({ scan: false });
     const today = todayUsageFromStatus(data.telemetry);
-    const result = { ok: true, command: 'usage today', hermitHome, daemon: data.daemon, worker: data.worker, source: data.source, today };
+    const result = {
+      ok: true,
+      command: 'usage today',
+      hermitHome,
+      daemon: data.daemon,
+      worker: data.worker,
+      source: data.source,
+      today,
+    };
     if (jsonRequested) printJson(result);
-    printCliRows('今日用量', [
-      ['日期', today.date],
-      ['后台扫描', data.worker?.running ? `运行中 (pid ${data.worker.pid})` : '未运行'],
-      ['会话数', formatNumber(today.sessions)],
-      ['消息数', formatNumber(today.messages)],
-      ['Token 总量', formatNumber(today.totalTokens)],
-      ['工作时长（秒）', formatNumber(today.workSeconds)],
-      ['来源', 'Claude Code 本地消息记录'],
-    ], data.daemon.running ? '刷新统计：agentcli usage report' : '启动本地采集：agentcli usage start');
+    printCliRows(
+      '今日用量',
+      [
+        ['日期', today.date],
+        ['后台扫描', data.worker?.running ? `运行中 (pid ${data.worker.pid})` : '未运行'],
+        ['会话数', formatNumber(today.sessions)],
+        ['消息数', formatNumber(today.messages)],
+        ['Token 总量', formatNumber(today.totalTokens)],
+        ['工作时长（秒）', formatNumber(today.workSeconds)],
+        ['来源', 'Claude Code 本地消息记录'],
+      ],
+      data.daemon.running ? '刷新统计：agentcli usage report' : '启动本地采集：agentcli usage start'
+    );
     if (exitOnDone) process.exit(0);
     return result;
   } catch (err) {
     rethrowIfExitSentinel(err);
-    const result = { ok: false, command: 'usage today', hermitHome, error: err instanceof Error ? err.message : String(err) };
+    const result = {
+      ok: false,
+      command: 'usage today',
+      hermitHome,
+      error: err instanceof Error ? err.message : String(err),
+    };
     if (jsonRequested) printJson(result, 1);
     console.error(`${brandLogPrefix()} usage today 失败：${result.error}`);
     if (exitOnDone) process.exit(1);
@@ -1069,11 +1325,15 @@ export async function printUsageReport({ exitOnDone = true } = {}) {
         upload: { enabled: true, authorized: false },
       };
       if (jsonRequested) printJson(result, 1);
-      printCliRows('用量上报报告', [
-        ['消息上报', '已开启，但未登录', 'warn'],
-        ['本次扫描', '已取消，避免扫描后无法上报', 'warn'],
-        ['下一步', '进入「用户」登录（命令行：agentcli auth login）', 'info'],
-      ], '在「用户」中登录后再扫描上报，会按服务端 cursor 只扫描新增消息。');
+      printCliRows(
+        '用量上报报告',
+        [
+          ['消息上报', '已开启，但未登录', 'warn'],
+          ['本次扫描', '已取消，避免扫描后无法上报', 'warn'],
+          ['下一步', '进入「用户」登录（命令行：agentcli auth login）', 'info'],
+        ],
+        '在「用户」中登录后再扫描上报，会按服务端 cursor 只扫描新增消息。'
+      );
       if (exitOnDone) process.exit(1);
       return result;
     }
@@ -1101,12 +1361,21 @@ export async function printUsageReport({ exitOnDone = true } = {}) {
       ...data,
     };
     if (jsonRequested) printJson(result);
-    await printUsageRows('用量上报报告', data, '已执行一次增量扫描；消息上报开启时会按服务端 cursor 只扫描新增消息。');
+    await printUsageRows(
+      '用量上报报告',
+      data,
+      '已执行一次增量扫描；消息上报开启时会按服务端 cursor 只扫描新增消息。'
+    );
     if (exitOnDone) process.exit(0);
     return result;
   } catch (err) {
     rethrowIfExitSentinel(err);
-    const result = { ok: false, command: 'usage report', hermitHome, error: err instanceof Error ? err.message : String(err) };
+    const result = {
+      ok: false,
+      command: 'usage report',
+      hermitHome,
+      error: err instanceof Error ? err.message : String(err),
+    };
     if (jsonRequested) printJson(result, 1);
     console.error(`${brandLogPrefix()} usage report 失败：${result.error}`);
     if (exitOnDone) process.exit(1);
@@ -1128,11 +1397,15 @@ export async function printScanOnceResult({ exitOnDone = true, fullRescan = fals
         upload: { enabled: true, authorized: false },
       };
       if (jsonRequested) printJson(result, 1);
-      printCliRows(title, [
-        ['消息上报', '已开启，但未登录', 'warn'],
-        ['本次扫描', '已取消，避免扫描后无法上报', 'warn'],
-        ['下一步', '进入「用户」登录（命令行：agentcli auth login）', 'info'],
-      ], '在「用户」中登录后再执行，会按服务端 cursor 只扫描新增消息。');
+      printCliRows(
+        title,
+        [
+          ['消息上报', '已开启，但未登录', 'warn'],
+          ['本次扫描', '已取消，避免扫描后无法上报', 'warn'],
+          ['下一步', '进入「用户」登录（命令行：agentcli auth login）', 'info'],
+        ],
+        '在「用户」中登录后再执行，会按服务端 cursor 只扫描新增消息。'
+      );
       if (exitOnDone) process.exit(1);
       return result;
     }
@@ -1153,7 +1426,8 @@ export async function printScanOnceResult({ exitOnDone = true, fullRescan = fals
       : '后台未运行';
 
     const rows = [];
-    const uploadError = typeof upload.lastError === 'string' && upload.lastError ? upload.lastError : '';
+    const uploadError =
+      typeof upload.lastError === 'string' && upload.lastError ? upload.lastError : '';
     rows.push([
       '本次上报',
       accepted > 0
@@ -1186,7 +1460,7 @@ export async function printScanOnceResult({ exitOnDone = true, fullRescan = fals
           ? '本地登录态仍有效，但上报接口返回未授权；请稍后重试，或重新登录刷新 upload 授权。'
           : fullRescan
             ? '重报忽略游标、仅最近 7 天；服务端按 eventId 去重，已入库的消息不会重复计数。'
-            : '待上报来自本次按服务端 cursor 扫描后尚未成功提交的消息数。',
+            : '待上报来自本次按服务端 cursor 扫描后尚未成功提交的消息数。'
     );
     if (exitOnDone) process.exit(0);
     return result;
@@ -1207,7 +1481,8 @@ export async function printScanOnceResult({ exitOnDone = true, fullRescan = fals
 
 export async function printUsageStart({ exitOnDone = true } = {}) {
   const autostartRequested = !commandArgs.includes('--no-autostart');
-  const shouldEnableConversationUpload = args.includes('--upload') || args.includes('--upload-conversations');
+  const shouldEnableConversationUpload =
+    args.includes('--upload') || args.includes('--upload-conversations');
   if (shouldEnableConversationUpload) {
     const providers = getUploadProvidersFromFlags();
     setConversationUploadEnabled(providers.length > 0, providers);
@@ -1245,7 +1520,9 @@ export async function printUsageStart({ exitOnDone = true } = {}) {
     quiet: jsonRequested,
     startupPassCompleted: true,
   });
-  const autostart = autostartRequested ? await enableUsageAutostart() : await getUsageAutostartStatus();
+  const autostart = autostartRequested
+    ? await enableUsageAutostart()
+    : await getUsageAutostartStatus();
   const result = {
     ok: true,
     command: 'usage start',
@@ -1261,22 +1538,42 @@ export async function printUsageStart({ exitOnDone = true } = {}) {
   const auth = readOpenHermitAuthStatus();
   const conversationUploadEnabled = Boolean(taskBus.telemetry?.conversationUploadEnabled);
   const featureProviders = currentFeatureStates().uploadProviders;
-  const attributionProviders = featureProviders?.length ? featureProviders : ['claudecode', 'codex'];
+  const attributionProviders = featureProviders?.length
+    ? featureProviders
+    : ['claudecode', 'codex', 'pi'];
   const larkStatus = startup?.lark;
   const larkRow = larkStatus
-    ? [larkStatus.ok ? 'Lark 授权' : 'Lark 授权', larkStatus.ok ? `已批量上报 (${larkStatus.accountCount ?? 0} 个)` : `未上报: ${larkStatus.reason || ''}`, larkStatus.ok ? 'ok' : 'warn']
+    ? [
+        larkStatus.ok ? 'Lark 授权' : 'Lark 授权',
+        larkStatus.ok
+          ? `已批量上报 (${larkStatus.accountCount ?? 0} 个)`
+          : `未上报: ${larkStatus.reason || ''}`,
+        larkStatus.ok ? 'ok' : 'warn',
+      ]
     : null;
   const rows = [
-    ['消息上报', conversationUploadEnabled ? auth.authorized ? `开启（pid ${worker.pid}）` : `等待登录（pid ${worker.pid}）` : '关闭', conversationUploadEnabled ? auth.authorized ? 'ok' : 'warn' : 'off'],
+    [
+      '消息上报',
+      conversationUploadEnabled
+        ? auth.authorized
+          ? `开启（pid ${worker.pid}）`
+          : `等待登录（pid ${worker.pid}）`
+        : '关闭',
+      conversationUploadEnabled ? (auth.authorized ? 'ok' : 'warn') : 'off',
+    ],
     ['日志', worker.logPath, 'info'],
     ['开机自启', autostart.enabled ? '开启' : '关闭', autostart.enabled ? 'ok' : 'off'],
     ['模式', '启动即上报用量+Lark授权，之后后台增量上报', 'info'],
     ['归因', `${formatUploadProviders(attributionProviders)} + IM 会话归因`, 'info'],
   ];
   if (larkRow) rows.splice(1, 0, larkRow);
-  printCliRows('消息上报后台已启动', rows, conversationUploadEnabled
-    ? '消息上报已执行首次同步上报；需要登录后用 Bearer 授权发送。'
-    : '消息上报已执行首次同步上报；会话内容上报当前关闭。');
+  printCliRows(
+    '消息上报后台已启动',
+    rows,
+    conversationUploadEnabled
+      ? '消息上报已执行首次同步上报；需要登录后用 Bearer 授权发送。'
+      : '消息上报已执行首次同步上报；会话内容上报当前关闭。'
+  );
   if (exitOnDone) process.exit(0);
   return result;
 }
@@ -1285,7 +1582,9 @@ export async function printUsageStop({ exitOnDone = true } = {}) {
   const disableAutostart = !commandArgs.includes('--keep-autostart');
   const taskBus = disableLocalUsageTelemetry();
   const worker = await stopTelemetryWorker();
-  const autostart = disableAutostart ? await disableUsageAutostart() : await keepUsageAutostartWithoutRunning();
+  const autostart = disableAutostart
+    ? await disableUsageAutostart()
+    : await keepUsageAutostartWithoutRunning();
   const result = {
     ok: true,
     command: 'usage stop',
@@ -1295,12 +1594,20 @@ export async function printUsageStop({ exitOnDone = true } = {}) {
     telemetry: { localScanEnabled: taskBus.telemetry?.enabled ?? false },
   };
   if (jsonRequested) printJson(result);
-  printCliRows('消息上报后台已停止', [
-    ['worker', worker.stopped ? `已停止 (pid ${worker.pid})` : '未运行', worker.stopped ? 'off' : 'info'],
-    ['开机自启', autostart.enabled ? '仍开启' : '已关闭', autostart.enabled ? 'warn' : 'ok'],
-  ], autostart.enabled
-    ? 'worker 已停止，但开机自启仍开启；下次开机 worker 会重新启动。'
-    : 'worker 已停止，开机自启已关闭。');
+  printCliRows(
+    '消息上报后台已停止',
+    [
+      [
+        'worker',
+        worker.stopped ? `已停止 (pid ${worker.pid})` : '未运行',
+        worker.stopped ? 'off' : 'info',
+      ],
+      ['开机自启', autostart.enabled ? '仍开启' : '已关闭', autostart.enabled ? 'warn' : 'ok'],
+    ],
+    autostart.enabled
+      ? 'worker 已停止，但开机自启仍开启；下次开机 worker 会重新启动。'
+      : 'worker 已停止，开机自启已关闭。'
+  );
   if (exitOnDone) process.exit(0);
   return result;
 }
@@ -1311,13 +1618,25 @@ export async function printUsageAutostart({ exitOnDone = true } = {}) {
     const status = await getUsageAutostartStatus();
     const result = { ok: true, command: 'usage autostart status', hermitHome, autostart: status };
     if (jsonRequested) printJson(result);
-    printCliRows('usage autostart 状态', [
-      ['平台支持', status.supported ? '支持' : '不支持（仅 macOS）', status.supported ? 'ok' : 'warn'],
-      ['开机自启', status.enabled ? '已开启' : '未开启', status.enabled ? 'ok' : 'off'],
-      ['launchd', status.loaded ? `已加载 (${status.label})` : '未加载', status.loaded ? 'ok' : 'warn'],
-    ], status.supported
-      ? '开机自启通过 launchd 管理，重启后自动恢复后台采集。'
-      : '仅 macOS 支持开机自启功能；其他平台请手动启动。');
+    printCliRows(
+      'usage autostart 状态',
+      [
+        [
+          '平台支持',
+          status.supported ? '支持' : '不支持（仅 macOS）',
+          status.supported ? 'ok' : 'warn',
+        ],
+        ['开机自启', status.enabled ? '已开启' : '未开启', status.enabled ? 'ok' : 'off'],
+        [
+          'launchd',
+          status.loaded ? `已加载 (${status.label})` : '未加载',
+          status.loaded ? 'ok' : 'warn',
+        ],
+      ],
+      status.supported
+        ? '开机自启通过 launchd 管理，重启后自动恢复后台采集。'
+        : '仅 macOS 支持开机自启功能；其他平台请手动启动。'
+    );
     if (exitOnDone) process.exit(0);
     return result;
   }
@@ -1325,10 +1644,14 @@ export async function printUsageAutostart({ exitOnDone = true } = {}) {
     const status = await enableUsageAutostart();
     const result = { ok: true, command: 'usage autostart enable', hermitHome, autostart: status };
     if (jsonRequested) printJson(result);
-    printCliRows('usage autostart 已开启', [
-      ['launchd', `已安装 (${status.label})`, 'ok'],
-      ['下次开机', '自动启动 usage worker', 'info'],
-    ], '已配置 launchd，下次开机自动启动。');
+    printCliRows(
+      'usage autostart 已开启',
+      [
+        ['launchd', `已安装 (${status.label})`, 'ok'],
+        ['下次开机', '自动启动 usage worker', 'info'],
+      ],
+      '已配置 launchd，下次开机自动启动。'
+    );
     if (exitOnDone) process.exit(0);
     return result;
   }
@@ -1336,14 +1659,21 @@ export async function printUsageAutostart({ exitOnDone = true } = {}) {
     const status = await disableUsageAutostart();
     const result = { ok: true, command: 'usage autostart disable', hermitHome, autostart: status };
     if (jsonRequested) printJson(result);
-    printCliRows('usage autostart 已关闭', [
-      ['launchd', '已移除', 'off'],
-      ['下次开机', '不自动启动 usage worker', 'info'],
-    ], 'launchd 已卸载，下次开机不会自动启动。');
+    printCliRows(
+      'usage autostart 已关闭',
+      [
+        ['launchd', '已移除', 'off'],
+        ['下次开机', '不自动启动 usage worker', 'info'],
+      ],
+      'launchd 已卸载，下次开机不会自动启动。'
+    );
     if (exitOnDone) process.exit(0);
     return result;
   }
-  if (jsonRequested) printJson({ ok: false, command: 'usage autostart', error: `Unknown action: ${action}` }, 1);
-  console.error(`${brandLogPrefix()} usage autostart: unknown action '${action}' (expected status|enable|disable)`);
+  if (jsonRequested)
+    printJson({ ok: false, command: 'usage autostart', error: `Unknown action: ${action}` }, 1);
+  console.error(
+    `${brandLogPrefix()} usage autostart: unknown action '${action}' (expected status|enable|disable)`
+  );
   if (exitOnDone) process.exit(1);
 }

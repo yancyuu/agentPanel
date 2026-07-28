@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-07-28
+
+### Added
+
+- 用量采集与消息上报新增 Pi 支持：扫描 `~/.pi/agent/sessions/**/*.jsonl`，统计 input/output/cache read/cache write token，并支持 `agentcli usage start --upload --provider pi`。
+- Pi clone/fork 会话使用稳定消息指纹去重，避免复制历史 entry 导致本地统计和服务端上报重复。
+
+### Changed
+
+- 默认消息上报来源扩展为 Claude Code、Codex 和 Pi；已显式关闭消息上报的配置继续保持关闭。
+- 用量状态、CLI 表格和 Web 用量面板现在分别展示 Pi 的 session、消息和 token 汇总。
+
+### Fixed
+
+- 修复多来源并行上报中某一来源失败后提前释放上传锁、其余来源仍在后台发送的问题。
+- 修复显式关闭消息上报时可能被旧版嵌套配置重新开启的问题。
+- 修复更新检查和崩溃报告仍指向旧 GitHub 仓库的问题。
+- 修复用量测试读取开发机真实 Codex/Pi 会话以及批次环境状态导致的顺序依赖。
+
 ## [1.9.80] - 2026-07-28
 
 ### Changed

@@ -1,4 +1,9 @@
-import type { DailyMetrics, ParseResult, UsageProviderMetrics } from './SessionUsageParser';
+import type {
+  DailyMetrics,
+  ParseResult,
+  UsageProvider,
+  UsageProviderMetrics,
+} from './SessionUsageParser';
 import type {
   CapabilityTelemetrySummary,
   TeamCapabilityTelemetrySnapshot,
@@ -80,14 +85,14 @@ export interface UsageTelemetryStatus {
   // Rolling 7-day local volume — drives the 本地（最近 7 天）row.
   recentMessages: number;
   recentTokensTotal: number;
-  recentByProvider: Record<'claudecode' | 'codex', UsageProviderMetrics>;
+  recentByProvider: Record<UsageProvider, UsageProviderMetrics>;
   activeDays: number;
   hourly: number[];
   projects: UsageTelemetryProjectRow[];
   workSecondsByDay: Record<string, number>;
   daily: Record<string, DailyMetrics>;
   localUsers: UserUsageTelemetryRow[];
-  byProvider: Record<'claudecode' | 'codex', UsageProviderMetrics>;
+  byProvider: Record<UsageProvider, UsageProviderMetrics>;
   teamCapabilitySnapshots?: TeamCapabilityTelemetrySnapshot[];
   capabilitySummary?: CapabilityTelemetrySummary;
   unresolvedUsage: UsageUnresolvedSummary;

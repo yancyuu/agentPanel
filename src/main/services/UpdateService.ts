@@ -56,7 +56,7 @@ export interface UpdateProgress {
   error?: string;
 }
 
-const GITHUB_REPO = 'yancyuu/Hermit';
+const GITHUB_REPO = 'yancyuu/agentcli';
 const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
 
 export class UpdateService {

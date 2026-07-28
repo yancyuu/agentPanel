@@ -6943,6 +6943,15 @@ function telemetryEmptyStatus(): TelemetryStatusShape {
         cacheCreation: 0,
         tokensTotal: 0,
       },
+      pi: {
+        sessions: 0,
+        messages: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheRead: 0,
+        cacheCreation: 0,
+        tokensTotal: 0,
+      },
     },
     byProvider: {
       claudecode: {
@@ -6955,6 +6964,15 @@ function telemetryEmptyStatus(): TelemetryStatusShape {
         tokensTotal: 0,
       },
       codex: {
+        sessions: 0,
+        messages: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheRead: 0,
+        cacheCreation: 0,
+        tokensTotal: 0,
+      },
+      pi: {
         sessions: 0,
         messages: 0,
         tokensIn: 0,

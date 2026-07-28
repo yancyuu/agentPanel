@@ -14,10 +14,13 @@ describe('ConversationMessageUploadService', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
+    delete process.env.OPENHERMIT_CONVERSATION_UPLOAD_BATCH_SIZE;
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'hermit-upload-test-'));
     hermitHome = path.join(tmpDir, '.hermit');
     claudeBase = path.join(tmpDir, '.claude');
     process.env.HERMIT_HOME = hermitHome;
+    process.env.CODEX_HOME = path.join(tmpDir, '.codex');
+    process.env.PI_CODING_AGENT_SESSION_DIR = path.join(tmpDir, '.pi', 'agent', 'sessions');
     process.env.OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL = 'http://monitor.test';
     // Default: disable the periodic first-run date filter so the existing fixtures
     // (hard-coded old timestamps, no cursor) still upload. The date-filter test
@@ -40,11 +43,25 @@ describe('ConversationMessageUploadService', () => {
     delete process.env.HERMIT_HOME;
     delete process.env.OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL;
     delete process.env.CODEX_HOME;
+    delete process.env.PI_CODING_AGENT_SESSION_DIR;
     delete process.env.HERMIT_USAGE_FOREGROUND_SCAN;
     delete process.env.HERMIT_USAGE_FULL_RESCAN;
     delete process.env.OPENHERMIT_UPLOAD_BATCH_DELAY_MS;
+    delete process.env.OPENHERMIT_CONVERSATION_UPLOAD_BATCH_SIZE;
     delete process.env.OPENHERMIT_UPLOAD_SINCE_HOURS;
     await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('honors canonical upload opt-out even when stale legacy state is enabled', async () => {
+    const result = await uploadConversationMessages({
+      telemetry: {
+        conversationUploadEnabled: false,
+        conversations: { uploadEnabled: true },
+      },
+    });
+
+    expect(result.enabled).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('defaults message upload to enabled when telemetry has no explicit upload setting', async () => {
@@ -1341,6 +1358,171 @@ describe('ConversationMessageUploadService', () => {
     delete process.env.OPENHERMIT_CONVERSATION_UPLOAD_BATCH_SIZE;
   });
 
+  it('uploads Pi messages with usage and deduplicates entries copied into cloned sessions', async () => {
+    const piSessionsRoot = path.join(tmpDir, '.pi', 'agent', 'sessions');
+    process.env.PI_CODING_AGENT_SESSION_DIR = piSessionsRoot;
+    const projectDir = path.join(piSessionsRoot, '--tmp-pi-project--');
+    await mkdir(projectDir, { recursive: true });
+    const originalPath = path.join(
+      projectDir,
+      '2026-07-20T00-00-00-000Z_00000000-0000-0000-0000-000000000001.jsonl'
+    );
+    const copiedEntries = [
+      {
+        type: 'message',
+        id: 'user0001',
+        parentId: null,
+        timestamp: '2026-07-20T00:00:01.000Z',
+        message: { role: 'user', content: 'Run the checks', timestamp: 1_784_505_601_000 },
+      },
+      {
+        type: 'message',
+        id: 'assist01',
+        parentId: 'user0001',
+        timestamp: '2026-07-20T00:00:02.000Z',
+        message: {
+          role: 'assistant',
+          provider: 'openai',
+          model: 'gpt-test',
+          timestamp: 1_784_505_602_000,
+          content: [{ type: 'toolCall', id: 'call-1', name: 'bash', arguments: {} }],
+          usage: {
+            input: 10,
+            output: 2,
+            cacheRead: 3,
+            cacheWrite: 1,
+            totalTokens: 16,
+          },
+        },
+      },
+    ];
+    await writeFile(
+      originalPath,
+      [
+        {
+          type: 'session',
+          version: 3,
+          id: '00000000-0000-0000-0000-000000000001',
+          timestamp: '2026-07-20T00:00:00.000Z',
+          cwd: '/tmp/pi-project',
+        },
+        ...copiedEntries,
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n') + '\n'
+    );
+    await writeFile(
+      path.join(projectDir, '2026-07-20T01-00-00-000Z_00000000-0000-0000-0000-000000000002.jsonl'),
+      [
+        {
+          type: 'session',
+          version: 3,
+          id: '00000000-0000-0000-0000-000000000002',
+          timestamp: '2026-07-20T01:00:00.000Z',
+          cwd: '/tmp/pi-project',
+          parentSession: originalPath,
+        },
+        ...copiedEntries,
+        {
+          type: 'message',
+          id: 'assist02',
+          parentId: 'assist01',
+          timestamp: '2026-07-20T01:00:02.000Z',
+          message: {
+            role: 'assistant',
+            provider: 'anthropic',
+            model: 'claude-test',
+            timestamp: 1_784_509_202_000,
+            content: [{ type: 'text', text: 'Checks passed' }],
+            usage: { input: 5, output: 1, cacheRead: 2, cacheWrite: 0, totalTokens: 8 },
+          },
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n') + '\n'
+    );
+
+    const posted: {
+      eventId?: unknown;
+      conversation?: Record<string, unknown>;
+      message?: Record<string, unknown>;
+    }[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/v1/auth/me')) {
+        return Response.json({
+          authenticated: true,
+          status: 'ok',
+          scopes: ['upload:read', 'upload:write'],
+        });
+      }
+      if (url.includes('/api/v1/report/usage/status')) {
+        expect(url).toContain('client=pi');
+        return Response.json({
+          channels: [
+            {
+              reporter: 'agentcli',
+              client: 'pi',
+              scene: 'coding',
+              status: 'never_reported',
+              inFlight: { count: 0, uploadIds: [] },
+              currentCursor: null,
+            },
+          ],
+        });
+      }
+      if (url.endsWith('/api/v1/report/messages')) {
+        const body = JSON.parse(String(init?.body));
+        expect(body).toMatchObject({ reporter: 'agentcli', client: { tool: 'pi' } });
+        posted.push(...body.messages);
+        return Response.json(
+          {
+            ok: true,
+            uploadId: 'upl_pi',
+            receiptId: 'r-pi',
+            status: 'queued',
+            received: body.messages.length,
+            acceptedForProcessing: body.messages.length,
+            rejectedAtReceive: 0,
+          },
+          { status: 202 }
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    const result = await uploadConversationMessages({
+      telemetry: {
+        enabled: true,
+        platform: 'pi',
+        conversationUploadEnabled: true,
+        uploadProviders: ['pi'],
+      },
+    });
+
+    expect(result.lastError).toBeUndefined();
+    expect(result.attempted).toBe(3);
+    expect(posted).toHaveLength(3);
+    expect(new Set(posted.map((message) => message.eventId))).toHaveLength(3);
+    expect(posted.every((message) => /^pi:[a-f0-9]{64}$/u.test(String(message.eventId)))).toBe(
+      true
+    );
+    expect(posted.find((message) => message.message?.messageRef === 'assist01')).toMatchObject({
+      conversation: { conversationId: '00000000-0000-0000-0000-000000000001' },
+      message: {
+        parentRef: 'user0001',
+        modelName: 'gpt-test',
+        content: 'bash',
+        usage: {
+          inputTokens: 10,
+          outputTokens: 2,
+          cacheReadTokens: 3,
+          cacheCreationTokens: 1,
+          totalTokens: 16,
+        },
+      },
+    });
+  });
+
   it('uploads Codex token_count records from new payload.info usage shape', async () => {
     const codexHome = path.join(tmpDir, '.codex');
     process.env.CODEX_HOME = codexHome;
@@ -1863,7 +2045,8 @@ describe('ConversationMessageUploadService', () => {
 
     let refreshCalls = 0;
     let messagesCalls = 0;
-    fetchMock.mockImplementation(async (url: string) => {
+    const messageBatchSizes: number[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/api/v1/auth/refresh')) {
         refreshCalls += 1;
         return Response.json({
@@ -1897,14 +2080,24 @@ describe('ConversationMessageUploadService', () => {
         });
       }
       if (url.endsWith('/api/v1/report/messages')) {
-        messagesCalls += 1;
+        const payload = JSON.parse(String(init?.body ?? '{}')) as {
+          messages?: { conversation?: { conversationId?: string } }[];
+        };
+        const messages = payload.messages ?? [];
+        const belongsToRefreshSession = messages.every(
+          (message) => message.conversation?.conversationId === 'session-refresh'
+        );
+        if (belongsToRefreshSession) {
+          messagesCalls += 1;
+          messageBatchSizes.push(messages.length);
+        }
         return Response.json(
           {
             ok: true,
             uploadId: `upl_${messagesCalls}`,
             status: 'queued',
-            received: 1,
-            acceptedForProcessing: 1,
+            received: messages.length,
+            acceptedForProcessing: messages.length,
             rejectedAtReceive: 0,
           },
           { status: 202 }
@@ -1924,6 +2117,7 @@ describe('ConversationMessageUploadService', () => {
     });
 
     // Both batches shipped...
+    expect(messageBatchSizes).toEqual([2, 1]);
     expect(messagesCalls).toBe(2);
     // ...and refresh fired once per batch PLUS the start-of-run getValidBearerToken
     // (≥ 3). Without the per-batch refresh, refreshCalls would be 1 (start only) and

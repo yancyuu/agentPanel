@@ -134,7 +134,9 @@ export function currentFeatureStates() {
   const telemetry = settings.taskBus?.telemetry && typeof settings.taskBus.telemetry === 'object'
     ? settings.taskBus.telemetry
     : {};
-  const uploadProviders = normalizeUploadProviders(telemetry.uploadProviders || telemetry.platform || ['claudecode', 'codex']);
+  const uploadProviders = normalizeUploadProviders(
+    telemetry.uploadProviders || telemetry.platform || ['claudecode', 'codex', 'pi']
+  );
   const aikeyClaimed = readAikeyClaimed();
   const pidRunning = Boolean(webPid && isPidRunning(webPid));
   // 如果最近 5s 内成功探测到 server 在跑，认为 web 正在运行（即使 pidfile 缺失）

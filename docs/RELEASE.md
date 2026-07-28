@@ -1,22 +1,23 @@
 # Release Guide
 
-本文记录 `yancyuu/Hermit` 当前发布流程。当前包名是 `@yancyyu/agentcli`，版本事实以 `package.json` 为准；当前版本为 v1.9.13。
+本文记录 `yancyuu/agentcli` 当前发布流程。当前包名是 `@yancyyu/agentcli`，版本事实以 `package.json` 为准；当前版本为 v1.10.0。
 
 ## 当前发布事实
 
 | 项 | 当前值 |
 |:---|:---|
-| Repository | `https://github.com/yancyuu/Hermit` |
+| Repository | `https://github.com/yancyuu/agentcli` |
 | npm package | `@yancyyu/agentcli` |
-| CLI binaries | `agentcli`、`agentcli`、`hermit` |
+| CLI binary | `agentcli` |
 | Web build | `pnpm build:web` |
 | Release workflow | `.github/workflows/release.yml` |
-| Docker image | workflow 目标为 `ghcr.io/yancyuu/hermit`；当前仓库必须先补齐 `docker/Dockerfile` 才能实际构建 |
+| Standalone assets | Windows x64、macOS x64、macOS arm64、Linux x64 |
+| Docker image | 当前未启用；仓库没有 `docker/Dockerfile` |
 | 产品形态 | Fastify API + Vite Web UI |
 | 默认入口 | `/teams` |
 | 默认数据目录 | `~/.hermit/` |
 
-当前没有 Electron 桌面安装包发布流程，也没有内嵌 PTY 相关产物。旧 release note 中的桌面安装包名称只属于历史版本。
+当前没有 Electron 桌面安装包发布流程，也没有内嵌 PTY 相关产物。GitHub Release 会构建四个平台的自包含 standalone ZIP；旧 release note 中的桌面安装包名称只属于历史版本。
 
 ## 版本号
 
@@ -59,7 +60,7 @@ git diff -- package.json pnpm-lock.yaml README.md docs/README.md docs/CHANGELOG.
 
 ## GitHub Release
 
-当前 GitHub release workflow 由 tag 触发。Tag 使用纯 semver，例如 `1.6.43`。
+当前 GitHub release workflow 由 tag 触发。Tag 使用纯 semver，例如 `1.10.0`。Tag 推送后会创建 GitHub Release，并在原生 runner 上构建 Windows x64、macOS x64、macOS arm64 和 Linux x64 standalone ZIP。
 
 ```bash
 git tag <VERSION>
@@ -70,20 +71,13 @@ git push origin <VERSION>
 
 ```bash
 gh release create "$VERSION" \
-  --repo yancyuu/Hermit \
+  --repo yancyuu/agentcli \
   --title "$VERSION" \
   --generate-notes \
   --draft=false
 ```
 
-workflow 的 Docker job 目标是构建并发布：
-
-```text
-ghcr.io/yancyuu/hermit:latest
-ghcr.io/yancyuu/hermit:<VERSION>
-```
-
-注意：当前 workflow 引用 `docker/Dockerfile`。发布前必须确认该文件存在并且 `docker build` 可用；否则 Docker job 会失败。npm 发布不依赖 Docker job。
+当前 workflow 已移除 Docker job，因为仓库没有 `docker/Dockerfile`。需要恢复 GHCR 发布时，应先补齐容器构建文件和验证流程；npm 与 standalone 发布不依赖 Docker。
 
 ## npm 发布
 
@@ -168,19 +162,21 @@ npx @yancyyu/agentcli@latest --version
 
 写 Task Bus 时必须区分：当前 Redis-backed dispatch 和目标 offer / bid / lease / event 模型。
 
-## Docker 发布检查
+## Standalone 发布检查
 
-Tag 推送后检查 workflow。只有 Docker job 具备 `docker/Dockerfile` 并成功构建时，才继续拉取镜像：
+Tag 推送后检查 workflow，并确认四个 ZIP 都已上传：
 
 ```bash
-gh run list --repo yancyuu/Hermit --workflow release.yml --limit 3
-docker pull ghcr.io/yancyuu/hermit:<VERSION>
+gh run list --repo yancyuu/agentcli --workflow release.yml --limit 3
+gh release view <VERSION> --repo yancyuu/agentcli
 ```
+
+必须包含：Windows x64、macOS x64、macOS arm64、Linux x64。
 
 ## 删除或修复 release
 
 ```bash
-gh release delete <VERSION> --repo yancyuu/Hermit --yes
+gh release delete <VERSION> --repo yancyuu/agentcli --yes
 git tag -d <VERSION>
 git push origin :refs/tags/<VERSION>
 ```
@@ -189,4 +185,4 @@ git push origin :refs/tags/<VERSION>
 
 ## 历史说明
 
-旧版本可能提到 Electron 桌面安装包、签名产物或 `Claude.Agent.Teams.UI-*` 之类 artifact。当前仓库发布主线是 npm CLI package + GitHub Release；Docker/GHCR 是 workflow 中的目标 job，但需要仓库存在可用 `docker/Dockerfile`。只有在当前 workflow 重新支持桌面产物后，才恢复 Electron 打包说明。
+旧版本可能提到 Electron 桌面安装包、签名产物或 `Claude.Agent.Teams.UI-*` 之类 artifact。当前仓库发布主线是 npm CLI package + GitHub Release standalone ZIP；Docker/GHCR 当前未启用。只有在当前 workflow 重新支持桌面或容器产物后，才恢复对应打包说明。

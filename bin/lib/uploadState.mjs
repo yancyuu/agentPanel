@@ -16,11 +16,12 @@
  * DEFAULT-ON semantics: conversation upload is ON unless the user explicitly
  * opted out. An absent config (fresh install, never toggled) resolves to ON so
  * the 消息总线 is active without forcing the user through the toggle first. The
- * toggle's OFF path writes `conversationUploadEnabled: false` (see
- * setConversationUploadEnabled), which is honored as an explicit opt-out and is
- * not resurrected by the default. Resolution rule:
- *   • canonical `true` OR legacy `true` → ON (explicit opt-in wins over opt-out)
- *   • canonical `false` OR legacy `false` → OFF
+ * canonical field always wins when present; the nested legacy field is only a
+ * migration fallback. This prevents stale `conversations.uploadEnabled: true`
+ * from resurrecting upload after the current toggle writes an explicit false.
+ * Resolution rule:
+ *   • canonical boolean present → use it
+ *   • otherwise legacy boolean present → use it
  *   • both absent → ON (default)
  *
  * @param {unknown} telemetry
@@ -33,8 +34,8 @@ export function resolveConversationUploadEnabled(telemetry) {
   const legacy = t.conversations && typeof t.conversations === 'object'
     ? (/** @type {Record<string, unknown>} */ (t.conversations).uploadEnabled)
     : undefined;
-  if (canonical === true || legacy === true) return true;
-  if (canonical === false || legacy === false) return false;
+  if (typeof canonical === 'boolean') return canonical;
+  if (typeof legacy === 'boolean') return legacy;
   return true;
 }
 

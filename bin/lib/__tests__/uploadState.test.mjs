@@ -4,9 +4,9 @@
 //
 //   1. resolveConversationUploadEnabled(telemetry) — reconciles the persisted
 //      telemetry object into ONE canonical boolean. Must agree with the worker
-//      gate (UsageTelemetryService / ConversationMessageUploadService), which
-//      ORs `conversationUploadEnabled || conversations.uploadEnabled`. The
-//      top-level `uploadEnabled` is a legacy dead field (written but never read
+//      gate (UsageTelemetryService / ConversationMessageUploadService), where
+//      the canonical field wins and the nested legacy field is only a fallback.
+//      The top-level `uploadEnabled` is a legacy dead field (written but never read
 //      for behavior) and must NOT flip the display — otherwise the CLI shows
 //      "enabled" while the worker refuses to upload (or vice versa).
 //
@@ -38,14 +38,19 @@ describe('resolveConversationUploadEnabled — canonical boolean matching the wo
     expect(resolveConversationUploadEnabled({ conversations: { uploadEnabled: false } })).toBe(false);
   });
 
-  it('explicit opt-in wins over opt-out (canonical false + legacy true → on)', () => {
+  it('canonical opt-out wins over stale legacy opt-in', () => {
     expect(
-      resolveConversationUploadEnabled({ conversationUploadEnabled: false, conversations: { uploadEnabled: true } }),
-    ).toBe(true);
-    // both false → off
-    expect(
-      resolveConversationUploadEnabled({ conversationUploadEnabled: false, conversations: { uploadEnabled: false } }),
+      resolveConversationUploadEnabled({
+        conversationUploadEnabled: false,
+        conversations: { uploadEnabled: true },
+      })
     ).toBe(false);
+    expect(
+      resolveConversationUploadEnabled({
+        conversationUploadEnabled: true,
+        conversations: { uploadEnabled: false },
+      })
+    ).toBe(true);
   });
 
   it('ignores the dead top-level uploadEnabled field (worker never reads it)', () => {
