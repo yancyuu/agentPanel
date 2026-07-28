@@ -119,6 +119,7 @@ import {
   type InMemoryScheduleRun,
 } from './serverContext';
 import { registerAppConfigRoutes } from './routes/appConfigRoutes';
+import { registerBridgeProxyRoutes } from './routes/bridgeProxyRoutes';
 import { registerGraphRoutes } from './routes/graphRoutes';
 import { registerHarnessRoutes } from './routes/harnessRoutes';
 import { registerEditorRoutes } from './routes/editorRoutes';
@@ -1447,69 +1448,12 @@ app.addHook('preHandler', async (request, reply) => {
 // /api/v1/*     → hermit-bridge /api/v1/* (兼容旧 renderer 直接打 /api/v1 的代码)
 // ===========================================================================
 
-async function proxyToHermitBridge(
-  request: import('fastify').FastifyRequest,
-  reply: import('fastify').FastifyReply,
-  stripPrefix: string
-) {
-  const baseUrl = runtimeConfig.ccBaseUrl.replace(/\/+$/, '');
-  const token = runtimeConfig.ccToken;
-
-  const url = request.url;
-  const subPath = url.replace(new RegExp(`^${stripPrefix}`), '') || '/';
-  const target = `${baseUrl}/api/v1${subPath}`;
-
-  const headers: Record<string, string> = {
-    'Content-Type': request.headers['content-type']! ?? 'application/json',
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const init: RequestInit = { method: request.method, headers };
-  if (request.method !== 'GET' && request.method !== 'HEAD') {
-    init.body = request.body == null ? undefined : JSON.stringify(request.body);
-  }
-
-  let upstream: Response;
-  try {
-    upstream = await fetch(target, init);
-  } catch (err) {
-    request.log.warn({ target, err }, 'hermit-bridge proxy network error');
-    return reply.code(502).send({
-      ok: false,
-      error: `hermit-bridge 不可达: ${err instanceof Error ? err.message : String(err)}`,
-    });
-  }
-
-  const body = Buffer.from(await upstream.arrayBuffer());
-
-  // Detect non-JSON responses (HTML 404 pages, etc.) and return a clear error
-  // instead of forwarding garbage that will crash the frontend's JSON.parse.
-  const contentType = upstream.headers.get('content-type') ?? '';
-  if (!contentType.includes('json') && upstream.status >= 400) {
-    const snippet = body.toString('utf-8').slice(0, 100).trim();
-    request.log.warn(
-      { target, status: upstream.status, contentType, snippet },
-      'hermit-bridge returned non-JSON error response'
-    );
-    return reply.code(upstream.status).send({
-      ok: false,
-      error:
-        `hermit-bridge 端点 ${subPath} 返回了非 JSON 响应 (HTTP ${upstream.status})。` +
-        '请检查 hermit-bridge 是否正在运行且支持该端点。',
-    });
-  }
-
-  return reply
-    .code(upstream.status)
-    .header('Content-Type', contentType || 'application/json; charset=utf-8')
-    .send(body);
-}
-
-app.all('/api/bridge/*', async (request, reply) =>
-  proxyToHermitBridge(request, reply, '/api/bridge')
-);
-app.all('/api/cc/*', async (request, reply) => proxyToHermitBridge(request, reply, '/api/cc'));
-app.all('/api/v1/*', async (request, reply) => proxyToHermitBridge(request, reply, '/api/v1'));
+registerBridgeProxyRoutes(app, {
+  getRuntimeConfig: () => ({
+    ccBaseUrl: runtimeConfig.ccBaseUrl,
+    ccToken: runtimeConfig.ccToken,
+  }),
+});
 
 // ===========================================================================
 // Hermit config (read/write ~/.hermit/config.json)

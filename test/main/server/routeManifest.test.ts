@@ -180,7 +180,9 @@ describe('server route manifest baseline', () => {
       expect(left.line).toBeLessThan(right.line);
     };
 
-    expectInlineOrder('ALL', '/api/v1/*', 'GET', '/api/v1/system/readiness');
+    expect(SERVER_SOURCE.indexOf('registerBridgeProxyRoutes(app')).toBeLessThan(
+      SERVER_SOURCE.indexOf("app.get('/api/v1/system/readiness'")
+    );
     expectInlineOrder(
       'GET',
       '/api/telemetry/conversations/export',
