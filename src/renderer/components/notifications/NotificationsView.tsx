@@ -21,10 +21,12 @@ import type { DetectedError } from '@renderer/types/data';
 const ROW_HEIGHT = 56;
 const OVERSCAN = 5;
 
-/** Label used for notifications without a triggerName */
-const OTHER_LABEL = '其他';
+/** Stable store scope used for notifications without a triggerName. */
+const OTHER_SCOPE_KEY = 'Other';
+const OTHER_DISPLAY_LABEL = '其他';
 
 interface FilterChip {
+  scopeKey: string;
   label: string;
   count: number;
   colorHex: string;
@@ -80,12 +82,12 @@ export const NotificationsView = (): React.JSX.Element => {
   const filterChips = useMemo((): FilterChip[] => {
     const counts = new Map<string, { count: number; colorHex: string }>();
     for (const n of sortedNotifications) {
-      const label = n.triggerName ?? OTHER_LABEL;
-      const existing = counts.get(label);
+      const scopeKey = n.triggerName ?? OTHER_SCOPE_KEY;
+      const existing = counts.get(scopeKey);
       if (existing) {
         existing.count++;
       } else {
-        counts.set(label, {
+        counts.set(scopeKey, {
           count: 1,
           colorHex: getTriggerColorDef(n.triggerColor).hex,
         });
@@ -94,7 +96,12 @@ export const NotificationsView = (): React.JSX.Element => {
     // Sort by frequency descending
     return Array.from(counts.entries())
       .sort((a, b) => b[1].count - a[1].count)
-      .map(([label, { count, colorHex }]) => ({ label, count, colorHex }));
+      .map(([scopeKey, { count, colorHex }]) => ({
+        scopeKey,
+        label: scopeKey === OTHER_SCOPE_KEY ? OTHER_DISPLAY_LABEL : scopeKey,
+        count,
+        colorHex,
+      }));
   }, [sortedNotifications]);
 
   // Reset filter when all notifications are cleared
@@ -108,8 +115,8 @@ export const NotificationsView = (): React.JSX.Element => {
   const filteredNotifications = useMemo(() => {
     if (activeFilter === null) return sortedNotifications;
     return sortedNotifications.filter((n) => {
-      const label = n.triggerName ?? OTHER_LABEL;
-      return label === activeFilter;
+      const scopeKey = n.triggerName ?? OTHER_SCOPE_KEY;
+      return scopeKey === activeFilter;
     });
   }, [sortedNotifications, activeFilter]);
 
@@ -274,20 +281,20 @@ export const NotificationsView = (): React.JSX.Element => {
                 {/* Trigger chips */}
                 {filterChips.map((chip) => (
                   <button
-                    key={chip.label}
+                    key={chip.scopeKey}
                     type="button"
-                    aria-pressed={activeFilter === chip.label}
-                    onClick={() => handleFilterClick(chip.label)}
+                    aria-pressed={activeFilter === chip.scopeKey}
+                    onClick={() => handleFilterClick(chip.scopeKey)}
                     className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-colors"
                     style={{
                       backgroundColor:
-                        activeFilter === chip.label ? 'var(--color-surface-raised)' : undefined,
+                        activeFilter === chip.scopeKey ? 'var(--color-surface-raised)' : undefined,
                       color:
-                        activeFilter === chip.label
+                        activeFilter === chip.scopeKey
                           ? 'var(--color-text)'
                           : 'var(--color-text-muted)',
                       border:
-                        activeFilter === chip.label
+                        activeFilter === chip.scopeKey
                           ? '1px solid var(--color-border-emphasis)'
                           : '1px solid var(--color-border)',
                     }}

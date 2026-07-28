@@ -22,6 +22,14 @@ const notificationB = {
   title: '任务完成',
   message: '任务已完成',
 } as unknown as DetectedError;
+const notificationWithoutTrigger = {
+  id: 'notification-other',
+  timestamp: 5,
+  isRead: false,
+  triggerColor: 'gray',
+  title: '未分类通知',
+  message: '没有触发器名称',
+} as unknown as DetectedError;
 
 const storeState = {
   notifications: [notificationA, notificationB],
@@ -159,6 +167,39 @@ describe('NotificationsView workbench shell', () => {
     expect(storeState.navigateToError).toHaveBeenCalledWith(notificationA);
     expect(storeState.markNotificationRead).toHaveBeenCalledWith('notification-a');
     expect(storeState.deleteNotification).toHaveBeenCalledWith('notification-a');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('keeps the store scope key for notifications without a trigger name', async () => {
+    storeState.notifications = [notificationA, notificationWithoutTrigger];
+    storeState.unreadCount = 2;
+    const { host, root } = await renderNotifications();
+
+    await act(async () => {
+      findButton(host, '其他').click();
+      await Promise.resolve();
+    });
+
+    expect(host.querySelector('[data-testid="notification-notification-other"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="notification-notification-a"]')).toBeNull();
+
+    await act(async () => {
+      findButton(host, '筛选已读').click();
+      await Promise.resolve();
+    });
+    expect(storeState.markAllNotificationsRead).toHaveBeenLastCalledWith('Other');
+
+    await act(async () => {
+      findButton(host, '清除筛选').click();
+      await Promise.resolve();
+      findButton(host, '确认清除').click();
+      await Promise.resolve();
+    });
+    expect(storeState.clearNotifications).toHaveBeenCalledWith('Other');
 
     await act(async () => {
       root.unmount();
