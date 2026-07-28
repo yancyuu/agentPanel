@@ -112,8 +112,13 @@ import { WorkflowPromptService } from './services/system-manager/WorkflowPromptS
 import { ClaudeBinaryResolver } from './services/team/ClaudeBinaryResolver';
 import { TeamProvisioningService } from './services/team-management';
 import { createServerContext, createServerRuntimeState, type SseClient } from './serverContext';
+import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
 import { registerServerEventHandlers } from './serverEventHandlers';
-import { createServerShutdown, installServerProcessHandlers } from './serverProcessLifecycle';
+import {
+  createServerShutdown,
+  createWorkbenchShutdown,
+  installServerProcessHandlers,
+} from './serverProcessLifecycle';
 import { startStandaloneServerRuntime } from './serverStartup';
 import { HERMIT_OPS_GUIDE_URL } from './services/team-management/OpsRunbookContext';
 import { UpdateService } from './services/UpdateService';
@@ -3679,41 +3684,9 @@ app.post<{
 // Hermit 主仓 UI 首屏强依赖的几个 stub(占位实现)
 // ===========================================================================
 
-// hermit getAppVersion 期望返回 JSON 字符串；Fastify 直接 send(string) 会按 text/plain 返回。
-app.get('/api/version', async (_request, reply) =>
-  reply.type('application/json').send(JSON.stringify(pkg.version))
-);
-
-// GET /api/update/check — 检查是否有新版本
-app.get('/api/update/check', async () => updateService.checkForUpdates());
-
-// POST /api/update/apply — 应用更新（SSE 推送进度）
-app.post('/api/update/apply', async (request, reply) => {
-  reply.raw.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-  });
-
-  const send = (data: unknown) => {
-    reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
-
-  try {
-    await updateService.applyUpdate((progress) => {
-      send(progress);
-      if (progress.phase === 'completed' || progress.phase === 'error') {
-        reply.raw.end();
-      }
-    });
-  } catch (err: unknown) {
-    send({
-      phase: 'error',
-      message: 'Update failed',
-      error: err instanceof Error ? err.message : String(err),
-    });
-    reply.raw.end();
-  }
+registerVersionUpdateRoutes(app, {
+  version: pkg.version,
+  updateService: serverContext.services.update,
 });
 
 app.get('/api/dashboard/recent-projects', async () => dashboardRecentProjectsLoader());
@@ -7578,13 +7551,16 @@ await startStandaloneServerRuntime({
     'ws://127.0.0.1:9810/bridge/ws',
 });
 
-const shutdown = createServerShutdown({
+const shutdownWorkbenchServer = createWorkbenchShutdown({
   app,
-  listenerDisposers: serverContext.lifecycle.listenerDisposers,
+  lifecycle: serverContext.lifecycle,
   imLiveWatcher: serverContext.services.imLiveWatcher,
   directCliManager: serverContext.services.directCli,
   bridgeLauncher: serverContext.services.bridgeLauncher,
   bridge: serverContext.services.bridgeConnection,
+});
+const shutdown = createServerShutdown({
+  shutdownWorkbenchServer,
   processTarget: process,
 });
 

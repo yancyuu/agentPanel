@@ -1,56 +1,72 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const SERVER_PATH = resolve(process.cwd(), 'src/main/server.ts');
+const ROUTES_DIR = resolve(process.cwd(), 'src/main/routes');
 const STARTUP_PATH = resolve(process.cwd(), 'src/main/serverStartup.ts');
 const SERVER_SOURCE = readFileSync(SERVER_PATH, 'utf8');
 const STARTUP_SOURCE = readFileSync(STARTUP_PATH, 'utf8');
 const ROUTE_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'all']);
 
+function collectTypeScriptFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = join(directory, entry.name);
+    if (entry.isDirectory()) return collectTypeScriptFiles(entryPath);
+    return entry.isFile() && entry.name.endsWith('.ts') ? [entryPath] : [];
+  });
+}
+
+const ROUTE_SOURCE_PATHS = [SERVER_PATH, ...collectTypeScriptFiles(ROUTES_DIR)];
+
 interface RouteRegistration {
+  file: string;
   method: string;
   path: string;
   line: number;
 }
 
 function collectRouteRegistrations(): RouteRegistration[] {
-  const sourceFile = ts.createSourceFile(
-    SERVER_PATH,
-    SERVER_SOURCE,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TS
-  );
-  const routes: RouteRegistration[] = [];
+  return ROUTE_SOURCE_PATHS.flatMap((sourcePath) => {
+    const sourceText = readFileSync(sourcePath, 'utf8');
+    const sourceFile = ts.createSourceFile(
+      sourcePath,
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS
+    );
+    const routes: RouteRegistration[] = [];
 
-  function visit(node: ts.Node): void {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-      const receiver = node.expression.expression;
-      const method = node.expression.name.text;
-      const routePath = node.arguments[0];
+    function visit(node: ts.Node): void {
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+        const receiver = node.expression.expression;
+        const method = node.expression.name.text;
+        const routePath = node.arguments[0];
 
-      if (
-        ts.isIdentifier(receiver) &&
-        receiver.text === 'app' &&
-        ROUTE_METHODS.has(method) &&
-        routePath &&
-        (ts.isStringLiteral(routePath) || ts.isNoSubstitutionTemplateLiteral(routePath))
-      ) {
-        routes.push({
-          method: method.toUpperCase(),
-          path: routePath.text,
-          line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
-        });
+        if (
+          ts.isIdentifier(receiver) &&
+          receiver.text === 'app' &&
+          ROUTE_METHODS.has(method) &&
+          routePath &&
+          (ts.isStringLiteral(routePath) || ts.isNoSubstitutionTemplateLiteral(routePath))
+        ) {
+          routes.push({
+            file: sourcePath,
+            method: method.toUpperCase(),
+            path: routePath.text,
+            line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
+          });
+        }
       }
+      ts.forEachChild(node, visit);
     }
-    ts.forEachChild(node, visit);
-  }
 
-  visit(sourceFile);
-  return routes.sort((left, right) => left.line - right.line);
+    visit(sourceFile);
+    return routes;
+  });
 }
 
 function routeKey(route: Pick<RouteRegistration, 'method' | 'path'>): string {

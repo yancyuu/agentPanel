@@ -1,5 +1,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 
+import type { ServerLifecycleState } from './serverContext';
+
 export type ServerProcessTarget = Pick<
   NodeJS.Process,
   'emit' | 'exit' | 'listenerCount' | 'off' | 'on'
@@ -10,15 +12,19 @@ interface ClosableServerApp {
   log: Pick<FastifyBaseLogger, 'error'>;
 }
 
-interface ServerShutdownDependencies {
+interface WorkbenchShutdownDependencies {
   app: ClosableServerApp;
-  listenerDisposers?: Array<() => void>;
+  lifecycle: ServerLifecycleState;
   imLiveWatcher: { stop(): void };
   directCliManager: { shutdown(): void };
   bridgeLauncher: { stop(): void };
   bridge: { dispose?: () => void };
-  processTarget: ServerProcessTarget;
   closeTimeoutMs?: number;
+}
+
+interface ServerShutdownDependencies {
+  shutdownWorkbenchServer(): Promise<void>;
+  processTarget: ServerProcessTarget;
 }
 
 interface ServerProcessHandlerDependencies {
@@ -34,27 +40,39 @@ function closeTimeout(timeoutMs: number): Promise<void> {
   });
 }
 
-export function createServerShutdown({
+export function createWorkbenchShutdown({
   app,
-  listenerDisposers = [],
+  lifecycle,
   imLiveWatcher,
   directCliManager,
   bridgeLauncher,
   bridge,
-  processTarget,
   closeTimeoutMs = 3_000,
+}: WorkbenchShutdownDependencies): () => Promise<void> {
+  return () => {
+    if (!lifecycle.disposePromise) {
+      lifecycle.disposePromise = (async () => {
+        for (const dispose of lifecycle.listenerDisposers.splice(0)) dispose();
+        imLiveWatcher.stop();
+        directCliManager.shutdown();
+        bridgeLauncher.stop();
+        bridge.dispose?.();
+        // Bound app.close() so a stuck SSE/websocket client cannot hold an
+        // Electron or standalone process alive forever.
+        await Promise.race([app.close(), closeTimeout(closeTimeoutMs)]);
+      })();
+    }
+    return lifecycle.disposePromise;
+  };
+}
+
+export function createServerShutdown({
+  shutdownWorkbenchServer,
+  processTarget,
 }: ServerShutdownDependencies): () => Promise<void> {
   return async () => {
     try {
-      for (const dispose of listenerDisposers.splice(0)) dispose();
-      imLiveWatcher.stop();
-      directCliManager.shutdown();
-      bridgeLauncher.stop();
-      bridge.dispose?.();
-      // Bound app.close() so a stuck SSE/websocket client cannot hold the
-      // process alive forever. This intentionally preserves the standalone
-      // server's existing three-second shutdown behavior.
-      await Promise.race([app.close(), closeTimeout(closeTimeoutMs)]);
+      await shutdownWorkbenchServer();
       processTarget.exit(0);
     } catch {
       processTarget.exit(1);
