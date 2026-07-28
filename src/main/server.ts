@@ -85,13 +85,13 @@ import { registerTaskBusSettingsRoutes } from './routes/taskBusSettingsRoutes';
 import {
   registerTeamActionCompatibilityRoutes,
   registerTeamCompatibilityRoutes,
-  registerTeamKanbanCompatibilityRoutes,
   registerTeamMemberCompatibilityRoutes,
   registerTeamMemberStatsRoutes,
   registerTeamProvisioningCompatibilityRoutes,
 } from './routes/teamCompatibilityRoutes';
 import { registerTeamMessageRoutes } from './routes/teamMessageRoutes';
 import { registerTeamSessionRoutes } from './routes/teamSessionRoutes';
+import { activeTasks, registerTeamTaskRoutes, toTeamTask } from './routes/teamTaskRoutes';
 import { registerTerminalRoutes } from './routes/terminalRoutes';
 import { registerToolApprovalRoutes } from './routes/toolApprovalRoutes';
 import { createUsageTelemetryPresenter } from './routes/usageTelemetryPresenter';
@@ -1862,136 +1862,22 @@ app.delete<{ Params: { name: string }; Querystring: { deleteFiles?: string } }>(
 // 任务创建/指派只更新看板；只有显式点击开始才投递给 runtime/目标团队。
 // ===========================================================================
 
-/** TeamTask status → internal Task status */
-function toTaskStatus(s: string): 'todo' | 'doing' | 'done' {
-  if (s === 'in_progress') return 'doing';
-  if (s === 'completed') return 'done';
-  return 'todo';
-}
+const teamTaskRouteDependencies = {
+  readTasks: (teamName: string) => svc.readTasks(teamName),
+  createTask: (teamName: string, payload: Parameters<TeamProvisioningService['createTask']>[1]) =>
+    svc.createTask(teamName, payload),
+  patchTask: (
+    teamName: string,
+    taskId: string,
+    patch: Parameters<TeamProvisioningService['patchTask']>[2]
+  ) => svc.patchTask(teamName, taskId, patch),
+  dispatchTask: (teamName: string, task: Parameters<TeamProvisioningService['dispatchTask']>[1]) =>
+    svc.dispatchTask(teamName, task),
+  listProjects: () => cc.listProjects(),
+  reply500,
+};
 
-function isManualInProgressExitBlocked(
-  currentStatus: string | undefined,
-  nextStatus: 'todo' | 'doing' | 'done' | undefined
-): boolean {
-  return currentStatus === 'doing' && nextStatus !== undefined && nextStatus !== 'doing';
-}
-
-/** internal Task → TeamTask shape (for UI consumption) */
-function toTeamTask(task: {
-  id: string;
-  title?: string;
-  subject?: string;
-  description?: string;
-  status: string;
-  assignee?: string | null;
-  result?: string | null;
-  createdAt: string;
-  updatedAt: string;
-  order: number;
-  teamSlug: string;
-}) {
-  const statusMap: Record<string, string> = {
-    todo: 'pending',
-    doing: 'in_progress',
-    done: 'completed',
-  };
-  return {
-    id: task.id,
-    displayId: task.id.slice(0, 8),
-    subject: task.title ?? task.subject ?? '',
-    description: task.description ?? '',
-    status: statusMap[task.status] ?? 'pending',
-    owner: task.assignee ?? undefined,
-    createdAt: task.createdAt,
-    updatedAt: task.updatedAt,
-    result: task.result ?? undefined,
-  };
-}
-
-function isSoftDeletedTask(task: { result?: string | null }): boolean {
-  return task.result === '__deleted__';
-}
-
-function activeTasks<T extends { result?: string | null }>(tasks: T[]): T[] {
-  return tasks.filter((task) => !isSoftDeletedTask(task));
-}
-
-app.get<{ Params: { name: string } }>('/api/teams/:name/tasks', async (request) => {
-  try {
-    const tasks = activeTasks(await svc.readTasks(request.params.name));
-    return tasks.map(toTeamTask);
-  } catch {
-    return [];
-  }
-});
-
-app.post<{ Params: { name: string }; Body: Record<string, unknown> }>(
-  '/api/teams/:name/tasks',
-  async (request, reply) => {
-    const body = request.body ?? {};
-    // 支持 subject（TeamTask）或 title（内部）
-    const title = (body.subject ?? body.title) as string | undefined;
-    if (!title) return reply.code(400).send({ error: 'title/subject required' });
-    const task = await svc.createTask(request.params.name, {
-      title,
-      description: body.description as string | undefined,
-      assignee: (body.owner ?? body.assignee) as string | null | undefined,
-      status: body.status ? toTaskStatus(body.status as string) : 'todo',
-    });
-    return toTeamTask(task);
-  }
-);
-
-app.patch<{ Params: { name: string; id: string }; Body: Record<string, unknown> }>(
-  '/api/teams/:name/tasks/:id',
-  async (request, reply) => {
-    const body = request.body ?? {};
-    const patch: Record<string, unknown> = {};
-    const nextStatus = body.status !== undefined ? toTaskStatus(body.status as string) : undefined;
-    if (body.subject !== undefined) patch.title = body.subject;
-    if (body.title !== undefined) patch.title = body.title;
-    if (body.description !== undefined) patch.description = body.description;
-    if (nextStatus !== undefined) patch.status = nextStatus;
-    if (body.owner !== undefined) patch.assignee = body.owner;
-    if (body.assignee !== undefined) patch.assignee = body.assignee;
-    if (body.result !== undefined) patch.result = body.result;
-
-    const tasks = await svc.readTasks(request.params.name);
-    const existingTask = tasks.find((task) => task.id === request.params.id);
-    if (isManualInProgressExitBlocked(existingTask?.status, nextStatus)) {
-      return reply.code(409).send({
-        ok: false,
-        error: 'Agent 正在处理中，不能手动完成或取消。请等待 agent 调用 complete_task。',
-      });
-    }
-
-    const task = await svc.patchTask(request.params.name, request.params.id, patch);
-    return toTeamTask(task);
-  }
-);
-
-app.delete<{ Params: { name: string; id: string } }>(
-  '/api/teams/:name/tasks/:id',
-  async (request, reply) => {
-    try {
-      const tasks = await svc.readTasks(request.params.name);
-      const existingTask = tasks.find((task) => task.id === request.params.id);
-      if (existingTask?.status === 'doing') {
-        return reply.code(409).send({
-          ok: false,
-          error: 'Agent 正在处理中，不能手动删除任务。',
-        });
-      }
-      await svc.patchTask(request.params.name, request.params.id, {
-        status: 'done',
-        result: '__deleted__',
-      });
-      return { ok: true };
-    } catch {
-      return reply.code(404).send({ error: 'not found' });
-    }
-  }
-);
+registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['core'] });
 
 // ===========================================================================
 // 协同开关 — PATCH /api/teams/:name/collaboration
@@ -2535,188 +2421,8 @@ registerTeamSessionRoutes(app, {
 registerTeamMessageRoutes(app, teamMessageRouteDependencies, { routes: ['process'] });
 
 registerTeamCompatibilityRoutes(app);
-
-// teams/tasks (全局任务列表 — 跨所有团队)
-app.get('/api/teams/tasks', async () => {
-  try {
-    const allTasks: ReturnType<typeof toTeamTask>[] = [];
-    const projects = await cc.listProjects();
-    for (const p of projects) {
-      try {
-        const tasks = activeTasks(await svc.readTasks(p.name));
-        allTasks.push(...tasks.map(toTeamTask));
-      } catch {
-        /* skip */
-      }
-    }
-    return allTasks;
-  } catch {
-    return [];
-  }
-});
-
-// 团队任务子操作 — 全部委托给 svc.patchTask
-app.post<{ Params: { name: string; id: string } }>(
-  '/api/teams/:name/tasks/:id/request-review',
-  async (request, reply) => {
-    try {
-      const tasks = await svc.readTasks(request.params.name);
-      const existingTask = tasks.find((task) => task.id === request.params.id);
-      if (existingTask?.status === 'doing') {
-        return reply.code(409).send({
-          ok: false,
-          error: 'Agent 正在处理中，不能手动提交审核。请等待 agent 调用 complete_task。',
-        });
-      }
-      const task = await svc.patchTask(request.params.name, request.params.id, { status: 'done' });
-      return { ok: true, data: toTeamTask(task) };
-    } catch {
-      return { ok: true };
-    }
-  }
-);
-app.patch<{ Params: { name: string; id: string }; Body: Record<string, unknown> }>(
-  '/api/teams/:name/tasks/:id/kanban',
-  async (request) => {
-    // kanban metadata — stored in board.json via patchTask (no-op for now, column tracked client-side)
-    return { ok: true };
-  }
-);
-app.patch<{ Params: { name: string; id: string }; Body: { status?: string } }>(
-  '/api/teams/:name/tasks/:id/status',
-  async (request, reply) => {
-    try {
-      const { status } = request.body ?? {};
-      const nextStatus = status ? toTaskStatus(status) : undefined;
-      const tasks = await svc.readTasks(request.params.name);
-      const existingTask = tasks.find((task) => task.id === request.params.id);
-      if (isManualInProgressExitBlocked(existingTask?.status, nextStatus)) {
-        return reply.code(409).send({
-          ok: false,
-          error: 'Agent 正在处理中，不能手动完成或取消。请等待 agent 调用 complete_task。',
-        });
-      }
-      const task = await svc.patchTask(request.params.name, request.params.id, {
-        status: nextStatus,
-      });
-      return toTeamTask(task);
-    } catch {
-      return { ok: true };
-    }
-  }
-);
-app.patch<{ Params: { name: string; id: string }; Body: { owner?: string } }>(
-  '/api/teams/:name/tasks/:id/owner',
-  async (request) => {
-    try {
-      const body = request.body ?? {};
-      const task = await svc.patchTask(request.params.name, request.params.id, {
-        assignee: body.owner ?? null,
-      });
-      return toTeamTask(task);
-    } catch {
-      return { ok: true };
-    }
-  }
-);
-app.patch<{ Params: { name: string; id: string }; Body: Record<string, unknown> }>(
-  '/api/teams/:name/tasks/:id/fields',
-  async (request) => {
-    try {
-      const body = request.body ?? {};
-      const patch: Record<string, unknown> = {};
-      if (body.subject !== undefined) patch.title = body.subject;
-      if (body.description !== undefined) patch.description = body.description;
-      const task = await svc.patchTask(request.params.name, request.params.id, patch);
-      return toTeamTask(task);
-    } catch {
-      return { ok: true };
-    }
-  }
-);
-app.post<{ Params: { name: string; id: string } }>(
-  '/api/teams/:name/tasks/:id/start',
-  async (request) => {
-    try {
-      const task = await svc.patchTask(request.params.name, request.params.id, { status: 'doing' });
-      if (task.assignee) {
-        await svc.dispatchTask(request.params.name, task).catch(() => {});
-        return { notifiedOwner: true };
-      }
-      return { notifiedOwner: false };
-    } catch {
-      return { notifiedOwner: false };
-    }
-  }
-);
-app.post<{ Params: { name: string; id: string } }>(
-  '/api/teams/:name/tasks/:id/start-by-user',
-  async (request) => {
-    try {
-      const task = await svc.patchTask(request.params.name, request.params.id, { status: 'doing' });
-      if (task.assignee) {
-        await svc.dispatchTask(request.params.name, task).catch(() => {});
-        return { notifiedOwner: true };
-      }
-      return { notifiedOwner: false };
-    } catch {
-      return { notifiedOwner: false };
-    }
-  }
-);
-app.post<{ Params: { name: string; id: string } }>(
-  '/api/teams/:name/tasks/:id/soft-delete',
-  async (request, reply) => {
-    try {
-      const tasks = await svc.readTasks(request.params.name);
-      const existingTask = tasks.find((task) => task.id === request.params.id);
-      if (existingTask?.status === 'doing') {
-        return reply.code(409).send({
-          ok: false,
-          error: 'Agent 正在处理中，不能手动删除任务。',
-        });
-      }
-      await svc.patchTask(request.params.name, request.params.id, {
-        status: 'done',
-        result: '__deleted__',
-      });
-      return { ok: true };
-    } catch (err) {
-      return reply.code(404).send(reply500(err));
-    }
-  }
-);
-app.post<{ Params: { name: string; id: string } }>(
-  '/api/teams/:name/tasks/:id/restore',
-  async (request, reply) => {
-    try {
-      await svc.patchTask(request.params.name, request.params.id, { status: 'todo', result: null });
-      return { ok: true };
-    } catch (err) {
-      return reply.code(404).send(reply500(err));
-    }
-  }
-);
-app.get<{ Params: { name: string } }>('/api/teams/:name/deleted-tasks', async (request) => {
-  try {
-    const tasks = await svc.readTasks(request.params.name);
-    return tasks.filter((t) => t.result === '__deleted__').map(toTeamTask);
-  } catch {
-    return [];
-  }
-});
-app.post<{ Params: { name: string; id: string }; Body: { text?: string } }>(
-  '/api/teams/:name/tasks/:id/comments',
-  async () => ({ ok: true })
-);
-app.post<{ Params: { name: string; id: string } }>(
-  '/api/teams/:name/tasks/:id/clarification',
-  async () => ({ ok: true })
-);
-app.post<{ Params: { name: string; id: string } }>(
-  '/api/teams/:name/tasks/:id/relationships',
-  async () => ({ ok: true })
-);
+registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['compatibility'] });
+registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['actions'] });
 
 registerTeamMemberCompatibilityRoutes(app);
 
@@ -3195,28 +2901,7 @@ registerTeamMessageRoutes(app, teamMessageRouteDependencies, { routes: ['send'] 
 // 路由别名 — 修正前端调用路径与服务端路径的不匹配
 // ===========================================================================
 
-// requestReview: 前端调用 /tasks/:id/review，服务端原路由是 /tasks/:id/request-review
-app.post<{ Params: { name: string; id: string } }>(
-  '/api/teams/:name/tasks/:id/review',
-  async (request, reply) => {
-    try {
-      const tasks = await svc.readTasks(request.params.name);
-      const existingTask = tasks.find((task) => task.id === request.params.id);
-      if (existingTask?.status === 'doing') {
-        return reply.code(409).send({
-          ok: false,
-          error: 'Agent 正在处理中，不能手动提交审核。请等待 agent 调用 complete_task。',
-        });
-      }
-      const task = await svc.patchTask(request.params.name, request.params.id, { status: 'done' });
-      return { ok: true, data: toTeamTask(task) };
-    } catch {
-      return { ok: true };
-    }
-  }
-);
-
-registerTeamKanbanCompatibilityRoutes(app);
+registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['review-aliases'] });
 
 // updateConfig: 前端调用 PUT /config（服务端原有 PATCH，补充 PUT 别名）
 app.put<{ Params: { name: string } }>('/api/teams/:name/config', async (request, reply) => {
@@ -3231,7 +2916,9 @@ app.put<{ Params: { name: string } }>('/api/teams/:name/config', async (request,
   }
 });
 
-registerTeamActionCompatibilityRoutes(app);
+registerTeamActionCompatibilityRoutes(app, { routes: ['member-skip'] });
+registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['late-aliases'] });
+registerTeamActionCompatibilityRoutes(app, { routes: ['remaining'] });
 
 registerTeamMemberStatsRoutes(app, {
   readTeamManifest: (teamName) => svc.readTeamManifest(teamName),

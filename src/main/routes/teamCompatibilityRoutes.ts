@@ -51,18 +51,6 @@ function emptyMemberStats(computedAt: string): MemberStatsResponse {
 
 export function registerTeamCompatibilityRoutes(app: FastifyInstance): void {
   app.get<{ Params: { name: string } }>('/api/teams/:name/saved-request', async () => null);
-
-  app.get<{ Params: { name: string } }>('/api/teams/:name/kanban', async (request) => ({
-    teamName: request.params.name,
-    reviewers: [],
-    tasks: {},
-  }));
-
-  app.get<{ Params: { name: string } }>('/api/teams/:name/task-change-presence', async () => ({}));
-
-  app.post<{ Params: { name: string } }>('/api/teams/:name/kanban-column-order', async () => ({
-    ok: true,
-  }));
 }
 
 export function registerTeamMemberCompatibilityRoutes(app: FastifyInstance): void {
@@ -115,75 +103,63 @@ export function registerTeamProvisioningCompatibilityRoutes(app: FastifyInstance
   app.delete<{ Params: { name: string } }>('/api/teams/:name/draft', async () => ({ ok: true }));
 }
 
-export function registerTeamKanbanCompatibilityRoutes(app: FastifyInstance): void {
-  app.patch<{ Params: { name: string; id: string }; Body: Record<string, unknown> }>(
-    '/api/teams/:name/kanban/:id',
-    async () => ({ ok: true })
-  );
+export function registerTeamActionCompatibilityRoutes(
+  app: FastifyInstance,
+  options: { routes?: ('member-skip' | 'remaining')[] } = {}
+): void {
+  const routes = new Set(options.routes ?? ['member-skip', 'remaining']);
 
-  app.put<{ Params: { name: string } }>('/api/teams/:name/kanban/column-order', async () => ({
-    ok: true,
-  }));
-}
+  if (routes.has('member-skip')) {
+    app.post<{ Params: { name: string; memberName: string } }>(
+      '/api/teams/:name/members/:memberName/skip',
+      async () => ({ ok: true })
+    );
+  }
 
-export function registerTeamActionCompatibilityRoutes(app: FastifyInstance): void {
-  app.post<{ Params: { name: string; memberName: string } }>(
-    '/api/teams/:name/members/:memberName/skip',
-    async () => ({ ok: true })
-  );
+  if (routes.has('remaining')) {
+    app.post('/api/teams/config', async () => ({ ok: true }));
 
-  app.post<{ Params: { name: string; taskId: string } }>(
-    '/api/teams/:name/task-clarification/:taskId',
-    async () => ({ ok: true })
-  );
+    app.post<{ Params: { name: string }; Body: { pid?: number } }>(
+      '/api/teams/:name/kill-process',
+      async () => ({ ok: true })
+    );
 
-  app.delete<{ Params: { name: string; id: string } }>(
-    '/api/teams/:name/tasks/:id/relationships',
-    async () => ({ ok: true })
-  );
+    app.get<{ Params: { name: string; memberName: string } }>(
+      '/api/teams/:name/member-logs/:memberName',
+      async () => []
+    );
 
-  app.post('/api/teams/config', async () => ({ ok: true }));
+    app.get<{ Params: { name: string; taskId: string } }>(
+      '/api/teams/:name/task-logs/:taskId',
+      async () => []
+    );
 
-  app.post<{ Params: { name: string }; Body: { pid?: number } }>(
-    '/api/teams/:name/kill-process',
-    async () => ({ ok: true })
-  );
+    app.get<{ Params: { name: string } }>('/api/teams/:name/activity', async () => []);
 
-  app.get<{ Params: { name: string; memberName: string } }>(
-    '/api/teams/:name/member-logs/:memberName',
-    async () => []
-  );
+    app.get<{ Params: { name: string } }>('/api/teams/:name/task-activity-detail', async () => ({
+      entries: [],
+    }));
 
-  app.get<{ Params: { name: string; taskId: string } }>(
-    '/api/teams/:name/task-logs/:taskId',
-    async () => []
-  );
+    app.get<{ Params: { name: string; taskId: string } }>(
+      '/api/teams/:name/task-log-stream-summary/:taskId',
+      async () => ({ chunks: [] })
+    );
 
-  app.get<{ Params: { name: string } }>('/api/teams/:name/activity', async () => []);
+    app.get<{ Params: { name: string; taskId: string } }>(
+      '/api/teams/:name/task-log-stream/:taskId',
+      async () => ({ chunks: [] })
+    );
 
-  app.get<{ Params: { name: string } }>('/api/teams/:name/task-activity-detail', async () => ({
-    entries: [],
-  }));
+    app.get<{ Params: { name: string; taskId: string } }>(
+      '/api/teams/:name/exact-log-summaries/:taskId',
+      async () => ({ logs: [] })
+    );
 
-  app.get<{ Params: { name: string; taskId: string } }>(
-    '/api/teams/:name/task-log-stream-summary/:taskId',
-    async () => ({ chunks: [] })
-  );
-
-  app.get<{ Params: { name: string; taskId: string } }>(
-    '/api/teams/:name/task-log-stream/:taskId',
-    async () => ({ chunks: [] })
-  );
-
-  app.get<{ Params: { name: string; taskId: string } }>(
-    '/api/teams/:name/exact-log-summaries/:taskId',
-    async () => ({ logs: [] })
-  );
-
-  app.get<{ Params: { name: string; taskId: string } }>(
-    '/api/teams/:name/exact-log-detail/:taskId',
-    async () => ({ lines: [] })
-  );
+    app.get<{ Params: { name: string; taskId: string } }>(
+      '/api/teams/:name/exact-log-detail/:taskId',
+      async () => ({ lines: [] })
+    );
+  }
 }
 
 export function registerTeamMemberStatsRoutes(

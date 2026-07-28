@@ -1,10 +1,11 @@
+/* eslint-disable @typescript-eslint/require-await -- async test doubles implement Promise-returning route dependencies. */
+
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   registerTeamActionCompatibilityRoutes,
   registerTeamCompatibilityRoutes,
-  registerTeamKanbanCompatibilityRoutes,
   registerTeamMemberCompatibilityRoutes,
   registerTeamMemberStatsRoutes,
   registerTeamProvisioningCompatibilityRoutes,
@@ -12,7 +13,7 @@ import {
 import type { LocalSessionSummary } from '../../../src/main/services/session-intelligence/LocalSessionScanner';
 import type { TeamManifest } from '../../../src/main/services/team-management/TeamWorkspaceService';
 
-const apps: Array<ReturnType<typeof Fastify>> = [];
+const apps: ReturnType<typeof Fastify>[] = [];
 type MemberStatsDependencies = Parameters<typeof registerTeamMemberStatsRoutes>[1];
 
 function registerAllCompatibilityRoutes(
@@ -22,7 +23,6 @@ function registerAllCompatibilityRoutes(
   registerTeamCompatibilityRoutes(app);
   registerTeamMemberCompatibilityRoutes(app);
   registerTeamProvisioningCompatibilityRoutes(app);
-  registerTeamKanbanCompatibilityRoutes(app);
   registerTeamActionCompatibilityRoutes(app);
   registerTeamMemberStatsRoutes(app, memberStatsDependencies);
 }
@@ -58,19 +58,12 @@ afterEach(async () => {
 describe('team compatibility routes', () => {
   it('pins exact response contracts for compatibility stubs and aliases', async () => {
     const harness = createHarness();
-    const cases: Array<{
+    const cases: {
       method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
       url: string;
       expected: unknown;
-    }> = [
+    }[] = [
       { method: 'GET', url: '/api/teams/team-a/saved-request', expected: null },
-      {
-        method: 'GET',
-        url: '/api/teams/team-a/kanban',
-        expected: { teamName: 'team-a', reviewers: [], tasks: {} },
-      },
-      { method: 'GET', url: '/api/teams/team-a/task-change-presence', expected: {} },
-      { method: 'POST', url: '/api/teams/team-a/kanban-column-order', expected: { ok: true } },
       { method: 'POST', url: '/api/teams/team-a/members', expected: { ok: true } },
       { method: 'DELETE', url: '/api/teams/team-a/members/member-a', expected: { ok: true } },
       { method: 'PATCH', url: '/api/teams/team-a/members/member-a/role', expected: { ok: true } },
@@ -105,19 +98,7 @@ describe('team compatibility routes', () => {
       },
       { method: 'PUT', url: '/api/teams/team-a/members', expected: { ok: true } },
       { method: 'DELETE', url: '/api/teams/team-a/draft', expected: { ok: true } },
-      { method: 'PATCH', url: '/api/teams/team-a/kanban/task-1', expected: { ok: true } },
-      { method: 'PUT', url: '/api/teams/team-a/kanban/column-order', expected: { ok: true } },
       { method: 'POST', url: '/api/teams/team-a/members/member-a/skip', expected: { ok: true } },
-      {
-        method: 'POST',
-        url: '/api/teams/team-a/task-clarification/task-1',
-        expected: { ok: true },
-      },
-      {
-        method: 'DELETE',
-        url: '/api/teams/team-a/tasks/task-1/relationships',
-        expected: { ok: true },
-      },
       { method: 'POST', url: '/api/teams/config', expected: { ok: true } },
       { method: 'POST', url: '/api/teams/team-a/kill-process', expected: { ok: true } },
       { method: 'GET', url: '/api/teams/team-a/member-logs/member-a', expected: [] },
