@@ -25,17 +25,18 @@ const testState = vi.hoisted(() => {
     status: 'in_progress',
     owner: 'bob',
   } as TeamTaskWithKanban;
+  const members = [member];
   const snapshot = {
     teamName: 'team-alpha',
     config: {
       name: 'Alpha 团队',
       description: '协作团队',
-      projectPath: '/tmp/team-alpha',
+      projectPath: '/tmp/team-alpha' as string | undefined,
       leadSessionId: null,
       sessionHistory: [],
       projectPathHistory: [],
     },
-    members: [member],
+    members,
     tasks: [task],
     messages: [],
     processes: [],
@@ -112,7 +113,7 @@ const testState = vi.hoisted(() => {
     fetchTeams: asyncNoop,
     closeMemberProfile,
   };
-  return { member, task, snapshot, store, createTeamTask, closeMemberProfile };
+  return { member, members, task, snapshot, store, createTeamTask, closeMemberProfile };
 });
 
 vi.mock('@renderer/api', () => ({
@@ -144,7 +145,7 @@ vi.mock('@renderer/store/slices/teamSlice', () => ({
   isTeamProvisioningActive: () => false,
   selectResolvedMemberForTeamName: (_state: unknown, _teamName: string, memberName: string) =>
     memberName === testState.member.name ? testState.member : null,
-  selectResolvedMembersForTeamName: () => [testState.member],
+  selectResolvedMembersForTeamName: () => testState.members,
   selectTeamMemberSnapshotsForName: () => [],
 }));
 
@@ -337,6 +338,7 @@ async function renderView(): Promise<{
 
 describe('TeamDetailView member roster interactions', () => {
   beforeEach(() => {
+    testState.snapshot.config.projectPath = '/tmp/team-alpha';
     testState.store.selectedTeamData = testState.snapshot;
     testState.store.pendingMemberProfile = null;
     testState.createTeamTask.mockClear();
@@ -432,6 +434,7 @@ describe('TeamDetailView member roster interactions', () => {
 
   it('opens a pending member profile after cached members receive team data', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    testState.snapshot.config.projectPath = undefined;
     testState.store.selectedTeamData = null;
     testState.store.pendingMemberProfile = 'bob';
     const { host, root } = await renderView();
