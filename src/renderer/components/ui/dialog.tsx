@@ -17,7 +17,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-50 bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+      'fixed inset-0 z-50 bg-black/45 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
       className
     )}
     {...props}
@@ -33,14 +33,14 @@ const DialogContent = React.forwardRef<
     <DialogOverlay />
     <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="pointer-events-auto relative">
-        <DialogPrimitive.Close className="absolute -right-4 -top-4 z-10 rounded-full bg-[var(--color-surface-raised)] p-1.5 opacity-70 shadow-lg ring-1 ring-[var(--color-border)] transition-opacity hover:opacity-100 focus:outline-none focus:ring-1 focus:ring-[var(--color-border-emphasis)] disabled:pointer-events-none">
+        <DialogPrimitive.Close className="absolute right-3 top-3 z-10 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:pointer-events-none">
           <X className="size-4 text-[var(--color-text-muted)]" />
-          <span className="sr-only">Close</span>
+          <span className="sr-only">关闭</span>
         </DialogPrimitive.Close>
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
-            'grid w-full max-w-lg gap-4 border-0 bg-[var(--color-surface)] p-6 shadow-lg ring-1 ring-inset ring-[var(--color-border)] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-lg',
+            'grid w-full max-w-lg gap-4 rounded-xl border border-[var(--surface-border)] bg-surface-raised p-6 shadow-floating duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
             'max-h-[90vh] min-h-0 overflow-y-auto overflow-x-hidden',
             'focus:outline-none',
             className
@@ -78,10 +78,7 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn(
-      'text-lg font-semibold leading-none tracking-tight text-[var(--color-text)]',
-      className
-    )}
+    className={cn('text-base font-medium leading-none tracking-tight text-foreground', className)}
     {...props}
   />
 ));
@@ -93,7 +90,7 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn('text-sm text-[var(--color-text-muted)]', className)}
+    className={cn('text-sm text-muted-foreground', className)}
     {...props}
   />
 ));

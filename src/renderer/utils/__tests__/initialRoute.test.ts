@@ -45,17 +45,30 @@ describe('restoreInitialRoute', () => {
     expect(state.openTeamTab).toHaveBeenCalledWith('我的团队');
   });
 
-  it('does nothing for the root path', () => {
+  it.each(['/', ''])('opens the inbox for the root path %j', (pathname) => {
     const state = mockState();
-    restoreInitialRoute(state, '/');
+    restoreInitialRoute(state, pathname);
+    expect(state.openTasksTab).toHaveBeenCalledTimes(1);
     expect(state.openTeamsTab).not.toHaveBeenCalled();
-    expect(state.openTab).not.toHaveBeenCalled();
   });
 
-  it('does nothing for an empty path', () => {
+  it.each([
+    ['/tasks', 'openTasksTab'],
+    ['/dashboard', 'openDashboard'],
+    ['/settings', 'openSettingsTab'],
+    ['/extensions', 'openExtensionsTab'],
+    ['/schedules', 'openSchedulesTab'],
+    ['/system-manager', 'openSystemManager'],
+  ] as const)('preserves the existing %s deep link', (pathname, action) => {
     const state = mockState();
-    restoreInitialRoute(state, '');
-    expect(state.openTab).not.toHaveBeenCalled();
+    restoreInitialRoute(state, pathname);
+    expect(state[action]).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the notifications deep link', () => {
+    const state = mockState();
+    restoreInitialRoute(state, '/notifications');
+    expect(state.openTab).toHaveBeenCalledWith({ type: 'notifications', label: '通知' });
   });
 
   it('navigates to a session for /session/:project/:session', () => {

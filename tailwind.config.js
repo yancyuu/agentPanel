@@ -4,19 +4,31 @@ module.exports = {
   content: [
     './src/renderer/index.html',
     './src/renderer/**/*.{js,ts,jsx,tsx}',
+    './src/features/**/*.{js,ts,jsx,tsx}',
     './src/shared/**/*.{js,ts,jsx,tsx}',
     './packages/agent-graph/src/**/*.{js,ts,jsx,tsx}'
   ],
   theme: {
     extend: {
       colors: {
-        // Theme-aware surface colors (use CSS variables)
+        // Canonical workbench surface hierarchy.
+        'app-shell': 'var(--app-shell)',
+        'page-canvas': 'var(--page-canvas)',
+        foreground: 'var(--foreground)',
+        'foreground-secondary': 'var(--foreground-secondary)',
+        'muted-foreground': 'var(--muted-foreground)',
+        brand: 'var(--brand)',
+        success: 'var(--success)',
+        warning: 'var(--warning)',
+        destructive: 'var(--destructive)',
         surface: {
-          DEFAULT: 'var(--color-surface)',
-          raised: 'var(--color-surface-raised)',
+          DEFAULT: 'var(--surface)',
+          raised: 'var(--surface-raised)',
+          hover: 'var(--surface-hover)',
+          selected: 'var(--surface-selected)',
           overlay: 'var(--color-surface-overlay)',
           sidebar: 'var(--color-surface-sidebar)',
-          code: 'var(--code-bg)',  // Deep black for code blocks
+          code: 'var(--code-bg)',
         },
         // Theme-aware border colors (use CSS variables)
         border: {
@@ -34,10 +46,10 @@ module.exports = {
         },
         // Semantic colors (only for status, not containers)
         semantic: {
-          success: '#22c55e',  // green-500
-          error: '#ef4444',    // red-500
-          warning: '#f59e0b',  // amber-500
-          info: '#3b82f6',     // blue-500
+          success: 'var(--success)',
+          error: 'var(--destructive)',
+          warning: 'var(--warning)',
+          info: 'var(--info)',
         },
         // Theme-aware info color (use for blue informational elements)
         info: {
@@ -54,7 +66,15 @@ module.exports = {
           text: 'var(--color-text)',
           'text-secondary': 'var(--color-text-secondary)'
         }
-      }
+      },
+      fontFamily: {
+        sans: ['var(--font-sans)'],
+        mono: ['var(--font-mono)'],
+      },
+      boxShadow: {
+        surface: 'var(--surface-shadow)',
+        floating: 'var(--floating-shadow)',
+      },
     }
   },
   plugins: [

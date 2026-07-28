@@ -5,31 +5,50 @@
 /* Theme CSS Custom Properties */
 
 :root {
-  /* Dark theme (default) - Phosphor Green terminal palette */
-  --color-surface: #0a0a0f;
-  /* Main background — CRT black */
-  --color-surface-raised: #121318;
-  /* Active/Selected items — terminal surface */
-  --color-surface-overlay: #121318;
-  /* Overlay surfaces */
-  --color-surface-sidebar: #060609;
-  /* Sidebar — deepest black */
-  --color-border: rgba(74, 222, 128, 0.07);
-  /* Borders — phosphor green-tinted */
-  --color-border-subtle: rgba(74, 222, 128, 0.04);
-  /* Subtle borders */
-  --color-border-emphasis: rgba(74, 222, 128, 0.14);
-  /* Emphasis borders */
-  --color-text: #c8cdd8;
-  --color-text-secondary: #7a8190;
-  --color-text-muted: #4f5564;
-  --color-accent: #4ade80;
-  --color-accent-rgb: 74, 222, 128;
-  --color-accent-soft: rgba(74, 222, 128, 0.08);
-  --color-accent-muted: rgba(74, 222, 128, 0.14);
-  --color-accent-border: rgba(74, 222, 128, 0.32);
-  --color-accent-glow: rgba(74, 222, 128, 0.24);
-  /* Accent — phosphor green */
+  /* Multica-inspired workbench surfaces. Color is reserved for state, not decoration. */
+  --font-sans:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  --font-mono: 'Agave', 'JetBrains Mono', Menlo, Monaco, Consolas, monospace;
+  --app-shell: #151516;
+  --page-canvas: #1b1b1d;
+  --surface: #222225;
+  --surface-raised: #29292d;
+  --surface-hover: #303034;
+  --surface-selected: #37373c;
+  --surface-border: rgba(255, 255, 255, 0.1);
+  --surface-border-subtle: rgba(255, 255, 255, 0.06);
+  --surface-border-emphasis: rgba(255, 255, 255, 0.18);
+  --foreground: #f2f2f3;
+  --foreground-secondary: #b3b3ba;
+  --muted-foreground: #85858e;
+  --brand: #8b8cf5;
+  --brand-rgb: 139, 140, 245;
+  --success: #65c98a;
+  --warning: #e3ad5c;
+  --destructive: #e97878;
+  --info: #76a9ea;
+  --focus-ring: rgba(139, 140, 245, 0.58);
+  --surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --floating-shadow: 0 12px 36px rgba(0, 0, 0, 0.3);
+
+  /* Backward-compatible aliases for existing renderer modules. */
+  --color-surface: var(--page-canvas);
+  --color-surface-raised: var(--surface);
+  --color-surface-overlay: var(--surface-raised);
+  --color-surface-sidebar: var(--app-shell);
+  --color-border: var(--surface-border);
+  --color-border-subtle: var(--surface-border-subtle);
+  --color-border-emphasis: var(--surface-border-emphasis);
+  --color-text: var(--foreground);
+  --color-text-secondary: var(--foreground-secondary);
+  --color-text-muted: var(--muted-foreground);
+  --color-accent: var(--brand);
+  --color-accent-rgb: var(--brand-rgb);
+  --color-accent-soft: rgba(var(--brand-rgb), 0.08);
+  --color-accent-muted: rgba(var(--brand-rgb), 0.14);
+  --color-accent-border: rgba(var(--brand-rgb), 0.32);
+  --color-accent-glow: rgba(var(--brand-rgb), 0.18);
   /* Scrollbar colors */
   --scrollbar-thumb: rgba(74, 222, 128, 0.12);
   --scrollbar-thumb-hover: rgba(74, 222, 128, 0.22);
@@ -457,33 +476,44 @@
 /* Light theme overrides - Warm neutral palette for eye comfort */
 
 :root.light {
-  --color-surface: #f9f9f7;
-  /* Warm off-white (not pure white) */
-  --color-surface-raised: #e8e6e3;
-  /* Warm raised surface — stronger contrast for visible hover */
-  --color-surface-overlay: #e8e7e4;
-  /* Warm overlay */
-  --color-surface-sidebar: #f1f0ee;
-  /* Warm sidebar, distinct from main */
-  --color-border: #d5d3cf;
-  /* Warm neutral border */
-  --color-border-subtle: #e3e1dd;
-  /* Warm subtle border */
-  --color-border-emphasis: #a8a5a0;
-  /* Warm emphasis border */
-  --color-text: #1c1b19;
-  /* Warm near-black text */
-  --color-text-secondary: #4d4b46;
-  /* Warm secondary text */
-  --color-text-muted: #6d6b65;
-  /* Warm muted text */
-  --color-accent: #4f46e5;
-  --color-accent-rgb: 79, 70, 229;
-  --color-accent-soft: rgba(79, 70, 229, 0.08);
-  --color-accent-muted: rgba(79, 70, 229, 0.14);
-  --color-accent-border: rgba(79, 70, 229, 0.32);
-  --color-accent-glow: rgba(79, 70, 229, 0.22);
-  /* Accent — indigo-600, visible on light surfaces */
+  --app-shell: #f3f3f4;
+  --page-canvas: #fbfbfb;
+  --surface: #ffffff;
+  --surface-raised: #f7f7f8;
+  --surface-hover: #efeff1;
+  --surface-selected: #e7e7ea;
+  --surface-border: #dedee2;
+  --surface-border-subtle: #e9e9ec;
+  --surface-border-emphasis: #c4c4ca;
+  --foreground: #202024;
+  --foreground-secondary: #54545b;
+  --muted-foreground: #74747d;
+  --brand: #5b5bd6;
+  --brand-rgb: 91, 91, 214;
+  --success: #258451;
+  --warning: #aa6f19;
+  --destructive: #c74444;
+  --info: #3d72b4;
+  --focus-ring: rgba(91, 91, 214, 0.42);
+  --surface-shadow: 0 1px 2px rgba(24, 24, 27, 0.06);
+  --floating-shadow: 0 16px 40px rgba(24, 24, 27, 0.12);
+
+  --color-surface: var(--page-canvas);
+  --color-surface-raised: var(--surface-hover);
+  --color-surface-overlay: var(--surface-raised);
+  --color-surface-sidebar: var(--app-shell);
+  --color-border: var(--surface-border);
+  --color-border-subtle: var(--surface-border-subtle);
+  --color-border-emphasis: var(--surface-border-emphasis);
+  --color-text: var(--foreground);
+  --color-text-secondary: var(--foreground-secondary);
+  --color-text-muted: var(--muted-foreground);
+  --color-accent: var(--brand);
+  --color-accent-rgb: var(--brand-rgb);
+  --color-accent-soft: rgba(var(--brand-rgb), 0.08);
+  --color-accent-muted: rgba(var(--brand-rgb), 0.14);
+  --color-accent-border: rgba(var(--brand-rgb), 0.3);
+  --color-accent-glow: rgba(var(--brand-rgb), 0.12);
   /* Assessment severity colors - darker for light backgrounds */
   --assess-good: #16a34a;
   --assess-warning: #d97706;
@@ -806,16 +836,7 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  font-family:
-    'Agave',
-    'JetBrains Mono',
-    'Menlo',
-    'Monaco',
-    'Consolas',
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    monospace;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--color-surface);
@@ -837,6 +858,13 @@ body {
   font-weight: 700;
   font-style: normal;
   font-display: swap;
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono);
 }
 
 body.theme-transitioning {

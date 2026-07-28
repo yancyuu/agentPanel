@@ -6,19 +6,17 @@ import { cn } from '@renderer/lib/utils';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-border-emphasis)] disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
-        default:
-          'bg-[var(--color-text)] text-[var(--color-surface)] shadow hover:bg-[var(--color-text)]/90',
-        destructive: 'bg-red-500 text-white shadow-sm hover:bg-red-500/90',
+        default: 'bg-brand text-white hover:bg-brand/90',
+        destructive: 'bg-destructive text-white hover:bg-destructive/90',
         outline:
-          'border border-[var(--color-border)] bg-transparent shadow-sm hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)]',
-        secondary:
-          'bg-[var(--color-surface-raised)] text-[var(--color-text)] shadow-sm hover:bg-[var(--color-surface-raised)]/80',
-        ghost: 'hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)]',
-        link: 'text-[var(--color-text)] underline-offset-4 hover:underline',
+          'border border-[var(--surface-border)] bg-surface text-foreground hover:bg-surface-hover',
+        secondary: 'bg-surface-hover text-foreground hover:bg-surface-selected',
+        ghost: 'text-muted-foreground hover:bg-surface-hover hover:text-foreground',
+        link: 'text-foreground underline-offset-4 hover:underline',
       },
       size: {
         default: 'h-9 px-4 py-2',

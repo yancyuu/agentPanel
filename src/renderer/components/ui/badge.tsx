@@ -5,15 +5,14 @@ import { cn } from '@renderer/lib/utils';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--color-border-emphasis)] focus:ring-offset-2',
+  'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]',
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-[var(--color-text)] text-[var(--color-surface)] shadow',
-        secondary:
-          'border-transparent bg-[var(--color-surface-raised)] text-[var(--color-text-secondary)]',
-        destructive: 'border-transparent bg-red-500 text-white shadow',
-        outline: 'border-[var(--color-border)] text-[var(--color-text)]',
+        default: 'border-transparent bg-brand text-white',
+        secondary: 'border-transparent bg-surface-hover text-muted-foreground',
+        destructive: 'border-transparent bg-destructive text-white',
+        outline: 'border-[var(--surface-border)] text-foreground',
       },
     },
     defaultVariants: {

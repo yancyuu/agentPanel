@@ -31,18 +31,16 @@ interface PaneContentProps {
 export const PaneContent = ({ pane, isPaneFocused }: PaneContentProps): React.JSX.Element => {
   const activeTabId = pane.activeTabId;
 
-  // Show the team workspace as the home whenever no tab is active. The initial
-  // route is restored into a real tab BEFORE first render (main.tsx), so on a
-  // fresh deep-link load pane.tabs already holds the right tab and this fallback
-  // never double-mounts TeamListView. It only renders for the true no-tab state
-  // (root '/', or after all tabs are closed) so the pane is never blank.
-  const showDefaultTeams = !activeTabId && pane.tabs.length === 0;
+  // Show the collaborative inbox whenever no tab is active. Initial routes are
+  // restored before first render, so this fallback only covers the true no-tab
+  // state (for example after all tabs are closed).
+  const showDefaultInbox = !activeTabId && pane.tabs.length === 0;
 
   return (
     <div className="relative flex flex-1 overflow-hidden">
-      {showDefaultTeams && (
+      {showDefaultInbox && (
         <div className="absolute inset-0 flex">
-          <TeamListView />
+          <TasksView />
         </div>
       )}
 

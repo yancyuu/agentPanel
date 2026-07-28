@@ -20,6 +20,10 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
+import {
+  AppNavigationRail,
+  getWorkbenchNavigationArea,
+} from '@features/collaborative-workbench/renderer';
 import { useKeyboardShortcuts } from '@renderer/hooks/useKeyboardShortcuts';
 import { useStore } from '@renderer/store';
 import { useShallow } from 'zustand/react/shallow';
@@ -42,22 +46,50 @@ export const TabbedLayout = (): React.JSX.Element => {
   useKeyboardShortcuts();
 
   // --- DnD state (lifted from PaneContainer) ---
-  const { panes, activeTabId } = useStore(
+  const {
+    panes,
+    activeTabId,
+    unreadCount,
+    openTasksTab,
+    openDashboard,
+    openTeamsTab,
+    openSchedulesTab,
+    openExtensionsTab,
+    openNotificationsTab,
+    openSystemManager,
+    openSettingsTab,
+    openCommandPalette,
+    openChatTab,
+  } = useStore(
     useShallow((s) => ({
       panes: s.paneLayout.panes,
       activeTabId: s.activeTabId,
+      unreadCount: s.unreadCount,
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- Zustand actions are receiver-independent.
+      openTasksTab: s.openTasksTab,
+      openDashboard: s.openDashboard,
+      openTeamsTab: s.openTeamsTab,
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- Zustand actions are receiver-independent.
+      openSchedulesTab: s.openSchedulesTab,
+      openExtensionsTab: s.openExtensionsTab,
+      openNotificationsTab: s.openNotificationsTab,
+      openSystemManager: s.openSystemManager,
+      openSettingsTab: s.openSettingsTab,
+      openCommandPalette: s.openCommandPalette,
+      openChatTab: s.openChatTab,
     }))
   );
-  const [activeTab, setActiveTab] = useState<Tab | null>(null);
-  const activeTabType = useMemo(() => {
+  const [draggedTab, setDraggedTab] = useState<Tab | null>(null);
+  const currentTab = useMemo(() => {
     if (!activeTabId) return null;
     for (const pane of panes) {
       const tab = pane.tabs.find((item) => item.id === activeTabId);
-      if (tab) return tab.type;
+      if (tab) return tab;
     }
     return null;
   }, [activeTabId, panes]);
-  const showSidebar = activeTabType === 'team';
+  const activeArea = getWorkbenchNavigationArea(currentTab);
+  const showSidebar = currentTab?.type === 'team';
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -79,7 +111,7 @@ export const TabbedLayout = (): React.JSX.Element => {
         const pane = panes.find((p) => p.id === sourcePaneId);
         const tab = pane?.tabs.find((t) => t.id === tabId);
         if (tab) {
-          setActiveTab(tab);
+          setDraggedTab(tab);
         }
       }
     },
@@ -90,7 +122,7 @@ export const TabbedLayout = (): React.JSX.Element => {
     (event: DragEndEvent) => {
       const { active, over } = event;
 
-      setActiveTab(null);
+      setDraggedTab(null);
 
       if (!over || !active.data.current) return;
 
@@ -148,37 +180,48 @@ export const TabbedLayout = (): React.JSX.Element => {
   );
 
   return (
-    <div className="flex h-screen flex-col bg-claude-dark-bg text-claude-dark-text">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={pointerWithin}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <TabBarRow />
-        <CliInstallWarningBanner />
-        <GlobalProviderStatusHeader />
-        <div className="flex flex-1 overflow-hidden">
-          {/* Command Palette (Cmd+K) */}
-          <CommandPalette />
+    <div className="flex h-screen bg-app-shell text-foreground">
+      <AppNavigationRail
+        activeArea={activeArea}
+        unreadCount={unreadCount}
+        onOpenInbox={openTasksTab}
+        onOpenOverview={openDashboard}
+        onOpenAgents={openTeamsTab}
+        onOpenSchedules={openSchedulesTab}
+        onOpenExtensions={openExtensionsTab}
+        onOpenNotifications={openNotificationsTab}
+        onOpenSystemManager={() => void openSystemManager()}
+        onOpenSettings={() => openSettingsTab()}
+        onOpenSearch={openCommandPalette}
+        onOpenCommunity={openChatTab}
+      />
 
-          {/* Content area */}
-          <div
-            className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
-            style={{ background: 'transparent' }}
-          >
-            <PaneContainer />
+      <div className="flex min-w-0 flex-1 flex-col bg-page-canvas">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={pointerWithin}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <TabBarRow />
+          <CliInstallWarningBanner />
+          <GlobalProviderStatusHeader />
+          <div className="flex flex-1 overflow-hidden">
+            <CommandPalette />
+
+            <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-page-canvas">
+              <PaneContainer />
+            </div>
+
+            {showSidebar ? <Sidebar /> : null}
           </div>
 
-          {/* Sidebar - only for team detail tabs */}
-          {showSidebar ? <Sidebar /> : null}
-        </div>
+          <DragOverlay dropAnimation={null}>
+            {draggedTab ? <DragOverlayTab tab={draggedTab} /> : null}
+          </DragOverlay>
+        </DndContext>
+      </div>
 
-        {/* Drag overlay - semi-transparent ghost of the dragged tab */}
-        <DragOverlay dropAnimation={null}>
-          {activeTab ? <DragOverlayTab tab={activeTab} /> : null}
-        </DragOverlay>
-      </DndContext>
       <GlobalTaskDetailDialog />
       <WorkspaceIndicator />
     </div>

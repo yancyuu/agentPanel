@@ -66,7 +66,7 @@ export const PaneView = ({ paneId }: PaneViewProps): React.JSX.Element => {
               color: 'var(--color-text-muted)',
             }}
           >
-            Maximum {MAX_PANES} panes reached
+            最多可打开 {MAX_PANES} 个窗格
           </div>
         </div>
       )}

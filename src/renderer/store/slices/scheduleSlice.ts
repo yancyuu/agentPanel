@@ -243,7 +243,7 @@ export const createScheduleSlice: StateCreator<AppState, [], [], ScheduleSlice> 
 
     state.openTab({
       type: 'schedules',
-      label: 'Schedules',
+      label: '定时任务',
     });
 
     // Ensure schedules are fresh when opening
@@ -261,7 +261,7 @@ export const createScheduleSlice: StateCreator<AppState, [], [], ScheduleSlice> 
 
     state.openTab({
       type: 'tasks',
-      label: '任务',
+      label: '收件箱',
     });
 
     void get().fetchAllTasks();

@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
+import { WorkbenchPageHeader } from '@features/collaborative-workbench/renderer';
 import { cn } from '@renderer/lib/utils';
 import { useStore } from '@renderer/store';
 import { deriveTaskDisplayId } from '@shared/utils/taskIdentity';
@@ -26,7 +27,7 @@ interface OverviewTaskEntry {
 }
 
 const SUB_TABS: { id: TasksSubTab; label: string; icon: React.ReactNode }[] = [
-  { id: 'overview', label: 'Loop 任务总览', icon: <Columns3 size={13} /> },
+  { id: 'overview', label: '任务看板', icon: <Columns3 size={13} /> },
   { id: 'schedules', label: '定时任务', icon: <Calendar size={13} /> },
 ];
 
@@ -79,9 +80,9 @@ export const TasksView = (): React.JSX.Element => {
   const [activeTab, setActiveTab] = useState<TasksSubTab>('overview');
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Minimal tab bar */}
-      <div className="flex items-center gap-0 px-4 pt-3">
+    <div className="flex h-full min-w-0 flex-col bg-page-canvas">
+      <WorkbenchPageHeader title="收件箱" description="集中查看跨团队任务、负责人和定时工作" />
+      <div className="flex items-center gap-0 border-b border-[var(--surface-border-subtle)] px-4 pt-3">
         {SUB_TABS.map((tab) => (
           <button
             key={tab.id}
@@ -98,7 +99,7 @@ export const TasksView = (): React.JSX.Element => {
           </button>
         ))}
       </div>
-      <div className="flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         {activeTab === 'overview' && <TaskOverviewPool />}
         {activeTab === 'schedules' && <SchedulesView />}
       </div>
@@ -293,7 +294,7 @@ const TaskOverviewPool = (): React.JSX.Element => {
                 >
                   {tasks.length === 0 ? (
                     <div className="py-6 text-center text-[11px] text-[var(--color-text-muted)] opacity-40">
-                      No tasks
+                      暂无任务
                     </div>
                   ) : (
                     tasks.map((task) => (

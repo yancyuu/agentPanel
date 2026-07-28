@@ -17,7 +17,7 @@ import type { PaneLayout } from './types/panes';
 import type { Tab } from './types/tabs';
 
 const PERSIST_KEY = 'hermit:lastTeam';
-const DEFAULT_APP_PATH = '/teams';
+const DEFAULT_APP_PATH = '/tasks';
 
 function getActiveTabFromLayout(activeTabId: string | null, paneLayout: PaneLayout): Tab | null {
   if (!activeTabId) return null;
@@ -67,27 +67,10 @@ function buildPathForTab(activeTab: Tab | null): string {
   }
 }
 
-function useTeamPersistence() {
-  // Restore last team on mount
-  useEffect(() => {
-    if (window.location.pathname !== '/' && window.location.pathname !== '') {
-      return;
-    }
-    try {
-      const teamName = localStorage.getItem(PERSIST_KEY);
-      if (teamName) {
-        setTimeout(() => {
-          const s = useStore.getState();
-          if (!s.selectedTeamName) {
-            s.selectTeam(teamName);
-          }
-        }, 500);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
+function useTeamPersistence(): void {
+  // Keep the last selected team for explicit team navigation. The root route
+  // now belongs to the inbox, so this value must never auto-open a team and
+  // pull users away from their attention queue.
   // Save team when it changes
   useEffect(() => {
     const unsub = useStore.subscribe((state, prevState) => {
@@ -103,7 +86,7 @@ function useTeamPersistence() {
   }, []);
 }
 
-function useTabPathPersistence() {
+function useTabPathPersistence(): void {
   const { activeTabId, paneLayout } = useStore((s) => ({
     activeTabId: s.activeTabId,
     paneLayout: s.paneLayout,
@@ -146,7 +129,7 @@ export const App = (): React.JSX.Element => {
   // Initialize theme on app load
   useTheme();
 
-  // Restore last team on page refresh
+  // Persist the last explicitly selected team without changing the inbox landing route.
   useTeamPersistence();
   // Keep URL path in sync with active tab and restore from URL.
   useTabPathPersistence();

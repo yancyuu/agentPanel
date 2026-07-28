@@ -29,7 +29,10 @@ export function restoreInitialRoute(state: AppState, pathname: string): void {
     .filter((segment) => segment.length > 0)
     .map(safeDecodeURIComponent);
 
-  if (segments.length === 0) return;
+  if (segments.length === 0) {
+    state.openTasksTab();
+    return;
+  }
 
   const [route, arg1, arg2] = segments;
   switch (route) {
