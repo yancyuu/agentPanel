@@ -17,6 +17,7 @@ function dependencies(overrides = {}) {
     ensureLocalServer: vi.fn(async () => ({ ready: true })),
     createTeam: vi.fn(async (_port, request) => ({ ok: true, teamSlug: request.bindProject })),
     ensureRuntime: vi.fn(async () => ({ ok: true })),
+    ensureAgentRuntimeCli: vi.fn(async () => ({ ok: true, installed: true })),
     beginQr: vi.fn(async () => ({ qr_url: 'https://qr', device_code: 'device' })),
     waitForQr: vi.fn(async (_port, _platform, _begin, onStatus) => {
       onStatus?.('completed');
@@ -95,6 +96,62 @@ describe('provisionDigitalWorker — claim/create restriction to Feishu + Claude
     expect(result.ok).toBe(false);
     expect(result.message).toContain('claudecode');
     expect(deps.ensureLocalServer).not.toHaveBeenCalled();
+  });
+});
+
+describe('provisionDigitalWorker — runtime CLI gate', () => {
+  it('verifies the agentType runtime CLI before creating the team, then proceeds', async () => {
+    const deps = dependencies({
+      ensureAgentRuntimeCli: vi.fn(async (agentType) => ({ ok: true, installed: true, agentType })),
+    });
+
+    const result = await provisionDigitalWorker(5680, base, {}, deps);
+
+    expect(deps.ensureAgentRuntimeCli).toHaveBeenCalledWith('claudecode');
+    expect(result.ok).toBe(true);
+    expect(deps.createTeam).toHaveBeenCalled();
+  });
+
+  it('aborts before any side effect when the runtime CLI is missing and cannot be installed', async () => {
+    const deps = dependencies({
+      ensureAgentRuntimeCli: vi.fn(async () => ({
+        ok: false,
+        message: 'Codex CLI 自动安装失败，请手动安装后重试：npm install -g @openai/codex@latest',
+      })),
+    });
+
+    const result = await provisionDigitalWorker(5680, { ...base, agentType: 'codex' }, {}, deps);
+
+    expect(result).toMatchObject({
+      ok: false,
+      failedStage: '检查运行时 CLI',
+      message: expect.stringContaining('Codex CLI 自动安装失败'),
+      rollback: { attempted: false },
+    });
+    expect(deps.ensureAgentRuntimeCli).toHaveBeenCalledWith('codex');
+    expect(deps.createTeam).not.toHaveBeenCalled();
+    expect(deps.ensureRuntime).not.toHaveBeenCalled();
+    expect(deps.rollback).not.toHaveBeenCalled();
+  });
+
+  it('re-authorize (existingTeam) is also gated — no rebind / cc-connect restart when runtime missing', async () => {
+    const deps = dependencies({
+      ensureAgentRuntimeCli: vi.fn(async () => ({
+        ok: false,
+        message: 'Codex CLI 自动安装失败，请手动安装后重试：npm install -g @openai/codex@latest',
+      })),
+    });
+
+    const result = await provisionDigitalWorker(5680, { ...base, agentType: 'codex', existingTeam: true }, {}, deps);
+
+    expect(result).toMatchObject({
+      ok: false,
+      failedStage: '检查运行时 CLI',
+      rollback: { attempted: false },
+    });
+    expect(deps.ensureAgentRuntimeCli).toHaveBeenCalledWith('codex');
+    expect(deps.saveQr).not.toHaveBeenCalled();
+    expect(deps.bindManual).not.toHaveBeenCalled();
   });
 });
 

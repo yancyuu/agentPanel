@@ -373,6 +373,71 @@ function ensureClaudeCodeCliIfNeeded(raw) {
   console.log(`${brandLogPrefix()} Claude Code CLI installed and available in PATH.`);
 }
 
+/**
+ * Map a digital-worker agentType to the runtime CLI it requires.
+ * Returns { agentType, command, pkg, label } or null for unsupported types.
+ *   - 'claudecode' → claude  (@anthropic-ai/claude-code)
+ *   - 'codex'      → codex   (@openai/codex)
+ */
+function agentRuntimeCliSpec(agentType) {
+  const t = String(agentType || '').trim();
+  if (t === 'claudecode') return { agentType: t, command: 'claude', pkg: '@anthropic-ai/claude-code', label: 'Claude Code' };
+  if (t === 'codex') return { agentType: t, command: 'codex', pkg: '@openai/codex', label: 'Codex' };
+  return null;
+}
+
+/**
+ * Ensure the runtime CLI required by a digital-worker agentType is installed.
+ * Detect → (hint) → install → verify. Returns { ok, installed, message, detail }.
+ *
+ * ok=false means the CLI is missing AND auto-install could not make it available
+ * (unsupported type, install failed, or `command` still not on PATH afterwards).
+ * Callers in the provisioning flow should abort EARLY on ok=false — before team
+ * creation / cc-connect restart — so the user isn't left with a half-created
+ * worker that only fails when cc-connect tries to launch the runtime. This also
+ * covers the re-authorize path (existingTeam), which reuses provisionDigitalWorker.
+ *
+ * Unlike ensureClaudeCodeCliIfNeeded (which throws), this returns a result so the
+ * provisioning gate can surface the message and roll back cleanly.
+ */
+function ensureAgentRuntimeCli(agentType, { onHint } = {}) {
+  const spec = agentRuntimeCliSpec(agentType);
+  if (!spec) {
+    return { ok: false, installed: false, message: `不支持的运行时类型：${agentType}`, detail: 'unsupported agentType' };
+  }
+  if (commandExists(spec.command)) {
+    return { ok: true, installed: true, message: `${spec.label} CLI 已就绪` };
+  }
+
+  const hint = `${spec.label} CLI 未检测到（\`${spec.command}\` 不在 PATH），正在自动安装：npm install -g ${spec.pkg}@latest`;
+  console.log(`${brandLogPrefix()} ${hint}`);
+  onHint?.({ ...spec, message: hint });
+
+  console.log(`${brandLogPrefix()} Installing ${spec.pkg} globally. This may take a few minutes...`);
+  console.log(`${brandLogPrefix()} Running: npm install -g ${spec.pkg}@latest --prefer-online`);
+  let installError = null;
+  try {
+    execSync(`npm install -g ${spec.pkg}@latest --prefer-online`, { stdio: 'inherit', shell: true });
+  } catch (err) {
+    installError = err;
+  }
+
+  if (installError) {
+    const message = `${spec.label} CLI 自动安装失败，请手动安装后重试：npm install -g ${spec.pkg}@latest`;
+    console.error(`${brandLogPrefix()} ${message}`);
+    return { ok: false, installed: false, message, detail: installError instanceof Error ? installError.message : String(installError) };
+  }
+
+  if (!commandExists(spec.command)) {
+    const message = `${spec.label} CLI 已安装，但 \`${spec.command}\` 仍不在 PATH；请重开终端（或检查 PATH）后重试`;
+    console.error(`${brandLogPrefix()} ${message}`);
+    return { ok: false, installed: false, message, detail: 'command still not in PATH after install' };
+  }
+
+  console.log(`${brandLogPrefix()} ${spec.label} CLI installed and available in PATH.`);
+  return { ok: true, installed: true, message: `${spec.label} CLI 已安装并就绪` };
+}
+
 function hasTomlSection(raw, section) {
   return new RegExp(`^\\[${section}\\]\\s*$`, 'm').test(raw);
 }
@@ -713,6 +778,8 @@ configRequiresClaudeCode,
 hasProjectEntries,
 commandExists,
 ensureClaudeCodeCliIfNeeded,
+agentRuntimeCliSpec,
+ensureAgentRuntimeCli,
 hasTomlSection,
 buildOpenHermitStarterConfig,
 normalizeMigratedHermitBridgeConfig,

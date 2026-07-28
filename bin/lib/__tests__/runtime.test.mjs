@@ -58,3 +58,23 @@ describe('runtime.mjs hermit-bridge config ensure (fresh-install write path)', (
     }
   });
 });
+
+describe('agentRuntimeCliSpec — digital-worker runtime CLI mapping', () => {
+  it('maps supported agentTypes and rejects unknown ones', async () => {
+    const m = await import(runtimeUrl);
+    expect(m.agentRuntimeCliSpec('claudecode')).toEqual({
+      agentType: 'claudecode',
+      command: 'claude',
+      pkg: '@anthropic-ai/claude-code',
+      label: 'Claude Code',
+    });
+    expect(m.agentRuntimeCliSpec('codex')).toEqual({
+      agentType: 'codex',
+      command: 'codex',
+      pkg: '@openai/codex',
+      label: 'Codex',
+    });
+    expect(m.agentRuntimeCliSpec('cursor')).toBeNull();
+    expect(m.agentRuntimeCliSpec(undefined)).toBeNull();
+  });
+});

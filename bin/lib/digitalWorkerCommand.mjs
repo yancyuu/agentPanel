@@ -20,6 +20,7 @@ import {
 } from './assistantBinding.mjs';
 import { ensureCcConnectRuntime } from './feishuAssistant.mjs';
 import { logDwEvent, measureDwStage } from './dwDiagnostics.mjs';
+import { ensureAgentRuntimeCli } from './runtime.mjs';
 
 function parsePlatformOptions(value) {
   if (!value) return {};
@@ -50,6 +51,7 @@ const defaultDependencies = {
   ensureLocalServer: ensureDigitalWorkerLocalServer,
   createTeam: createAssistantTeamViaApi,
   ensureRuntime: (port) => ensureCcConnectRuntime(port),
+  ensureAgentRuntimeCli,
   beginQr: beginQrAssistantPlatform,
   waitForQr: waitForQrAssistantBinding,
   saveQr: saveQrAssistantPlatform,
@@ -151,6 +153,11 @@ export async function provisionDigitalWorker(port, options, hooks = {}, dependen
   try {
     hooks.onStage?.('server', request);
     await measureDwStage('dw.server', () => dependencies.ensureLocalServer(port), dwContext);
+
+    failedStage = '检查运行时 CLI';
+    hooks.onStage?.('runtimeCli', request);
+    const runtimeCli = await dependencies.ensureAgentRuntimeCli(request.agentType);
+    if (!runtimeCli?.ok) throw new Error(runtimeCli?.message || '运行时 CLI 不可用');
 
     failedStage = '创建数字员工团队';
     hooks.onStage?.('team', request);
