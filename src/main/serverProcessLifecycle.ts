@@ -1,6 +1,5 @@
-import type { FastifyBaseLogger } from 'fastify';
-
 import type { ServerLifecycleState } from './serverContext';
+import type { FastifyBaseLogger } from 'fastify';
 
 export type ServerProcessTarget = Pick<
   NodeJS.Process,
@@ -23,7 +22,7 @@ interface WorkbenchShutdownDependencies {
   sseClients?: SseClientCollection;
   stopTelemetry?: () => Promise<void> | void;
   imLiveWatcher: { stop(): void };
-  directCliManager: { shutdown(): void };
+  directCliManager: { shutdown(): Promise<void> | void };
   bridgeLauncher: { stop(): void };
   bridge: { dispose?: () => void };
   closeTimeoutMs?: number;
@@ -37,7 +36,7 @@ interface ServerShutdownDependencies {
 
 interface ServerProcessHandlerDependencies {
   app: Pick<ClosableServerApp, 'log'>;
-  directCliManager: { shutdown(): void };
+  directCliManager: { shutdown(): Promise<void> | void };
   processTarget: ServerProcessTarget;
   shutdown(): Promise<void>;
 }
@@ -71,6 +70,18 @@ export function createWorkbenchShutdown({
     if (!lifecycle.disposePromise) {
       lifecycle.disposePromise = (async () => {
         const errors: unknown[] = [];
+        // Invoke close immediately so Fastify stops accepting new requests.
+        // Dependency cleanup waits until existing requests drain (or the bound
+        // expires), so in-flight handlers retain their services.
+        const appClosePromise = Promise.race([app.close(), closeTimeout(closeTimeoutMs)]);
+        lifecycle.startupAbortController?.abort();
+        lifecycle.startupAbortController = null;
+        const startupTasks = Array.from(lifecycle.backgroundStartupTasks);
+        if (startupTasks.length > 0) {
+          await attemptCleanup(errors, () => Promise.allSettled(startupTasks));
+        }
+        lifecycle.backgroundStartupTasks.clear();
+        await attemptCleanup(errors, () => appClosePromise);
         for (const dispose of lifecycle.listenerDisposers.splice(0)) {
           await attemptCleanup(errors, dispose);
         }
@@ -83,11 +94,6 @@ export function createWorkbenchShutdown({
         await attemptCleanup(errors, () => directCliManager.shutdown());
         await attemptCleanup(errors, () => bridgeLauncher.stop());
         await attemptCleanup(errors, () => bridge.dispose?.());
-        // Bound app.close() so a stuck SSE/websocket client cannot hold an
-        // Electron or standalone process alive forever.
-        await attemptCleanup(errors, () =>
-          Promise.race([app.close(), closeTimeout(closeTimeoutMs)])
-        );
         if (errors.length > 0) {
           throw new AggregateError(errors, 'workbench shutdown completed with errors');
         }
@@ -126,7 +132,7 @@ export function installServerProcessHandlers({
     void shutdown();
   };
   const handleExit = () => {
-    directCliManager.shutdown();
+    void directCliManager.shutdown();
   };
 
   processTarget.on('unhandledRejection', handleUnhandledRejection);

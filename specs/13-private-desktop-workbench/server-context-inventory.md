@@ -12,7 +12,7 @@
 - `serverProcessLifecycle.ts`：process signals 和有界 shutdown；
 - Fastify `app` 在任何 background bridge work 与 listener wiring 之前构造。
 
-尚未完成：extensions singleton adapter、route factory 和 import-time side-effect 移除。Context dispose 已具备幂等 promise，但仍需补齐 telemetry、SSE response 和 process-handler cleanup。
+Phase 0 已完成：`workbenchServer.ts` 提供无 listen 副作用的 route factory，`serverStandalone.ts` 独占进程启动与 signal handlers，context dispose 为幂等 promise，并清理 telemetry、SSE response、listener、direct CLI、launcher 和 bridge。生产 standalone composition 通过进程级 `getOrCreateStandaloneServerComposition()` 复用；测试和嵌入场景仍可显式创建隔离 composition。
 
 ## 顶层有状态实例
 
@@ -51,22 +51,13 @@
 | `scheduleRunsById`             | 同名            |           4047 | 每个 schedule 最多 100 runs，但 schedule key 数无全局上限 |
 | `scheduleRunLogsByKey`         | 同名            |           4048 | 依赖显式 schedule state clear 清理                        |
 
-Usage telemetry 另有模块级 singleton 状态：collector、scan interval、last scan 和 runtime status。Phase 0 先把其初始化/停止作为 context-owned lifecycle adapter；后续删除 usage telemetry 时单独修改行为和测试。
+Usage telemetry 保留既有进程级 singleton 语义：collector、scan interval、last scan 和 runtime status 仍为模块状态，但 collector 已改为首次扫描/显式配置时惰性创建，import 不再构造扫描器；standalone shutdown 显式停止 interval。后续删除 usage telemetry 时仍需单独修改行为和测试。
 
-## 永久监听器
+## 长生命周期监听器
 
-当前模块只适合“一个进程只 import 一次”，因为监听器没有 disposer：
+`serverEventHandlers.ts` 集中注册 direct-cli 与 bridge 的 `event` / `reply` / `reply_stream` / `message` listeners，并把精确 disposer 保存到 context lifecycle；同一 context 的 `createWorkbenchServer()` 由 WeakMap 去重，不会重复注册。
 
-- `directCliManager.on('event', ...)`：约 1222–1308；
-- `bridge.on('reply', ...)`：约 1310–1328；
-- `bridge.on('reply_stream', ...)`：约 1330–1358；
-- `bridge.on('message', ...)`：约 1360–1375；
-- `process.on('unhandledRejection', ...)`：7796；
-- `process.on('SIGINT', shutdown)`：7799；
-- `process.on('SIGTERM', shutdown)`：7800；
-- `process.on('exit', ...)`：7803。
-
-新的 context 必须保存 listener disposer。进程 signal handlers 应归 standalone executable entry 所有，不应由可复用的 server factory 隐式注册。
+`unhandledRejection`、`SIGINT`、`SIGTERM` 与 `exit` handlers 只由 `serverStandalone.ts` 安装，并通过返回的 remover 清理；可复用 factory 不接触 process handlers。
 
 ## 请求级资源
 
@@ -80,19 +71,14 @@ Usage telemetry 另有模块级 singleton 状态：collector、scan interval、l
 
 ## 当前模块导入副作用
 
-仅 import `src/main/server.ts` 就会：
+Phase 0 后，仅 import `src/main/server.ts` 不会创建 context、注册 routes、启动 bridge/watcher/telemetry、listen 或安装 process handlers。`server.ts` 只在 `isDirectServerExecution(import.meta.url)` 为真时动态加载 standalone entry。
 
-1. 读取 package 和路径；
-2. 迁移/修复 Hermit 与 bridge 配置；
-3. 创建全部进程级 service；
-4. 配置 usage telemetry；
-5. 启动 bridge connection；
-6. 注册 direct-cli/bridge listeners；
-7. 创建 Fastify、注册 plugins/routes；
-8. 最终启动 sidecar、watcher、telemetry/workflow 并 `listen()`；
-9. 注册 process signal/exit handlers。
+- `createWorkbenchServer(context, options)`：只构造 Fastify、注册 hooks/routes/listeners，适合 `app.inject()`；
+- `createStandaloneServerComposition()`：显式测试/嵌入 factory，可创建隔离 context；
+- `getOrCreateStandaloneServerComposition()`：正式 standalone 进程的 singleton composition；
+- `startStandaloneServer()`：唯一负责 listen 与 process handlers 的正式入口。
 
-因此在拆出 factory 之前无法安全使用 `app.inject()`，也无法在 Electron main 中重复构造或测试生命周期。
+Extensions handler 和 usage telemetry 的底层实现仍保留历史进程级 module state；生产 singleton composition 防止它们被多个正式 standalone context 竞争。当前不承诺同一进程并行运行多个生产工作台 server。
 
 ## 当前显式启动顺序
 
@@ -103,39 +89,29 @@ Usage telemetry 另有模块级 singleton 状态：collector、scan interval、l
 
 原先 SSE helper 后、listener wiring 前的 eager startup 已在独立 lifecycle 提交中移除。Fastify `app` 仍在所有 background bridge work 和 listener wiring 之前构造，避免旧 callback 在启动竞态中访问尚未初始化的 `app.log`。底部顺序已行为保持地抽到 `src/main/serverStartup.ts`：
 
-1. fire-and-forget `bridgeLauncher.ensureBinaryReady()`；
-2. fire-and-forget `bridgeLauncher.ensureRunning()`；
-3. 第二次 `bridge.start()`；
+1. 非阻塞 `bridgeLauncher.ensureBinaryReady()`，只更新 readiness 诊断；
+2. 启动并登记可取消的 `bridgeLauncher.ensureRunning()` background task；
+3. `bridge.start()`；
 4. `imLiveWatcher.start()`；
 5. 初始化 telemetry settings；
 6. 初始化 global workflows；
 7. `app.listen()`。
 
-Composition/startup tests 锁定了“先注册 listeners，再由 standalone startup 启动 bridge”的顺序；按需发送路径仍可调用幂等 `start()` 作为连接重试。
+Composition/startup tests 锁定了“先注册 listeners，再由 standalone startup 启动 bridge”的顺序；按需发送路径仍可调用幂等 `start()` 作为连接重试。Shutdown 会 abort 并等待 sidecar background task，确保 launcher 不会在关闭完成后再 spawn。
 
-另外，`ensureRunning()` 内部也会进行 binary readiness，当前两个 fire-and-forget 调用存在重复工作和错误传播不清晰的问题。Phase 0 先通过测试锁定现状，再决定是否在独立修复中调整。
+## 当前关闭顺序与残余
 
-## 当前关闭顺序与缺口
+`createWorkbenchShutdown()` 现在：
 
-`server.ts` 约 7776–7803：
+1. 立即调用有界 `app.close()`，停止接收新请求并等待在途请求；
+2. abort/等待 sidecar startup task；
+3. 在 app close 完成或超时后移除 direct-cli/bridge listeners；
+4. 停止 IM watcher 与 usage telemetry；
+5. 主动 end/clear SSE clients；
+6. 以终态 async shutdown 等待 pending direct-CLI spawn，再回收全部 child；
+7. 停止 launcher 并 dispose bridge。
 
-1. `imLiveWatcher.stop()`；
-2. `directCliManager.shutdown()`；
-3. `bridgeLauncher.stop()`；
-4. `bridge.dispose()`；
-5. 最多等待三秒 `app.close()`；
-6. `process.exit(0)`；
-7. `exit` listener 再次调用 direct-cli shutdown 兜底。
-
-缺口：
-
-- shutdown 没有 singleton promise，SIGINT/SIGTERM 可并发执行；
-- 没有显式停止 usage telemetry interval；
-- 没有主动 end/clear SSE clients；
-- 没有移除 bridge/direct-cli/process listeners；
-- 没有清理 pending permissions、routes 和 caches；
-- `ImLiveWatcher.stop()` 不等待正在进行的 scan；
-- context 内调用 `process.exit()` 会破坏 Electron/main-process 和测试复用。
+Shutdown 使用 context-owned singleton promise；process exit 只存在于 standalone wrapper，factory/context 可被测试或后续 shell 复用。残余：`ImLiveWatcher.stop()` 仍是同步 API，不能等待其内部已开始的 scan；extensions 与 telemetry 仍有历史进程级 state，所以正式生产入口明确只支持每进程一个 standalone composition。
 
 ## Phase 0 `ServerContext` 边界
 
@@ -169,6 +145,8 @@ interface ServerContext {
   };
   readonly lifecycle: {
     listenerDisposers: Array<() => void>;
+    backgroundStartupTasks: Set<Promise<void>>;
+    startupAbortController: AbortController | null;
     startPromise: Promise<void> | null;
     disposePromise: Promise<void> | null;
   };
@@ -177,21 +155,18 @@ interface ServerContext {
 
 实际类型应从现有定义提取，不能为了快速通过而使用 `unknown`。上面的形状只定义所有权边界。
 
-## 建议 dispose 顺序
+## 已实现 dispose 顺序
 
 1. 建立 `disposePromise`，后续调用复用同一 promise；
-2. 停止接受新 HTTP 请求；
-3. 停止 watcher、telemetry、schedule/direct-cli 新任务生产；
-4. 移除或 guard bridge/direct-cli listeners；
-5. 主动结束 SSE responses 并清空 set；
-6. 取消/拒绝 pending permission requests；
-7. shutdown direct-cli children；
-8. dispose bridge connection，阻止重连；
-9. stop launcher-owned sidecar；
-10. 有界等待 in-flight work；
-11. 清理 caches/maps；
-12. 完成 Fastify close；
-13. standalone entry 移除 process handlers 并设置 exit code。
+2. 立即调用有界 `app.close()`，停止接收请求并等待在途请求；
+3. abort/等待 background sidecar startup；
+4. app close 完成或达到边界后移除 bridge/direct-cli listeners；
+5. 停止 IM watcher 与 usage telemetry；
+6. 主动结束 SSE responses 并清空 set；
+7. 终态 shutdown direct-cli（拒绝新任务、等待 pending spawn、回收 children）；
+8. stop launcher-owned sidecar；
+9. dispose bridge connection，阻止重连；
+10. standalone entry 移除 process handlers 并设置 exit code。
 
 ## 重复实例化高风险点
 
@@ -199,16 +174,16 @@ interface ServerContext {
 - `TeamProvisioningService`、conversation telemetry 的 callback 依赖同一 `cc`/`bridge`/`svc`；
 - direct-cli manager 是 CLI subprocess 的唯一 owner；
 - bridge launcher 只能停止自己启动的 child，不能杀外部管理的 cc-connect；
-- usage telemetry 当前是隐藏模块 singleton，两个 context 会互相停止/覆盖；
+- usage telemetry 保留模块 singleton；正式入口用进程级 singleton composition，测试 factory 不应并行启动 telemetry；
 - listeners 与 signal handlers 不移除时，第二个 context 会重复处理消息和 shutdown；
 - extensions watcher/emitter 必须在 composition root 创建一次，不能每个 route plugin 创建。
 
 ## Phase 0 最终所有权状态（2026-07-28）
 
-- `createStandaloneServerComposition()` 每次只创建一套 `ServerContext` services/state；它不启动 bridge、watcher、HTTP listener 或 process handlers。
+- `createStandaloneServerComposition()` 是显式隔离 factory；正式入口使用 `getOrCreateStandaloneServerComposition()`，每进程只创建一套生产 `ServerContext` services/state。两者都不在构造时启动 bridge、watcher、HTTP listener 或 process handlers。
 - `createWorkbenchServer(context, options)` 以 `WeakMap` 对同一 context 复用同一个 Fastify app，并只注册一套 bridge/direct-cli listeners；失败的 factory 创建会移除本轮新增 listeners。
 - `startStandaloneServer()` 通过 `context.lifecycle.startPromise` 复用同一 context 的启动流程，防止重复调用 bridge/watcher/listen。
-- shutdown 通过 `disposePromise` 保持幂等，顺序由 `serverProcessLifecycle.ts` 统一管理：listeners → IM watcher → telemetry → SSE → direct CLI → launcher → bridge → Fastify。
+- shutdown 通过 `disposePromise` 保持幂等，顺序由 `serverProcessLifecycle.ts` 统一管理：立即 Fastify close/abort startup → 等待在途请求 → listeners → IM watcher → telemetry → SSE → direct CLI → launcher → bridge。
 - import `server.ts` 或 `workbenchServer.ts` 不创建 stateful services，也不会监听端口；只有直接执行 `server.ts` 时才显式调用 standalone start。
 
 ## Task 0.1 退出条件

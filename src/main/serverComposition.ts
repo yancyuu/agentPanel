@@ -27,6 +27,16 @@ export interface StandaloneServerComposition {
   setRestartBridge: (restart: () => Promise<void>) => void;
 }
 
+let productionStandaloneComposition: StandaloneServerComposition | null = null;
+
+export function getOrCreateStandaloneServerComposition(
+  environment: ServerEnvironment,
+  configStore: HermitConfigStore
+): StandaloneServerComposition {
+  productionStandaloneComposition ??= createStandaloneServerComposition(environment, configStore);
+  return productionStandaloneComposition;
+}
+
 export function createStandaloneServerComposition(
   environment: ServerEnvironment,
   configStore: HermitConfigStore

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { ServerLifecycleState } from '../../../src/main/serverContext';
 import { startStandaloneServerRuntime } from '../../../src/main/serverStartup';
 
 function deferred<T>() {
@@ -21,10 +22,18 @@ function createDependencies() {
     pid?: number;
   }>();
   const processTarget = { exit: vi.fn(() => undefined as never) };
+  const lifecycle: ServerLifecycleState = {
+    listenerDisposers: [],
+    backgroundStartupTasks: new Set<Promise<void>>(),
+    startupAbortController: null,
+    startPromise: null,
+    disposePromise: null,
+  };
   const dependencies = {
     app: {
-      listen: vi.fn(async () => {
+      listen: vi.fn(() => {
         calls.push('app.listen');
+        return Promise.resolve();
       }),
       log: {
         error: vi.fn(),
@@ -39,11 +48,13 @@ function createDependencies() {
     bridgeClient: { listProjects: vi.fn() },
     bridge: { start: vi.fn(() => calls.push('bridge.start')) },
     imLiveWatcher: { start: vi.fn(() => calls.push('watcher.start')) },
-    initializeTelemetryFromSettings: vi.fn(async () => {
+    initializeTelemetryFromSettings: vi.fn(() => {
       calls.push('telemetry.initialize');
+      return Promise.resolve();
     }),
-    ensureGlobalWorkflows: vi.fn(async () => {
+    ensureGlobalWorkflows: vi.fn(() => {
       calls.push('workflows.ensure');
+      return Promise.resolve();
     }),
     markBridgeBinaryCheck: vi.fn(),
     markBridgeLaunch: vi.fn(),
@@ -56,9 +67,10 @@ function createDependencies() {
     staticDir: '/tmp/dist-renderer',
     bridgeBaseUrl: 'http://127.0.0.1:9820',
     bridgeWsUrl: 'ws://127.0.0.1:9810/bridge/ws',
+    lifecycle,
   };
 
-  return { binaryReady, bridgeRunning, calls, dependencies, processTarget };
+  return { binaryReady, bridgeRunning, calls, dependencies, lifecycle, processTarget };
 }
 
 describe('standalone server startup', () => {
@@ -84,6 +96,7 @@ describe('standalone server startup', () => {
       extraArgs: ['--force'],
       logFile: '/tmp/cc-connect.log',
       timeoutMs: 180_000,
+      signal: expect.any(AbortSignal),
     });
     expect(dependencies.app.listen).toHaveBeenCalledWith({
       host: '127.0.0.1',
@@ -128,6 +141,39 @@ describe('standalone server startup', () => {
       status: 'offline',
       reason: 'bridge offline',
     });
+  });
+
+  it('tracks sidecar startup and lets shutdown abort it before a delayed spawn', async () => {
+    const { dependencies, lifecycle } = createDependencies();
+    let spawned = false;
+    dependencies.bridgeLauncher.ensureRunning = vi.fn(
+      ({ signal }: { signal?: AbortSignal }) =>
+        new Promise((resolve, reject) => {
+          signal?.addEventListener(
+            'abort',
+            () => {
+              const error = new Error('cancelled');
+              error.name = 'AbortError';
+              reject(error);
+            },
+            { once: true }
+          );
+          setTimeout(() => {
+            if (signal?.aborted) return;
+            spawned = true;
+            resolve({ launched: true, alreadyRunning: false, pid: 42 });
+          }, 25);
+        })
+    );
+
+    await startStandaloneServerRuntime(dependencies);
+    expect(lifecycle.backgroundStartupTasks.size).toBe(1);
+    lifecycle.startupAbortController?.abort();
+    await Promise.allSettled(Array.from(lifecycle.backgroundStartupTasks));
+
+    expect(spawned).toBe(false);
+    expect(lifecycle.backgroundStartupTasks.size).toBe(0);
+    expect(dependencies.markBridgeLaunch).not.toHaveBeenCalled();
   });
 
   it('preserves the standalone listen failure exit behavior', async () => {

@@ -88,6 +88,7 @@ export interface WorkbenchServerOptions {
   setRestartBridge?: (restart: () => Promise<void>) => void;
   fastifyOptions?: FastifyServerOptions;
   appFactory?: (options: FastifyServerOptions) => FastifyInstance;
+  onRoute?: (route: { method: string | string[]; url: string }) => void;
 }
 
 export interface WorkbenchServer {
@@ -128,6 +129,11 @@ async function createWorkbenchServerUncached(
     disableRequestLogging: true,
     ...options.fastifyOptions,
   });
+  if (options.onRoute) {
+    app.addHook('onRoute', (routeOptions) => {
+      options.onRoute?.({ method: routeOptions.method, url: routeOptions.url });
+    });
+  }
   const operations = createServerOperations({
     context,
     environment,

@@ -1,6 +1,6 @@
-import type { FastifyBaseLogger } from 'fastify';
-
+import type { ServerLifecycleState } from './serverContext';
 import type { BridgeBinaryState, BridgeLaunchState } from '@shared/types/runtimeReadiness';
+import type { FastifyBaseLogger } from 'fastify';
 
 const BRIDGE_BINARY_REMEDIATION = [
   '在终端运行: npm install -g cc-connect',
@@ -34,6 +34,7 @@ interface StandaloneServerStartupDependencies<TBridgeClient> {
       extraArgs: string[];
       logFile: string;
       timeoutMs: number;
+      signal?: AbortSignal;
     }): Promise<BridgeLaunchResult>;
   };
   bridgeClient: TBridgeClient;
@@ -52,6 +53,7 @@ interface StandaloneServerStartupDependencies<TBridgeClient> {
   staticDir: string;
   bridgeBaseUrl: string;
   bridgeWsUrl: string;
+  lifecycle: ServerLifecycleState;
 }
 
 export async function startStandaloneServerRuntime<TBridgeClient>({
@@ -73,6 +75,7 @@ export async function startStandaloneServerRuntime<TBridgeClient>({
   staticDir,
   bridgeBaseUrl,
   bridgeWsUrl,
+  lifecycle,
 }: StandaloneServerStartupDependencies<TBridgeClient>): Promise<void> {
   bridgeLauncher
     .ensureBinaryReady({
@@ -90,15 +93,18 @@ export async function startStandaloneServerRuntime<TBridgeClient>({
       });
     });
 
-  // Sidecar readiness remains fire-and-forget: a cold or unavailable bridge
-  // must not delay the loopback HTTP server from exposing its readiness API.
-  bridgeLauncher
+  // Sidecar readiness remains non-blocking for HTTP startup, but it is owned by
+  // the lifecycle so shutdown can abort and await it before stopping the launcher.
+  const startupAbortController = new AbortController();
+  lifecycle.startupAbortController = startupAbortController;
+  const sidecarStartup = bridgeLauncher
     .ensureRunning({
       client: bridgeClient,
       configPath: bridgeConfigPath,
       extraArgs: ['--force'],
       logFile: bridgeLogFile,
       timeoutMs: bridgeAutoLaunchTimeoutMs,
+      signal: startupAbortController.signal,
     })
     .then((result) => {
       if (result.launched) {
@@ -110,12 +116,20 @@ export async function startStandaloneServerRuntime<TBridgeClient>({
       }
     })
     .catch((error) => {
+      if (startupAbortController.signal.aborted) return;
       app.log.warn({ err: error }, 'hermit-bridge auto-launch skipped');
       markBridgeLaunch({
         status: 'offline',
         reason: error instanceof Error ? error.message : String(error),
       });
+    })
+    .finally(() => {
+      lifecycle.backgroundStartupTasks.delete(sidecarStartup);
+      if (lifecycle.startupAbortController === startupAbortController) {
+        lifecycle.startupAbortController = null;
+      }
     });
+  lifecycle.backgroundStartupTasks.add(sidecarStartup);
 
   bridge.start();
   imLiveWatcher.start();

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { markBridgeBinaryCheck, markBridgeLaunch } from './services/system/RuntimeReadiness';
-import { createStandaloneServerComposition } from './serverComposition';
+import { getOrCreateStandaloneServerComposition } from './serverComposition';
 import { createHermitConfigStore, createServerEnvironment } from './serverConfig';
 import {
   createServerShutdown,
@@ -36,7 +36,7 @@ export async function startStandaloneServer(
   const environment = options.environment ?? createServerEnvironment({ startDir: moduleDirectory });
   const composition =
     options.composition ??
-    createStandaloneServerComposition(environment, createHermitConfigStore(environment));
+    getOrCreateStandaloneServerComposition(environment, createHermitConfigStore(environment));
   const server = await createWorkbenchServer(composition.context, {
     environment,
     configStore: composition.configStore,
@@ -66,6 +66,7 @@ export async function startStandaloneServer(
     staticDir: environment.staticDir,
     bridgeBaseUrl: environment.bridgeBaseUrl,
     bridgeWsUrl: environment.bridgeWsUrl,
+    lifecycle: composition.context.lifecycle,
   }).catch((error) => {
     composition.context.lifecycle.startPromise = null;
     throw error;

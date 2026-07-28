@@ -225,6 +225,10 @@ export class DirectCliSessionManager extends EventEmitter {
   /** In-flight ensureSession promises dedupe concurrent callers for the same key. */
   private readonly ensuring = new Map<string, Promise<void>>();
 
+  private shuttingDown = false;
+
+  private shutdownPromise: Promise<void> | null = null;
+
   private readonly spawnFn: DirectCliSpawnFn;
 
   private readonly envResolver: DirectCliEnvResolver;
@@ -256,6 +260,7 @@ export class DirectCliSessionManager extends EventEmitter {
    * signals readiness). Safe to call concurrently; duplicate callers await the same spawn.
    */
   async ensureSession(params: DirectCliSpawnParams): Promise<void> {
+    this.assertAcceptingWork();
     const sessionKey = params.sessionKey.trim();
     if (this.sessions.has(sessionKey)) return;
     const inFlight = this.ensuring.get(sessionKey);
@@ -277,11 +282,19 @@ export class DirectCliSessionManager extends EventEmitter {
     await promise;
   }
 
+  private assertAcceptingWork(): void {
+    if (this.shuttingDown) {
+      throw new Error('direct-cli: session manager is shutting down');
+    }
+  }
+
   private async spawnSession(sessionKey: string, params: DirectCliSpawnParams): Promise<void> {
+    this.assertAcceptingWork();
     const workDir = params.workDir.trim();
     if (!workDir) throw new Error('direct-cli: workDir is required to spawn a agent session');
 
     const binaryPath = await this.binaryResolver.resolve();
+    this.assertAcceptingWork();
     if (!binaryPath) {
       throw new Error('未找到本地 claude CLI，无法启动直连会话');
     }
@@ -297,6 +310,7 @@ export class DirectCliSessionManager extends EventEmitter {
       model: params.model ?? null,
       projectPath: workDir,
     });
+    this.assertAcceptingWork();
 
     const args = buildClaudeStreamArgs({
       resumeSessionId,
@@ -305,6 +319,7 @@ export class DirectCliSessionManager extends EventEmitter {
       providerArgs,
     });
 
+    this.assertAcceptingWork();
     const child = this.spawnFn(binaryPath, args, {
       cwd: workDir,
       env,
@@ -476,6 +491,7 @@ export class DirectCliSessionManager extends EventEmitter {
   async send(sessionKey: string, params: DirectCliSendParams): Promise<void> {
     const key = sessionKey.trim();
     await this.ensureSession({ sessionKey: key, workDir: params.workDir });
+    this.assertAcceptingWork();
     const handle = this.sessions.get(key);
     if (!handle) {
       throw new Error(`direct-cli: session ${key} is not running`);
@@ -547,10 +563,17 @@ export class DirectCliSessionManager extends EventEmitter {
     this.sessions.delete(sessionKey.trim());
   }
 
-  /** Reap every live subprocess. Call on app before-quit. */
-  shutdown(): void {
-    for (const key of Array.from(this.sessions.keys())) {
-      this.kill(key);
+  /** Reap every live subprocess and permanently reject new work. */
+  shutdown(): Promise<void> {
+    if (!this.shutdownPromise) {
+      this.shuttingDown = true;
+      this.shutdownPromise = (async () => {
+        await Promise.allSettled(Array.from(this.ensuring.values()));
+        for (const key of Array.from(this.sessions.keys())) {
+          this.kill(key);
+        }
+      })();
     }
+    return this.shutdownPromise;
   }
 }

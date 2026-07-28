@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { registerEditorRoutes } from '../../../src/main/routes/editorRoutes';
 
-const apps: Array<ReturnType<typeof Fastify>> = [];
+const apps: ReturnType<typeof Fastify>[] = [];
 const tempDirs: string[] = [];
 
 async function createHarness() {
@@ -155,6 +155,43 @@ describe('editor routes', () => {
     expect(deleted.json()).toEqual({
       deletedPath: path.join(root, 'nested', 'renamed.txt'),
     });
+  });
+
+  it('rejects read, write and creation through symlinks that escape the project root', async () => {
+    const { app, root } = await createHarness();
+    const outside = await mkdtemp(path.join(os.tmpdir(), 'agentcli-editor-outside-'));
+    tempDirs.push(outside);
+    const outsideFile = path.join(outside, 'secret.txt');
+    await writeFile(outsideFile, 'outside-original', 'utf8');
+    await symlink(outside, path.join(root, 'escape'), 'dir');
+
+    const read = await app.inject({
+      method: 'GET',
+      url: '/api/editor/readFile',
+      query: { root, filePath: 'escape/secret.txt' },
+    });
+    const write = await app.inject({
+      method: 'POST',
+      url: '/api/editor/writeFile',
+      payload: { root, filePath: 'escape/secret.txt', content: 'mutated' },
+    });
+    const create = await app.inject({
+      method: 'POST',
+      url: '/api/editor/createFile',
+      payload: { root, parentDir: 'escape', fileName: 'created.txt' },
+    });
+    const directory = await app.inject({
+      method: 'GET',
+      url: '/api/editor/readDir',
+      query: { root, dirPath: 'escape' },
+    });
+
+    for (const response of [read, write, create, directory]) {
+      expect(response.statusCode).toBe(500);
+      expect(response.json().error).toContain('符号链接');
+    }
+    expect(await readFile(outsideFile, 'utf8')).toBe('outside-original');
+    await expect(readFile(path.join(outside, 'created.txt'), 'utf8')).rejects.toThrow();
   });
 
   it('keeps editor compatibility stubs stable', async () => {

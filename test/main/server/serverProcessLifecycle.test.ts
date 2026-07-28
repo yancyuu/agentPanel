@@ -23,6 +23,8 @@ describe('server process lifecycle', () => {
     const processTarget = createProcessTarget();
     const lifecycle = {
       listenerDisposers: [vi.fn(() => calls.push('listeners.dispose'))],
+      backgroundStartupTasks: new Set<Promise<void>>(),
+      startupAbortController: null,
       startPromise: null,
       disposePromise: null,
     };
@@ -30,18 +32,24 @@ describe('server process lifecycle', () => {
     const sseClients = new Set([{ id: 'sse-1', res: sseResponse }]);
     const shutdownWorkbenchServer = createWorkbenchShutdown({
       app: {
-        close: vi.fn(async () => {
+        close: vi.fn(() => {
           calls.push('app.close');
+          return Promise.resolve();
         }),
         log: { error: vi.fn() },
       },
       lifecycle,
       sseClients,
-      stopTelemetry: vi.fn(async () => {
+      stopTelemetry: vi.fn(() => {
         calls.push('telemetry.stop');
+        return Promise.resolve();
       }),
       imLiveWatcher: { stop: vi.fn(() => calls.push('watcher.stop')) },
-      directCliManager: { shutdown: vi.fn(() => calls.push('direct.shutdown')) },
+      directCliManager: {
+        shutdown: vi.fn(() => {
+          calls.push('direct.shutdown');
+        }),
+      },
       bridgeLauncher: { stop: vi.fn(() => calls.push('launcher.stop')) },
       bridge: { dispose: vi.fn(() => calls.push('bridge.dispose')) },
       closeTimeoutMs: 25,
@@ -53,6 +61,7 @@ describe('server process lifecycle', () => {
     await Promise.all([firstShutdown, secondShutdown]);
 
     expect(calls).toEqual([
+      'app.close',
       'listeners.dispose',
       'watcher.stop',
       'telemetry.stop',
@@ -60,7 +69,6 @@ describe('server process lifecycle', () => {
       'direct.shutdown',
       'launcher.stop',
       'bridge.dispose',
-      'app.close',
     ]);
     expect(lifecycle.disposePromise).toBe(firstShutdown);
     expect(sseClients.size).toBe(0);
@@ -83,8 +91,9 @@ describe('server process lifecycle', () => {
     const removeProcessHandlers = vi.fn(() => calls.push('process.remove'));
     const shutdownWorkbenchServer = createWorkbenchShutdown({
       app: {
-        close: vi.fn(async () => {
+        close: vi.fn(() => {
           calls.push('app.close');
+          return Promise.resolve();
         }),
         log: { error: vi.fn() },
       },
@@ -95,14 +104,21 @@ describe('server process lifecycle', () => {
             throw new Error('listener cleanup failed');
           }),
         ],
+        backgroundStartupTasks: new Set<Promise<void>>(),
+        startupAbortController: null,
         startPromise: null,
         disposePromise: null,
       },
-      stopTelemetry: vi.fn(async () => {
+      stopTelemetry: vi.fn(() => {
         calls.push('telemetry.stop');
+        return Promise.resolve();
       }),
       imLiveWatcher: { stop: vi.fn(() => calls.push('watcher.stop')) },
-      directCliManager: { shutdown: vi.fn(() => calls.push('direct.shutdown')) },
+      directCliManager: {
+        shutdown: vi.fn(() => {
+          calls.push('direct.shutdown');
+        }),
+      },
       bridgeLauncher: { stop: vi.fn(() => calls.push('launcher.stop')) },
       bridge: { dispose: vi.fn(() => calls.push('bridge.dispose')) },
       closeTimeoutMs: 25,
@@ -116,21 +132,71 @@ describe('server process lifecycle', () => {
     await shutdown();
 
     expect(calls).toEqual([
+      'app.close',
       'listeners.dispose',
       'watcher.stop',
       'telemetry.stop',
       'direct.shutdown',
       'launcher.stop',
       'bridge.dispose',
-      'app.close',
     ]);
     expect(removeProcessHandlers).not.toHaveBeenCalled();
     expect(processTarget.exit).toHaveBeenCalledWith(1);
   });
 
+  it('starts Fastify close immediately and waits for in-flight requests before dependency cleanup', async () => {
+    const calls: string[] = [];
+    let finishClose!: () => void;
+    const closePending = new Promise<void>((resolve) => {
+      finishClose = resolve;
+    });
+    const lifecycle = {
+      listenerDisposers: [vi.fn(() => calls.push('listeners.dispose'))],
+      backgroundStartupTasks: new Set<Promise<void>>(),
+      startupAbortController: new AbortController(),
+      startPromise: null,
+      disposePromise: null,
+    };
+    const shutdown = createWorkbenchShutdown({
+      app: {
+        close: vi.fn(() => {
+          calls.push('app.close');
+          return closePending;
+        }),
+        log: { error: vi.fn() },
+      },
+      lifecycle,
+      imLiveWatcher: { stop: vi.fn(() => calls.push('watcher.stop')) },
+      directCliManager: {
+        shutdown: vi.fn(() => {
+          calls.push('direct.shutdown');
+          return Promise.resolve();
+        }),
+      },
+      bridgeLauncher: { stop: vi.fn(() => calls.push('launcher.stop')) },
+      bridge: {},
+      closeTimeoutMs: 10_000,
+    });
+
+    const shutdownPromise = shutdown();
+    await Promise.resolve();
+    expect(calls).toEqual(['app.close']);
+    expect(lifecycle.startupAbortController).toBeNull();
+
+    finishClose();
+    await shutdownPromise;
+    expect(calls).toEqual([
+      'app.close',
+      'listeners.dispose',
+      'watcher.stop',
+      'direct.shutdown',
+      'launcher.stop',
+    ]);
+  });
+
   it('registers signal, rejection and synchronous exit handlers', () => {
     const processTarget = createProcessTarget();
-    const shutdown = vi.fn(async () => undefined);
+    const shutdown = vi.fn(() => Promise.resolve());
     const directCliManager = { shutdown: vi.fn() };
     const app = { log: { error: vi.fn() } };
 

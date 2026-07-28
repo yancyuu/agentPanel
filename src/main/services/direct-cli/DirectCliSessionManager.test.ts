@@ -20,6 +20,14 @@ interface FakeChild {
   emitExit: (code: number | null) => void;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function createFakeChild(): FakeChild {
   const bus = new EventEmitter();
   const child: FakeChild = {
@@ -422,11 +430,37 @@ describe('DirectCliSessionManager', () => {
     });
     await manager.ensureSession({ sessionKey: 'a:lead', workDir: '/p' });
     await manager.ensureSession({ sessionKey: 'b:lead', workDir: '/p' });
-    manager.shutdown();
+    await manager.shutdown();
     // shutdown reaps every session (via killProcessTree — best-effort,
     // OS-dependent) and removes them from the live map.
     expect(manager.has('a:lead')).toBe(false);
     expect(manager.has('b:lead')).toBe(false);
+  });
+
+  it('makes shutdown terminal and prevents a delayed ensure from spawning afterward', async () => {
+    const environment = deferred<{ env: NodeJS.ProcessEnv; providerArgs: string[] }>();
+    let spawnCount = 0;
+    const manager = new DirectCliSessionManager({
+      spawnFn: () => {
+        spawnCount += 1;
+        return createFakeChild() as unknown as import('child_process').ChildProcess;
+      },
+      envResolver: () => environment.promise,
+      binaryResolver: { resolve: async () => '/fake/claude' } as never,
+      store: new Map<string, string>() as never,
+    });
+
+    const ensuring = manager.ensureSession({ sessionKey: 'delayed:lead', workDir: '/proj' });
+    await Promise.resolve();
+    const shutdown = manager.shutdown();
+    environment.resolve({ env: {}, providerArgs: [] });
+
+    await expect(ensuring).rejects.toThrow('shutting down');
+    await shutdown;
+    expect(spawnCount).toBe(0);
+    await expect(
+      manager.ensureSession({ sessionKey: 'after:lead', workDir: '/proj' })
+    ).rejects.toThrow('shutting down');
   });
 
   it('throws a clear error when workDir is missing', async () => {

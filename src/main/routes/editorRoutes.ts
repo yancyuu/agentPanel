@@ -1,8 +1,9 @@
 import {
   existsSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -21,20 +22,21 @@ function resolveEditorRoot(rawRoot: unknown): string {
     throw new Error('root 参数不能为空');
   }
   const resolved = path.resolve(rawRoot.trim());
-  const home = os.homedir();
+  if (!existsSync(resolved)) {
+    throw new Error(`目录不存在: ${resolved}`);
+  }
+  const realRoot = realpathSync(resolved);
+  const home = realpathSync(os.homedir());
   const forbiddenRoots = new Set([
-    path.parse(resolved).root,
+    path.parse(realRoot).root,
     home,
     path.join(home, '.ssh'),
     path.join(home, '.hermit'),
   ]);
-  if (forbiddenRoots.has(resolved)) {
+  if (forbiddenRoots.has(realRoot)) {
     throw new Error('不允许将该目录作为项目根目录');
   }
-  if (!existsSync(resolved)) {
-    throw new Error(`目录不存在: ${resolved}`);
-  }
-  const stats = statSync(resolved);
+  const stats = statSync(realRoot);
   if (!stats.isDirectory()) {
     throw new Error(`不是目录: ${resolved}`);
   }
@@ -44,6 +46,16 @@ function resolveEditorRoot(rawRoot: unknown): string {
 function isPathInsideRoot(root: string, target: string): boolean {
   const relative = path.relative(root, target);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function nearestExistingPath(target: string): string {
+  let current = target;
+  while (!existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return current;
 }
 
 function resolveEditorPath(root: string, rawPath: unknown): string {
@@ -56,6 +68,13 @@ function resolveEditorPath(root: string, rawPath: unknown): string {
   );
   if (!isPathInsideRoot(root, resolved)) {
     throw new Error('路径超出项目根目录');
+  }
+
+  const realRoot = realpathSync(root);
+  const existingPath = nearestExistingPath(resolved);
+  const realExistingPath = realpathSync(existingPath);
+  if (!isPathInsideRoot(realRoot, realExistingPath)) {
+    throw new Error('路径通过符号链接超出项目根目录');
   }
   return resolved;
 }

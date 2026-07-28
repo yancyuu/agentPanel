@@ -35,7 +35,12 @@ let scanRuntime: UsageTelemetryRuntimeStatus = {
   updatedAt: null,
   lastError: null,
 };
-let collector = new SessionUsageCollector();
+let collector: SessionUsageCollector | null = null;
+
+function getCollector(): SessionUsageCollector {
+  collector ??= new SessionUsageCollector();
+  return collector;
+}
 
 function emptyUnresolvedUsage() {
   return { sessions: 0, messages: 0, tokensTotal: 0 };
@@ -185,7 +190,7 @@ async function doScan(cfg?: TelemetryConfig): Promise<UsageTelemetryStatus | nul
   };
 
   try {
-    const collection = await collector.collect();
+    const collection = await getCollector().collect();
     lastLocalScan = statusFromCollection(collection);
     // Conversation-upload gate — DEFAULT-ON. Must match the CLI resolver
     // (uploadState.mjs::resolveConversationUploadEnabled): ON unless explicitly

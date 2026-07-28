@@ -6,7 +6,10 @@ import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createHermitConfigStore, createServerEnvironment } from '../../../src/main/serverConfig';
-import { createStandaloneServerComposition } from '../../../src/main/serverComposition';
+import {
+  createStandaloneServerComposition,
+  getOrCreateStandaloneServerComposition,
+} from '../../../src/main/serverComposition';
 import { startStandaloneServer } from '../../../src/main/serverStandalone';
 import { createWorkbenchServer } from '../../../src/main/workbenchServer';
 
@@ -74,6 +77,39 @@ describe('workbench server factory', () => {
     await server.shutdown();
   });
 
+  it('assembles exactly 235 unique runtime method/path registrations', async () => {
+    const harness = await createHarness();
+    const runtimeRoutes: string[] = [];
+    const allMethods = new Set(['DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT']);
+    const server = await createWorkbenchServer(harness.composition.context, {
+      environment: harness.environment,
+      configStore: harness.configStore,
+      getRuntimeConfig: harness.composition.getRuntimeConfig,
+      updateRuntimeConfig: harness.composition.updateRuntimeConfig,
+      setRestartBridge: harness.composition.setRestartBridge,
+      fastifyOptions: { logger: false },
+      onRoute: ({ method, url }) => {
+        const methods = Array.isArray(method) ? method : [method];
+        const normalized = new Set(methods.map((entry) => entry.toUpperCase()));
+        if ([...allMethods].every((entry) => normalized.has(entry))) {
+          runtimeRoutes.push(`ALL ${url}`);
+          return;
+        }
+        for (const entry of normalized) {
+          if (entry !== 'HEAD' && entry !== 'OPTIONS') runtimeRoutes.push(`${entry} ${url}`);
+        }
+      },
+    });
+
+    expect(runtimeRoutes).toHaveLength(235);
+    expect(new Set(runtimeRoutes).size).toBe(235);
+    expect(runtimeRoutes).toContain('ALL /api/v1/*');
+    expect(runtimeRoutes).toContain('GET /api/teams');
+    expect(runtimeRoutes).toContain('GET /api/events');
+    expect(runtimeRoutes).toContain('GET /api/extensions/plugins');
+    await server.shutdown();
+  });
+
   it('returns one app and one listener set for the same context', async () => {
     const harness = await createHarness();
     const options = {
@@ -96,6 +132,15 @@ describe('workbench server factory', () => {
     expect(harness.composition.context.services.bridgeConnection.listenerCount('message')).toBe(1);
     expect(harness.composition.context.lifecycle.listenerDisposers).toHaveLength(1);
     await first.shutdown();
+  });
+
+  it('reuses one production standalone composition per process', async () => {
+    const harness = await createHarness();
+    const first = getOrCreateStandaloneServerComposition(harness.environment, harness.configStore);
+    const second = getOrCreateStandaloneServerComposition(harness.environment, harness.configStore);
+
+    expect(second).toBe(first);
+    expect(second.context).toBe(first.context);
   });
 
   it('passes explicit standalone startup options without creating a second context', async () => {

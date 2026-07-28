@@ -1,7 +1,3 @@
-import type { ServerResponse } from 'node:http';
-
-import type { ToolApprovalSettings } from '@shared/types/team';
-
 import type { DirectCliSessionManager } from './services/direct-cli';
 import type { HermitBridgeClient } from './services/hermitBridge/HermitBridgeClient';
 import type { HermitBridgeConnection } from './services/hermitBridge/HermitBridgeConnection';
@@ -16,6 +12,8 @@ import type { SystemManagerConfigService } from './services/system-manager/Syste
 import type { WorkflowPromptService } from './services/system-manager/WorkflowPromptService';
 import type { TeamProvisioningService } from './services/team-management';
 import type { UpdateService } from './services/UpdateService';
+import type { ToolApprovalSettings } from '@shared/types/team';
+import type { ServerResponse } from 'node:http';
 
 export interface SseClient {
   res: ServerResponse;
@@ -105,7 +103,9 @@ export interface ServerServices {
 }
 
 export interface ServerLifecycleState {
-  listenerDisposers: Array<() => void>;
+  listenerDisposers: (() => void)[];
+  backgroundStartupTasks: Set<Promise<void>>;
+  startupAbortController: AbortController | null;
   startPromise: Promise<void> | null;
   disposePromise: Promise<void> | null;
 }
@@ -141,6 +141,8 @@ export function createServerContext({
     state,
     lifecycle: {
       listenerDisposers: [],
+      backgroundStartupTasks: new Set(),
+      startupAbortController: null,
       startPromise: null,
       disposePromise: null,
     },

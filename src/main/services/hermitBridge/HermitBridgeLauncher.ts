@@ -49,6 +49,7 @@ export interface EnsureRunningOptions extends BridgeLaunchOptions {
   client: BridgeManagementProbe;
   timeoutMs?: number;
   pollIntervalMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface EnsureRunningResult {
@@ -173,7 +174,6 @@ function defaultSpawn(
   opts: { logFile?: string; cwd?: string; env?: NodeJS.ProcessEnv }
 ): SpawnedBridge {
   const fs = require('node:fs') as typeof import('node:fs');
-  let child: ChildProcess;
   // Match bin/hermit.mjs spawn options: cwd (repoRoot) + env (HERMIT_BRIDGE_*
   // tokens) are REQUIRED for cc-connect to start correctly. Without them the
   // re-launched process comes up misconfigured or fails silently — the root
@@ -199,7 +199,7 @@ function defaultSpawn(
   } else {
     spawnOpts.stdio = 'ignore';
   }
-  child = spawn(cmd, args, spawnOpts);
+  const child: ChildProcess = spawn(cmd, args, spawnOpts);
   child.on('error', (err) => log.error({ err, cmd }, 'cc-connect spawn failed'));
   child.unref();
   return child;
@@ -277,20 +277,53 @@ export class HermitBridgeLauncher {
   }
 
   async ensureRunning(opts: EnsureRunningOptions): Promise<EnsureRunningResult> {
+    this.throwIfAborted(opts.signal);
     if (await this.isRunning(opts.client)) {
+      this.throwIfAborted(opts.signal);
       return { launched: false, alreadyRunning: true };
     }
 
     // Hard prerequisite: binary must be ready (self-heals if missing). A
     // failure here is the fail-fast signal callers should let propagate.
     const { cmd, args } = await this.ensureBinaryReady(opts);
+    this.throwIfAborted(opts.signal);
 
     log.info({ cmd, args }, 'launching cc-connect');
     const spawnFn = this.deps.spawn ?? defaultSpawn;
     this.child = spawnFn(cmd, args, { logFile: opts.logFile, env: opts.env });
     const pid = this.child.pid;
-    await this.waitForReady(opts);
-    return { launched: true, alreadyRunning: false, pid };
+    try {
+      await this.waitForReady(opts);
+      return { launched: true, alreadyRunning: false, pid };
+    } catch (error) {
+      if (opts.signal?.aborted) this.stop();
+      throw error;
+    }
+  }
+
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (!signal?.aborted) return;
+    const error = new Error('cc-connect launch cancelled');
+    error.name = 'AbortError';
+    throw error;
+  }
+
+  private waitForDelay(delayMs: number, signal?: AbortSignal): Promise<void> {
+    this.throwIfAborted(signal);
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        signal?.removeEventListener('abort', handleAbort);
+        resolve();
+      }, delayMs);
+      const handleAbort = () => {
+        clearTimeout(timeout);
+        signal?.removeEventListener('abort', handleAbort);
+        const error = new Error('cc-connect launch cancelled');
+        error.name = 'AbortError';
+        reject(error);
+      };
+      signal?.addEventListener('abort', handleAbort, { once: true });
+    });
   }
 
   private async waitForReady(opts: EnsureRunningOptions): Promise<void> {
@@ -299,8 +332,10 @@ export class HermitBridgeLauncher {
     const now = this.deps.now ?? Date.now;
     const deadline = now() + timeoutMs;
     while (now() < deadline) {
-      await new Promise((r) => setTimeout(r, interval));
+      await this.waitForDelay(interval, opts.signal);
+      this.throwIfAborted(opts.signal);
       if (await this.isRunning(opts.client)) return;
+      this.throwIfAborted(opts.signal);
     }
     throw new Error(`cc-connect did not become ready within ${timeoutMs}ms`);
   }

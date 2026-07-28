@@ -6,9 +6,9 @@
 
 ## 盘点结论
 
-- 现有测试主要覆盖 service、renderer state/UI 和 client URL 组装；未发现直接对 `src/main/server.ts` 创建 Fastify 实例并使用 `app.inject()`/`fastify.inject()` 的 route contract 测试。
-- 因而现有测试能保护部分领域语义，但不能证明 235 个 route 的注册、Fastify 匹配优先级、HTTP status/body/content-type、全局 Origin hook、fallback 或插件封装行为。
-- Phase 0 应先建立可注入的 server factory/test harness，再按下表补齐最小关键 contract；不要为了易测而同时改产品语义。
+- Phase 0 开始时，测试主要覆盖 service、renderer state/UI 和 client URL 组装；当时没有直接对可复用 Fastify factory 使用 `app.inject()` 的完整 route contract 测试。
+- Phase 0 已新增 `createWorkbenchServer()` harness、按领域拆分的 route injection tests、静态 route inventory 和运行时组装清单验证；下表保留的是拆分前缺口及其验收依据。
+- 拆分过程保持 HTTP 与领域语义不变；安全与生命周期阻断项（symlink 逃逸、shutdown/spawn race）在独立验收修复中补齐并有确定性测试。
 
 ## 现有测试到 route domain 的映射
 
@@ -21,6 +21,15 @@
 | extensions                        | `test/renderer/components/extensions/ExtensionStoreView.test.ts`；`test/renderer/components/extensions/mcp/CustomMcpServerDialog.test.ts`；`test/renderer/components/extensions/skills/SkillEditorDialog.test.ts`；`test/renderer/hooks/useExtensionsTabState.test.ts`；`test/renderer/store/extensionsSlice.test.ts`；`test/shared/utils/extensionNormalizers.test.ts`；`test/shared/utils/providerExtensionCapabilities.test.ts`；`src/renderer/components/extensions/capability-packs/CapabilityPackDetailDialog.test.tsx`                                                                                                                   | renderer flows、normalization、capability display                                                    | 为 plugins/MCP/library/capability-packs/skills/credentials 增加注册及最小 success/error contract；验证 download headers/zip、缺失 projectPath/folderName、watch start/stop、`skills:changed` SSE；local source/emitter 每进程只装配一次。                                                                                |
 | telemetry / task-bus              | `src/main/services/session-intelligence/__tests__/UsageTelemetryService.test.ts`；`src/main/services/session-intelligence/__tests__/ConversationMessageUploadService.test.ts`；`src/main/services/session-intelligence/__tests__/AiMonitorUsageClient.test.ts`；`test/main/telemetry/usageTelemetryAutostart.test.ts`；`test/main/telemetry/usageTelemetryWorkerStatus.test.ts`；`src/main/telemetry/__tests__/workerSingleton.test.ts`；`src/main/telemetry/worker.scheduler.test.ts`；`src/renderer/components/settings/sections/TaskBusSection.test.tsx`                                                                                     | telemetry service/worker、调度、部分设置 UI                                                          | 锁定 `/api/telemetry/{scan,export,conversations*,status}` 和 `/api/settings/task-bus` 当前 status/body/error；验证 singleton/PID 状态不因插件加载重复初始化。Phase 0 只隔离；后续删除 usage 时单独改断言，并保留 lark credentials reporting。                                                                            |
 | startup / shutdown / static / SSE | `src/main/services/ccConnect/CcConnectLauncher.test.ts`；`test/main/telemetry/usageTelemetryAutostart.test.ts`；`src/main/telemetry/__tests__/workerSingleton.test.ts`；`src/main/services/session-intelligence/__tests__/ImLiveWatcher.test.ts`                                                                                                                                                                                                                                                                                                                                                                                                | 个别 launcher、telemetry autostart/singleton、IM watcher                                             | factory 无 import-time `listen()`；同一 context 只有一份 bridge/watcher/direct-cli/SSE maps；覆盖 startup 顺序和 shutdown 的 watcher stop、direct-cli shutdown、launcher stop、bridge dispose、bounded `app.close()`；验证 SIGINT/SIGTERM/exit、`/api/events`、SSE/API/SPA fallback、static-last 和无 build 时 `/` 503。 |
+
+## Phase 0 完成证据
+
+- `test/main/server`：45 个测试文件、179 项测试通过，覆盖 factory/import side effect、235 routes、优先级、Origin、SSE/static/fallback、startup/shutdown 和各 route domain；
+- `workbenchServer.test.ts` 通过 Fastify `onRoute` hook 验证实际组装 app 恰好注册 235 个唯一 method/path 对，避免静态扫描遗漏 registrar 条件或插件行为；
+- `serverProcessLifecycle.test.ts`、`serverStartup.test.ts` 与 `DirectCliSessionManager.test.ts` 覆盖在途请求、可取消 sidecar startup 和 pending direct-CLI spawn 的关闭竞态；
+- `editorRoutes.test.ts` 覆盖项目内 symlink 指向外部目录时 read/write/create/readDir 均拒绝，且外部文件不被修改；
+- `pnpm typecheck` 与 `pnpm build:server` 通过；排除两个与 Phase 0 无关的既存 bin 测试后，完整 Vitest 回归为 378 个文件、3459 项测试通过；
+- 标准 `pnpm test` 的既存残余：`bin/lib/__tests__/larkSecrets.test.mjs` 有 1 个 worker 路径断言失败，`bin/lib/__tests__/feishuAssistant.test.mjs` 单文件运行超过 120 秒不退出。两者不涉及 server factory/routes/lifecycle/editor/telemetry，本阶段不顺手改变 CLI 语义。
 
 ## 建议的最小 baseline 测试分层
 
