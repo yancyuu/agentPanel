@@ -120,9 +120,9 @@ import {
   createServerContext,
   createServerRuntimeState,
   type InMemoryScheduleRun,
-  type SseClient,
 } from './serverContext';
 import { registerAppConfigRoutes } from './routes/appConfigRoutes';
+import { isSseFallbackRequest, openSseFallbackStream, registerSseRoutes } from './routes/sseRoutes';
 import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
 import { registerWorkbenchStatusRoutes } from './routes/workbenchStatusRoutes';
 import { registerServerEventHandlers } from './serverEventHandlers';
@@ -6971,49 +6971,10 @@ app.get('/api/teams/review/git-file-log', async () => ({ log: [] }));
 // SSE 推送端点 — 前端 EventSource 连接此处接收实时事件
 // ===========================================================================
 
-app.get('/api/events', (request, reply) => {
-  try {
-    assertTrustedBrowserOrigin(request);
-  } catch (err) {
-    reply.code(403).send({ error: err instanceof Error ? err.message : String(err) });
-    return;
-  }
-
-  reply.raw.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-
-  const client: SseClient = {
-    res: reply.raw,
-    id: `sse-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-  };
-  sseClients.add(client);
-
-  // 握手
-  reply.raw.write(`event: hello\ndata: {"ok":true}\n\n`);
-
-  // keep-alive
-  const ka = setInterval(() => {
-    try {
-      reply.raw.write(': keep-alive\n\n');
-    } catch {
-      clearInterval(ka);
-      sseClients.delete(client);
-    }
-  }, 15_000);
-
-  request.raw.on('close', () => {
-    clearInterval(ka);
-    sseClients.delete(client);
-  });
-
-  return reply.hijack();
+registerSseRoutes(app, {
+  state: serverContext.state,
+  assertTrustedBrowserOrigin,
 });
-
-const SSE_FALLBACK_RE = /^\/api\/(.*\/(events|stream|notifications\/stream))$/;
 
 // ── Extension Store routes (wired to extensionHandlers) ────────────────
 
@@ -7292,23 +7253,8 @@ app.setNotFoundHandler((request, reply) => {
     return reply.code(404).type('text/plain').send('not found');
   }
 
-  if (request.method === 'GET' && SSE_FALLBACK_RE.test(u)) {
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-    reply.raw.write(`event: hello\ndata: {"ok":true}\n\n`);
-    const ka = setInterval(() => {
-      try {
-        reply.raw.write(': keep-alive\n\n');
-      } catch {
-        clearInterval(ka);
-      }
-    }, 15000);
-    request.raw.on('close', () => clearInterval(ka));
-    return reply.hijack();
+  if (isSseFallbackRequest(request.method, u)) {
+    return openSseFallbackStream(request, reply, serverContext.state);
   }
 
   if (request.method === 'GET') return [];
