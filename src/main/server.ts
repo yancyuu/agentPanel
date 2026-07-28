@@ -43,7 +43,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import cors from '@fastify/cors';
-import staticPlugin from '@fastify/static';
 import { createDashboardRecentProjectsLoader } from '@features/recent-projects/main/composition/dashboardRecentProjects';
 import { atomicWriteAsync } from '@main/utils/atomicWrite';
 import { CROSS_TEAM_SENT_SOURCE } from '@shared/constants/crossTeam';
@@ -126,6 +125,7 @@ import { registerEditorRoutes } from './routes/editorRoutes';
 import { registerHeartbeatRoutes } from './routes/heartbeatRoutes';
 import { registerReviewCompatibilityRoutes } from './routes/reviewCompatibilityRoutes';
 import { isSseFallbackRequest, openSseFallbackStream, registerSseRoutes } from './routes/sseRoutes';
+import { registerStaticRoutes } from './routes/staticRoutes';
 import { registerSystemManagerRoutes } from './routes/systemManagerRoutes';
 import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
 import { registerWorkbenchStatusRoutes } from './routes/workbenchStatusRoutes';
@@ -6660,22 +6660,7 @@ app.setNotFoundHandler((request, reply) => {
 // Static resources(vite build 产物)— 必须最后注册,放在 setNotFoundHandler 之后
 // ===========================================================================
 
-import { existsSync } from 'node:fs';
-if (existsSync(STATIC_DIR)) {
-  await app.register(staticPlugin, {
-    root: STATIC_DIR,
-    prefix: '/',
-    decorateReply: false,
-  });
-} else {
-  app.get('/', async (request, reply) => {
-    if (request.url.startsWith('/api/')) return;
-    reply
-      .code(503)
-      .type('text/plain')
-      .send(`UI not built. Run: pnpm build:web (output → ${STATIC_DIR})`);
-  });
-}
+await registerStaticRoutes(app, { staticDir: STATIC_DIR });
 
 // ===========================================================================
 // Helpers

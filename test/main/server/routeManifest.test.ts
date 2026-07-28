@@ -21,7 +21,9 @@ function collectTypeScriptFiles(directory: string): string[] {
 
 const ROUTE_MODULES = collectTypeScriptFiles(ROUTES_DIR).map((sourcePath) => {
   const sourceText = readFileSync(sourcePath, 'utf8');
-  const registrar = /export function (register[A-Za-z0-9]+Routes)\s*\(/.exec(sourceText)?.[1];
+  const registrar = /export (?:async )?function (register[A-Za-z0-9]+Routes)\s*\(/.exec(
+    sourceText
+  )?.[1];
   return { sourcePath, sourceText, registrar };
 });
 const ACTIVE_ROUTE_MODULES = ROUTE_MODULES.filter(
