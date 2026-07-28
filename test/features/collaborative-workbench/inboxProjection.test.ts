@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  findReferencedTask,
   getGlobalTaskKey,
   projectInboxTasks,
 } from '../../../src/features/collaborative-workbench/renderer/utils/inboxProjection';
@@ -64,6 +65,21 @@ describe('projectInboxTasks', () => {
       ['unassigned', 'unassigned'],
       ['recent', 'recent'],
     ]);
+  });
+
+  it('preserves composite identity when duplicate task IDs exist across teams', () => {
+    const tasks = [
+      task({ id: 'shared-id', teamName: 'team-a', teamDisplayName: '团队 A' }),
+      task({ id: 'shared-id', teamName: 'team-b', teamDisplayName: '团队 B' }),
+      task({ id: 'unique-id', teamName: 'team-c', teamDisplayName: '团队 C' }),
+    ];
+
+    expect(findReferencedTask(tasks, { taskId: 'shared-id', teamName: 'team-b' })?.teamName).toBe(
+      'team-b'
+    );
+    expect(findReferencedTask(tasks, { taskId: 'shared-id' })).toBeUndefined();
+    expect(findReferencedTask(tasks, { taskId: 'unique-id' })?.teamName).toBe('team-c');
+    expect(getGlobalTaskKey(tasks[0])).not.toBe(getGlobalTaskKey(tasks[1]));
   });
 
   it('applies search, team, and owner filters with deterministic recent sorting', () => {

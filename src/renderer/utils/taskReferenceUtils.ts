@@ -68,7 +68,7 @@ interface EncodedTaskMetadataMatch {
   end: number;
 }
 
-interface ParsedTaskLinkHref {
+export interface ParsedTaskLinkHref {
   taskId: string;
   teamName?: string;
   displayId?: string;

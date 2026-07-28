@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
-import { api } from '@renderer/api';
+import { api, rendererApiCapabilities } from '@renderer/api';
 import { MarkdownViewer } from '@renderer/components/chat/viewers/MarkdownViewer';
 import { ImageLightbox } from '@renderer/components/team/attachments/ImageLightbox';
 import { FileIcon } from '@renderer/components/team/editor/FileIcon';
@@ -31,12 +31,18 @@ const MAX_ATTACHMENTS = 5;
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const LONG_QUOTE_THRESHOLD = 200;
 
+export interface TaskCommentAttachmentCapability {
+  available: boolean;
+  unavailableReason?: string;
+}
+
 interface TaskCommentInputProps {
   teamName: string;
   taskId: string;
   members: ResolvedTeamMember[];
   replyTo: { author: string; text: string } | null;
   onClearReply: () => void;
+  attachmentCapability?: TaskCommentAttachmentCapability;
 }
 
 interface PendingAttachment {
@@ -48,12 +54,52 @@ interface PendingAttachment {
   size: number;
 }
 
+export const TaskCommentAttachmentPicker = ({
+  capability,
+  disabled,
+  onPick,
+}: Readonly<{
+  capability: TaskCommentAttachmentCapability;
+  disabled: boolean;
+  onPick(): void;
+}>): React.JSX.Element => {
+  if (!capability.available) {
+    return (
+      <span
+        data-testid="task-comment-attachment-unavailable"
+        className="text-[10px] text-[var(--color-text-muted)]"
+        title={capability.unavailableReason}
+      >
+        {capability.unavailableReason ?? '当前环境不支持评论附件'}
+      </span>
+    );
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label="添加评论附件"
+          className="inline-flex shrink-0 items-center rounded-full p-1.5 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text-secondary)]"
+          disabled={disabled}
+          onClick={onPick}
+        >
+          <Paperclip size={14} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top">添加附件（或粘贴）</TooltipContent>
+    </Tooltip>
+  );
+};
+
 export const TaskCommentInput = ({
   teamName,
   taskId,
   members,
   replyTo,
   onClearReply,
+  attachmentCapability = rendererApiCapabilities.taskCommentAttachments,
 }: TaskCommentInputProps): React.JSX.Element => {
   const addTaskComment = useStore((s) => s.addTaskComment);
   const addingComment = useStore((s) => s.addingComment);
@@ -208,6 +254,7 @@ export const TaskCommentInput = ({
   // Handle paste from MentionableTextarea area
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
+      if (!attachmentCapability.available) return;
       const items = e.clipboardData?.items;
       if (!items) return;
       const pastedFiles: File[] = [];
@@ -222,7 +269,7 @@ export const TaskCommentInput = ({
         void addFiles(pastedFiles);
       }
     },
-    [addFiles]
+    [addFiles, attachmentCapability.available]
   );
 
   return (
@@ -281,10 +328,25 @@ export const TaskCommentInput = ({
               ? pendingAttachments.slice(0, idx).filter((a) => isImageMime(a.mimeType)).length
               : -1;
             return (
+              // The preview is keyboard-interactive only for image attachments.
+              // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- Role is conditional on the attachment MIME type.
               <div
                 key={att.id}
+                role={isImage ? 'button' : undefined}
+                // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Only image previews receive tabIndex=0.
+                tabIndex={isImage ? 0 : undefined}
                 className="group relative size-14 cursor-pointer overflow-hidden rounded border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:border-[var(--color-border-emphasis)]"
                 onClick={isImage ? () => setLightboxIndex(lightboxIdx) : undefined}
+                onKeyDown={
+                  isImage
+                    ? (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setLightboxIndex(lightboxIdx);
+                        }
+                      }
+                    : undefined
+                }
               >
                 {isImage ? (
                   <img src={att.previewUrl} alt={att.filename} className="size-full object-cover" />
@@ -331,18 +393,20 @@ export const TaskCommentInput = ({
       {attachError ? <p className="mb-1 text-[10px] text-red-400">{attachError}</p> : null}
 
       <div className="relative" onPaste={handlePaste}>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="*/*"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files) void addFiles(e.target.files);
+        {attachmentCapability.available ? (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="*/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) void addFiles(e.target.files);
 
-            e.target.value = '';
-          }}
-        />
+              e.target.value = '';
+            }}
+          />
+        ) : null}
         <MentionableTextarea
           id={`task-comment-${taskId}`}
           className={replyTo ? 'rounded-t-none' : undefined}
@@ -363,19 +427,11 @@ export const TaskCommentInput = ({
           disabled={addingComment}
           cornerAction={
             <div className="flex items-center gap-1.5">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex shrink-0 items-center rounded-full p-1.5 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text-secondary)]"
-                    disabled={addingComment || pendingAttachments.length >= MAX_ATTACHMENTS}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Paperclip size={14} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">添加附件（或粘贴）</TooltipContent>
-              </Tooltip>
+              <TaskCommentAttachmentPicker
+                capability={attachmentCapability}
+                disabled={addingComment || pendingAttachments.length >= MAX_ATTACHMENTS}
+                onPick={() => fileInputRef.current?.click()}
+              />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button

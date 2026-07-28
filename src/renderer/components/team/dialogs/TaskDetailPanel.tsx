@@ -52,7 +52,11 @@ import {
   buildTaskChangeSignature,
   deriveTaskSince,
 } from '@renderer/utils/taskChangeRequest';
-import { linkifyTaskIdsInMarkdown, parseTaskLinkHref } from '@renderer/utils/taskReferenceUtils';
+import {
+  linkifyTaskIdsInMarkdown,
+  type ParsedTaskLinkHref,
+  parseTaskLinkHref,
+} from '@renderer/utils/taskReferenceUtils';
 import { isLeadMember, isLeadMemberName } from '@shared/utils/leadDetection';
 import { getTaskKanbanColumn } from '@shared/utils/reviewState';
 import { canDisplayTaskChanges } from '@shared/utils/taskChangeState';
@@ -92,7 +96,7 @@ import { SourceMessageAttachments } from '../attachments/SourceMessageAttachment
 import { WorkflowTimeline } from './StatusHistoryTimeline';
 import { TaskAttachments } from './TaskAttachments';
 import { TaskCommentAwaitingReply } from './TaskCommentAwaitingReply';
-import { TaskCommentInput } from './TaskCommentInput';
+import { type TaskCommentAttachmentCapability, TaskCommentInput } from './TaskCommentInput';
 import { TaskCommentsSection } from './TaskCommentsSection';
 
 import type {
@@ -137,11 +141,12 @@ export interface TaskDetailPanelProps {
   taskMap: Map<string, TeamTaskWithKanban>;
   members: ResolvedTeamMember[];
   onClose?: () => void;
-  onScrollToTask?: (taskId: string) => void;
+  onScrollToTask?: (target: ParsedTaskLinkHref) => void;
   onOwnerChange?: (taskId: string, owner: string | null) => void;
   onViewChanges?: (taskId: string, filePath?: string) => void;
   onOpenInEditor?: (filePath: string) => void;
   onDeleteTask?: (taskId: string) => void;
+  commentAttachmentCapability?: TaskCommentAttachmentCapability;
   /** Extra content rendered in the dialog header (e.g. "Open team" button). */
   headerExtra?: React.ReactNode;
 }
@@ -162,6 +167,7 @@ export const TaskDetailPanel = ({
   onViewChanges,
   onOpenInEditor,
   onDeleteTask,
+  commentAttachmentCapability,
   headerExtra,
 }: TaskDetailPanelProps): React.JSX.Element => {
   const colorMap = useMemo(() => buildMemberColorMap(members), [members]);
@@ -556,20 +562,24 @@ export const TaskDetailPanel = ({
     });
   }, [requestTaskChangeSummary]);
 
-  const handleDependencyClick = (taskId: string): void => {
-    // Resolve short displayId (e.g. "8ce74455") to full UUID via taskMap,
-    // since kanban cards use the full UUID in data-task-id.
-    let resolvedId = taskId;
-    if (!taskMap.has(taskId)) {
-      for (const [fullId, t] of taskMap) {
-        if (taskMatchesRef(t, taskId)) {
+  const handleDependencyClick = (target: ParsedTaskLinkHref): void => {
+    // Resolve short displayId (e.g. "8ce74455") only inside the current team.
+    // Cross-team links retain their canonical composite identity for the caller.
+    let resolvedId = target.taskId;
+    if ((!target.teamName || target.teamName === teamName) && !taskMap.has(target.taskId)) {
+      for (const [fullId, mappedTask] of taskMap) {
+        if (taskMatchesRef(mappedTask, target.taskId)) {
           resolvedId = fullId;
           break;
         }
       }
     }
     handleClose();
-    onScrollToTask?.(resolvedId);
+    onScrollToTask?.({
+      ...target,
+      taskId: resolvedId,
+      teamName: target.teamName ?? teamName,
+    });
   };
 
   const handleChangesSectionOpenChange = useCallback((isOpen: boolean): void => {
@@ -909,7 +919,7 @@ export const TaskDetailPanel = ({
                         <button
                           type="button"
                           className="inline-flex items-center rounded bg-purple-500/15 px-1.5 py-0.5 text-[10px] font-medium text-purple-300 transition-colors hover:bg-purple-500/25"
-                          onClick={() => handleDependencyClick(id)}
+                          onClick={() => handleDependencyClick({ taskId: id })}
                         >
                           {depTask
                             ? formatTaskDisplayLabel(depTask)
@@ -937,7 +947,7 @@ export const TaskDetailPanel = ({
                         <button
                           type="button"
                           className="inline-flex items-center rounded bg-fuchsia-500/15 px-1.5 py-0.5 text-[10px] font-medium text-fuchsia-300 transition-colors hover:bg-fuchsia-500/25"
-                          onClick={() => handleDependencyClick(id)}
+                          onClick={() => handleDependencyClick({ taskId: id })}
                         >
                           {depTask
                             ? formatTaskDisplayLabel(depTask)
@@ -973,7 +983,7 @@ export const TaskDetailPanel = ({
                               ? 'bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-400'
                               : 'bg-yellow-500/15 text-yellow-700 hover:bg-yellow-500/25 dark:text-yellow-300'
                           } cursor-pointer`}
-                          onClick={() => handleDependencyClick(id)}
+                          onClick={() => handleDependencyClick({ taskId: id })}
                         >
                           {depTask
                             ? formatTaskDisplayLabel(depTask)
@@ -1009,7 +1019,7 @@ export const TaskDetailPanel = ({
                               ? 'bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-400'
                               : 'bg-indigo-500/15 text-indigo-600 hover:bg-indigo-500/25 dark:text-indigo-400'
                           } cursor-pointer`}
-                          onClick={() => handleDependencyClick(id)}
+                          onClick={() => handleDependencyClick({ taskId: id })}
                         >
                           {depTask
                             ? formatTaskDisplayLabel(depTask)
@@ -1089,7 +1099,7 @@ export const TaskDetailPanel = ({
                         e.stopPropagation();
                         const href = link.getAttribute('href');
                         const parsed = href ? parseTaskLinkHref(href) : null;
-                        if (parsed?.taskId) handleDependencyClick(parsed.taskId);
+                        if (parsed?.taskId) handleDependencyClick(parsed);
                       }
                     }
                   : undefined
@@ -1374,6 +1384,7 @@ export const TaskDetailPanel = ({
               members={members}
               replyTo={effectiveReplyTo}
               onClearReply={clearReply}
+              attachmentCapability={commentAttachmentCapability}
             />
           </div>
           <TaskCommentAwaitingReply
@@ -1390,7 +1401,7 @@ export const TaskDetailPanel = ({
             hideHeader
             hideInput
             onReply={handleReply}
-            onTaskIdClick={onScrollToTask ? (taskId) => handleDependencyClick(taskId) : undefined}
+            onTaskRefClick={onScrollToTask ? handleDependencyClick : undefined}
             containerClassName="-mx-6"
             unreadCommentIds={unreadSnapshotRef.current}
             registerCommentForViewport={registerComment}

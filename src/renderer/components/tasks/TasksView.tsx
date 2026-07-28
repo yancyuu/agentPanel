@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   CollaborativeInboxView,
@@ -83,6 +83,22 @@ function buildOptionLabel(value: string | null | undefined, fallback: string): s
 
 export const TasksView = (): React.JSX.Element => {
   const [activeTab, setActiveTab] = useState<TasksSubTab>('inbox');
+  const tabRefs = useRef<Partial<Record<TasksSubTab, HTMLButtonElement>>>({});
+
+  const selectTabFromKeyboard = (event: React.KeyboardEvent, currentIndex: number): void => {
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % SUB_TABS.length;
+    if (event.key === 'ArrowLeft')
+      nextIndex = (currentIndex - 1 + SUB_TABS.length) % SUB_TABS.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = SUB_TABS.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextTab = SUB_TABS[nextIndex];
+    setActiveTab(nextTab.id);
+    tabRefs.current[nextTab.id]?.focus();
+  };
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-page-canvas">
@@ -90,15 +106,23 @@ export const TasksView = (): React.JSX.Element => {
       <div
         role="tablist"
         aria-label="任务工作台视图"
+        aria-orientation="horizontal"
         className="flex items-center gap-0 border-b border-[var(--surface-border-subtle)] px-4 pt-3"
       >
-        {SUB_TABS.map((tab) => (
+        {SUB_TABS.map((tab, index) => (
           <button
             key={tab.id}
+            ref={(element) => {
+              tabRefs.current[tab.id] = element ?? undefined;
+            }}
+            id={`tasks-tab-${tab.id}`}
             type="button"
             role="tab"
             aria-selected={activeTab === tab.id}
+            aria-controls={`tasks-tabpanel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
             onClick={() => setActiveTab(tab.id)}
+            onKeyDown={(event) => selectTabFromKeyboard(event, index)}
             className={cn(
               'flex items-center gap-1.5 border-b-2 px-3 pb-2 text-xs transition-colors',
               activeTab === tab.id
@@ -112,17 +136,29 @@ export const TasksView = (): React.JSX.Element => {
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        {activeTab === 'inbox' && <CollaborativeInboxView />}
-        {activeTab === 'overview' && (
-          <div className="h-full overflow-auto">
-            <TaskOverviewPool />
+        {SUB_TABS.map((tab) => (
+          <div
+            key={tab.id}
+            id={`tasks-tabpanel-${tab.id}`}
+            role="tabpanel"
+            aria-labelledby={`tasks-tab-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            hidden={activeTab !== tab.id}
+            className="h-full min-h-0 overflow-hidden"
+          >
+            {activeTab === tab.id && tab.id === 'inbox' ? <CollaborativeInboxView /> : null}
+            {activeTab === tab.id && tab.id === 'overview' ? (
+              <div className="h-full overflow-auto">
+                <TaskOverviewPool />
+              </div>
+            ) : null}
+            {activeTab === tab.id && tab.id === 'schedules' ? (
+              <div className="h-full overflow-auto">
+                <SchedulesView />
+              </div>
+            ) : null}
           </div>
-        )}
-        {activeTab === 'schedules' && (
-          <div className="h-full overflow-auto">
-            <SchedulesView />
-          </div>
-        )}
+        ))}
       </div>
     </div>
   );

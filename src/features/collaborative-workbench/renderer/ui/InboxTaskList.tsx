@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+
 import { Input } from '@renderer/components/ui/input';
 import { cn } from '@renderer/lib/utils';
 import { CheckCircle2, CircleDot, Inbox, RefreshCw, Search } from 'lucide-react';
@@ -51,6 +53,21 @@ export function InboxTaskList({
 }: Readonly<InboxTaskListProps>): React.JSX.Element {
   const selectClass =
     'h-8 min-w-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs text-[var(--color-text-secondary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]';
+  const tabRefs = useRef<Partial<Record<InboxTaskView, HTMLButtonElement>>>({});
+
+  const selectViewFromKeyboard = (event: React.KeyboardEvent, currentIndex: number): void => {
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % views.length;
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + views.length) % views.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = views.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextView = views[nextIndex];
+    onViewChange(nextView.id);
+    tabRefs.current[nextView.id]?.focus();
+  };
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-[var(--color-surface)]">
@@ -58,15 +75,23 @@ export function InboxTaskList({
         <div
           role="tablist"
           aria-label="任务收件箱视图"
+          aria-orientation="horizontal"
           className="flex items-center gap-1 rounded-md bg-[var(--color-surface-raised)] p-1"
         >
-          {views.map((item) => (
+          {views.map((item, index) => (
             <button
               key={item.id}
+              ref={(element) => {
+                tabRefs.current[item.id] = element ?? undefined;
+              }}
+              id={`inbox-segment-tab-${item.id}`}
               type="button"
               role="tab"
               aria-selected={view === item.id}
+              aria-controls={`inbox-segment-panel-${item.id}`}
+              tabIndex={view === item.id ? 0 : -1}
               onClick={() => onViewChange(item.id)}
+              onKeyDown={(event) => selectViewFromKeyboard(event, index)}
               className={cn(
                 'flex h-7 flex-1 items-center justify-center gap-1 rounded px-2 text-xs transition-colors',
                 view === item.id
@@ -131,29 +156,43 @@ export function InboxTaskList({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {error ? (
-          <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3 text-xs text-destructive">
-            {error}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {views.map((item) => (
+          <div
+            key={item.id}
+            id={`inbox-segment-panel-${item.id}`}
+            role="tabpanel"
+            aria-labelledby={`inbox-segment-tab-${item.id}`}
+            tabIndex={view === item.id ? 0 : -1}
+            hidden={view !== item.id}
+            className="h-full overflow-y-auto p-2"
+          >
+            {view === item.id ? (
+              error ? (
+                <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3 text-xs text-destructive">
+                  {error}
+                </div>
+              ) : tasks.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-[var(--color-text-muted)]">
+                  <Inbox size={28} className="opacity-30" />
+                  <p className="text-sm">当前视图没有任务</p>
+                  <p className="text-xs leading-5 opacity-70">调整筛选条件，或刷新后再查看。</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {tasks.map((entry) => (
+                    <InboxTaskRow
+                      key={entry.key}
+                      entry={entry}
+                      selected={entry.key === selectedKey}
+                      onSelect={() => onSelect(entry.key)}
+                    />
+                  ))}
+                </div>
+              )
+            ) : null}
           </div>
-        ) : tasks.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-[var(--color-text-muted)]">
-            <Inbox size={28} className="opacity-30" />
-            <p className="text-sm">当前视图没有任务</p>
-            <p className="text-xs leading-5 opacity-70">调整筛选条件，或刷新后再查看。</p>
-          </div>
-        ) : (
-          <div className="space-y-1">
-            {tasks.map((entry) => (
-              <InboxTaskRow
-                key={entry.key}
-                entry={entry}
-                selected={entry.key === selectedKey}
-                onSelect={() => onSelect(entry.key)}
-              />
-            ))}
-          </div>
-        )}
+        ))}
       </div>
     </div>
   );

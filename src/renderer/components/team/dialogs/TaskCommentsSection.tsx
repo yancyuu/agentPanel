@@ -25,6 +25,7 @@ import { linkifyAllMentionsInMarkdown } from '@renderer/utils/mentionLinkify';
 import {
   extractTaskRefsFromText,
   linkifyTaskIdsInMarkdown,
+  type ParsedTaskLinkHref,
   parseTaskLinkHref,
   stripEncodedTaskReferenceMetadata,
 } from '@renderer/utils/taskReferenceUtils';
@@ -60,8 +61,8 @@ interface TaskCommentsSectionProps {
   hideInput?: boolean;
   /** Called when the user clicks Reply on a comment (used when input is rendered externally). */
   onReply?: (author: string, text: string) => void;
-  /** Called when a task ID link (e.g. #10) is clicked in comment text. */
-  onTaskIdClick?: (taskId: string) => void;
+  /** Called when a task link is clicked, preserving its optional cross-team identity. */
+  onTaskRefClick?: (target: ParsedTaskLinkHref) => void;
   /** Extra className on the outer comments container (e.g. negative margins for edge-to-edge). */
   containerClassName?: string;
   /** Snapshot of unread comment IDs captured when the dialog opened. Blue dot is shown for these. */
@@ -81,7 +82,7 @@ export const TaskCommentsSection = ({
   hideHeader = false,
   hideInput = false,
   onReply,
-  onTaskIdClick,
+  onTaskRefClick,
   containerClassName,
   unreadCommentIds,
   registerCommentForViewport,
@@ -317,7 +318,7 @@ export const TaskCommentsSection = ({
                           <span
                             className="break-words"
                             onClickCapture={
-                              onTaskIdClick
+                              onTaskRefClick
                                 ? (e) => {
                                     const link = (
                                       e.target as HTMLElement
@@ -327,7 +328,7 @@ export const TaskCommentsSection = ({
                                       e.stopPropagation();
                                       const href = link.getAttribute('href');
                                       const parsed = href ? parseTaskLinkHref(href) : null;
-                                      if (parsed?.taskId) onTaskIdClick(parsed.taskId);
+                                      if (parsed?.taskId) onTaskRefClick(parsed);
                                     }
                                   }
                                 : undefined
@@ -519,11 +520,19 @@ const CommentAttachmentThumbnail = ({
     <Tooltip>
       <TooltipTrigger asChild>
         <div
+          role="button"
+          tabIndex={0}
           className={`group relative flex size-14 cursor-pointer items-center justify-center overflow-hidden rounded border bg-[var(--color-surface)] transition-colors ${
             downloadError
               ? 'border-red-500/60'
               : 'border-[var(--color-border)] hover:border-[var(--color-border-emphasis)]'
           }`}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              event.currentTarget.click();
+            }
+          }}
           onClick={() => {
             if (isImageMimeType(attachment.mimeType)) {
               if (thumbUrl) onPreview(thumbUrl);

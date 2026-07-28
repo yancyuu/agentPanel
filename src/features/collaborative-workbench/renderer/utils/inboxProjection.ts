@@ -25,6 +25,18 @@ export function getGlobalTaskKey(task: Pick<GlobalTask, 'teamName' | 'id'>): str
   return `${task.teamName}:${task.id}`;
 }
 
+export function findReferencedTask(
+  tasks: GlobalTask[],
+  target: { taskId: string; teamName?: string }
+): GlobalTask | undefined {
+  if (target.teamName) {
+    return tasks.find((task) => task.teamName === target.teamName && task.id === target.taskId);
+  }
+
+  const matches = tasks.filter((task) => task.id === target.taskId);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 function toTimestamp(raw: string | Date | null | undefined): number {
   if (!raw) return 0;
   const timestamp = raw instanceof Date ? raw.getTime() : new Date(raw).getTime();

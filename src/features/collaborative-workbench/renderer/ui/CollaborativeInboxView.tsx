@@ -64,8 +64,8 @@ export function CollaborativeInboxView(): React.JSX.Element {
                   : new Map([[selected.task.id, selected.task]])
               }
               members={model.members}
-              onScrollToTask={(taskId) => {
-                inbox.selectReferencedTask(taskId);
+              onScrollToTask={(taskRef) => {
+                inbox.selectReferencedTask(taskRef);
                 setMobileDetailOpen(true);
               }}
               onOwnerChange={

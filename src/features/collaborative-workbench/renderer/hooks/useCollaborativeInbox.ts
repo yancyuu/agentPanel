@@ -9,11 +9,14 @@ import { useStore } from '@renderer/store';
 import { useShallow } from 'zustand/react/shallow';
 
 import {
+  findReferencedTask,
   getGlobalTaskKey,
   type InboxTaskProjection,
   type InboxTaskView,
   projectInboxTasks,
 } from '../utils/inboxProjection';
+
+import type { ParsedTaskLinkHref } from '@renderer/utils/taskReferenceUtils';
 
 export interface CollaborativeInboxState {
   view: InboxTaskView;
@@ -30,7 +33,7 @@ export interface CollaborativeInboxState {
   selectedKey: string | null;
   selectedTask: InboxTaskProjection | null;
   selectTask(key: string): void;
-  selectReferencedTask(taskId: string): void;
+  selectReferencedTask(target: ParsedTaskLinkHref): void;
   loading: boolean;
   initialized: boolean;
   error: string | null;
@@ -137,8 +140,8 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
   }, [fetchAllTasks]);
 
   const selectReferencedTask = useCallback(
-    (taskId: string) => {
-      const target = visibleBaseTasks.find((task) => task.id === taskId);
+    (taskRef: ParsedTaskLinkHref) => {
+      const target = findReferencedTask(visibleBaseTasks, taskRef);
       if (!target) return;
       setQuery('');
       setTeamFilter('all');

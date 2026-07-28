@@ -2,9 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { Task, TaskStatus } from '../services/team-management/TeamWorkspaceService';
 import type {
-  CommentAttachmentPayload,
   GlobalTask,
-  TaskAttachmentMeta,
   TaskComment,
   TaskRef,
   TeamTask,
@@ -139,31 +137,22 @@ function normalizeTaskRefs(value: unknown): TaskRef[] | undefined {
   return refs.length > 0 ? refs : undefined;
 }
 
-function toAttachmentMetadata(value: unknown, addedAt: string): TaskAttachmentMeta[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const attachments = value.flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') return [];
-    const record = entry as Partial<CommentAttachmentPayload>;
-    if (
-      typeof record.id !== 'string' ||
-      typeof record.filename !== 'string' ||
-      typeof record.mimeType !== 'string' ||
-      typeof record.base64Data !== 'string'
-    ) {
-      return [];
-    }
-    return [
-      {
-        id: record.id,
-        filename: record.filename,
-        mimeType: record.mimeType,
-        size: Buffer.byteLength(record.base64Data, 'base64'),
-        addedAt,
-        filePath: null,
-      } satisfies TaskAttachmentMeta,
-    ];
-  });
-  return attachments.length > 0 ? attachments : undefined;
+const CLARIFICATION_VALUES = new Set<unknown>(['lead', 'user', null]);
+const RELATIONSHIP_TYPES = new Set<unknown>(['blockedBy', 'blocks', 'related']);
+
+type ClarificationValue = 'lead' | 'user' | null;
+type RelationshipType = 'blockedBy' | 'blocks' | 'related';
+
+function isClarificationValue(value: unknown): value is ClarificationValue {
+  return CLARIFICATION_VALUES.has(value);
+}
+
+function isRelationshipType(value: unknown): value is RelationshipType {
+  return RELATIONSHIP_TYPES.has(value);
+}
+
+function hasUnsupportedCommentAttachments(value: unknown): boolean {
+  return value !== undefined && (!Array.isArray(value) || value.length > 0);
 }
 
 function appendUnique(values: string[] | undefined, value: string): string[] {
@@ -463,6 +452,11 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
   }>('/api/teams/:name/tasks/:id/comments', async (request, reply) => {
     const text = request.body?.text?.trim();
     if (!text) return reply.code(400).send({ error: 'text required' });
+    if (hasUnsupportedCommentAttachments(request.body?.attachments)) {
+      return reply.code(400).send({
+        error: '浏览器模式暂不支持评论附件，请移除附件后重试。',
+      });
+    }
     try {
       const tasks = await dependencies.readTasks(request.params.name);
       const existingTask = tasks.find((task) => task.id === request.params.id);
@@ -475,7 +469,6 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
         createdAt,
         type: 'regular',
         taskRefs: normalizeTaskRefs(request.body?.taskRefs),
-        attachments: toAttachmentMetadata(request.body?.attachments, createdAt),
       };
       await dependencies.patchTask(request.params.name, request.params.id, {
         comments: [...(existingTask.comments ?? []), comment],
@@ -490,9 +483,13 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
     Params: { name: string; id: string };
     Body: { value?: 'lead' | 'user' | null };
   }>('/api/teams/:name/tasks/:id/clarification', async (request, reply) => {
+    const value = request.body?.value;
+    if (!isClarificationValue(value)) {
+      return reply.code(400).send({ error: 'value must be lead, user, or null' });
+    }
     try {
       await dependencies.patchTask(request.params.name, request.params.id, {
-        needsClarification: request.body?.value ?? undefined,
+        needsClarification: value ?? undefined,
       });
       return { ok: true };
     } catch (error) {
@@ -506,8 +503,10 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
   }>('/api/teams/:name/tasks/:id/relationships', async (request, reply) => {
     const targetId = request.body?.targetId?.trim();
     const type = request.body?.type;
-    if (!targetId || !type) {
-      return reply.code(400).send({ error: 'targetId and type required' });
+    if (!targetId || !isRelationshipType(type)) {
+      return reply
+        .code(400)
+        .send({ error: 'targetId required and type must be blockedBy, blocks, or related' });
     }
     try {
       const tasks = await dependencies.readTasks(request.params.name);
@@ -550,9 +549,13 @@ function registerLateAliasRoutes(
     Params: { name: string; taskId: string };
     Body: { value?: 'lead' | 'user' | null };
   }>('/api/teams/:name/task-clarification/:taskId', async (request, reply) => {
+    const value = request.body?.value;
+    if (!isClarificationValue(value)) {
+      return reply.code(400).send({ error: 'value must be lead, user, or null' });
+    }
     try {
       await dependencies.patchTask(request.params.name, request.params.taskId, {
-        needsClarification: request.body?.value ?? undefined,
+        needsClarification: value ?? undefined,
       });
       return { ok: true };
     } catch (error) {
@@ -566,8 +569,10 @@ function registerLateAliasRoutes(
   }>('/api/teams/:name/tasks/:id/relationships', async (request, reply) => {
     const targetId = request.body?.targetId?.trim();
     const type = request.body?.type;
-    if (!targetId || !type) {
-      return reply.code(400).send({ error: 'targetId and type required' });
+    if (!targetId || !isRelationshipType(type)) {
+      return reply
+        .code(400)
+        .send({ error: 'targetId required and type must be blockedBy, blocks, or related' });
     }
     try {
       const tasks = await dependencies.readTasks(request.params.name);

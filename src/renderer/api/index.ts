@@ -16,4 +16,18 @@ function getHttpBaseUrl(): string {
   return window.location.origin;
 }
 
+export interface RendererApiCapabilities {
+  taskCommentAttachments: {
+    available: boolean;
+    unavailableReason?: string;
+  };
+}
+
+export const rendererApiCapabilities: RendererApiCapabilities = {
+  taskCommentAttachments: {
+    available: false,
+    unavailableReason: '浏览器模式暂不支持评论附件',
+  },
+};
+
 export const api: ElectronAPI = new HttpAPIClient(getHttpBaseUrl());

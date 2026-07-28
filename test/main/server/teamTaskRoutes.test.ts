@@ -333,14 +333,7 @@ describe('team task routes', () => {
       payload: {
         text: 'Please check TASK-1',
         taskRefs: [{ taskId: 'task-1', displayId: 'TASK-1', teamName: 'team-a' }],
-        attachments: [
-          {
-            id: 'attachment-1',
-            filename: 'note.txt',
-            mimeType: 'text/plain',
-            base64Data: Buffer.from('hello').toString('base64'),
-          },
-        ],
+        attachments: [],
       },
     });
     await harness.app.inject({
@@ -377,15 +370,6 @@ describe('team task routes', () => {
         text: 'Please check TASK-1',
         type: 'regular',
         taskRefs: [{ taskId: 'task-1', displayId: 'TASK-1', teamName: 'team-a' }],
-        attachments: [
-          expect.objectContaining({
-            id: 'attachment-1',
-            filename: 'note.txt',
-            mimeType: 'text/plain',
-            size: 5,
-            filePath: null,
-          }),
-        ],
       })
     );
     expect(afterAdd.json()).toEqual([
@@ -398,5 +382,62 @@ describe('team task routes', () => {
     expect(stored.needsClarification).toBe('user');
     expect(stored.blockedBy).toBeUndefined();
     expect(harness.dependencies.dispatchTask).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsupported browser comment attachments without mutating the board', async () => {
+    const harness = createHarness();
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks/task-12345678/comments',
+      payload: {
+        text: 'comment with attachment',
+        attachments: [
+          {
+            id: 'attachment-1',
+            filename: 'note.txt',
+            mimeType: 'text/plain',
+            base64Data: Buffer.from('hello').toString('base64'),
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: '浏览器模式暂不支持评论附件，请移除附件后重试。',
+    });
+    expect(harness.dependencies.readTasks).not.toHaveBeenCalled();
+    expect(harness.dependencies.patchTask).not.toHaveBeenCalled();
+  });
+
+  it('validates every clarification and relationship handler before board mutation', async () => {
+    const harness = createHarness();
+    const requests = [
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/teams/team-a/tasks/task-12345678/clarification',
+        payload: { value: 'admin' },
+      }),
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/teams/team-a/task-clarification/task-12345678',
+        payload: {},
+      }),
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/teams/team-a/tasks/task-12345678/relationships',
+        payload: { targetId: 'task-2', type: 'comments' },
+      }),
+      harness.app.inject({
+        method: 'DELETE',
+        url: '/api/teams/team-a/tasks/task-12345678/relationships',
+        payload: { targetId: '   ', type: 'blockedBy' },
+      }),
+    ];
+
+    const responses = await Promise.all(requests);
+    expect(responses.map((response) => response.statusCode)).toEqual([400, 400, 400, 400]);
+    expect(harness.dependencies.readTasks).not.toHaveBeenCalled();
+    expect(harness.dependencies.patchTask).not.toHaveBeenCalled();
   });
 });
