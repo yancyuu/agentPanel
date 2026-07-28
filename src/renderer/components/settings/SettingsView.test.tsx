@@ -139,6 +139,21 @@ async function clickCategory(host: HTMLElement, label: string): Promise<void> {
   });
 }
 
+async function pressCategoryKey(
+  host: HTMLElement,
+  label: string,
+  key: string
+): Promise<KeyboardEvent> {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+  await act(async () => {
+    const button = findButton(host, label);
+    button.focus();
+    button.dispatchEvent(event);
+    await Promise.resolve();
+  });
+  return event;
+}
+
 describe('SettingsView navigation and layout', () => {
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -176,12 +191,7 @@ describe('SettingsView navigation and layout', () => {
     expect(host.querySelector('[data-testid="general-section"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="harness-section"]')).toBeNull();
 
-    await act(async () => {
-      const generalTab = findButton(host, '通用');
-      generalTab.focus();
-      generalTab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-      await Promise.resolve();
-    });
+    await pressCategoryKey(host, '通用', 'ArrowDown');
     expect(findButton(host, 'Harness').getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(findButton(host, 'Harness'));
     expect(host.querySelector('[data-testid="general-section"]')).toBeNull();
@@ -269,6 +279,95 @@ describe('SettingsView navigation and layout', () => {
     expect(tabList?.getAttribute('aria-orientation')).toBe('horizontal');
     expect(tabList?.className).toContain('overflow-x-auto');
     expect(host.querySelector('[role="tabpanel"]')?.className).toContain('min-w-0');
+
+    await act(async () => root.unmount());
+  });
+
+  it('uses vertical arrow keys with wrapping, Home, and End without consuming horizontal arrows', async () => {
+    const { host, root } = await renderSettings();
+    expect(host.querySelector('[role="tablist"]')?.getAttribute('aria-orientation')).toBe(
+      'vertical'
+    );
+
+    const irrelevantEvent = await pressCategoryKey(host, '通用', 'ArrowRight');
+    expect(irrelevantEvent.defaultPrevented).toBe(false);
+    expect(findButton(host, '通用').getAttribute('aria-selected')).toBe('true');
+
+    expect((await pressCategoryKey(host, '通用', 'ArrowUp')).defaultPrevented).toBe(true);
+    expect(findButton(host, '高级').getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(findButton(host, '高级'));
+
+    await pressCategoryKey(host, '高级', 'ArrowDown');
+    expect(findButton(host, '通用').getAttribute('aria-selected')).toBe('true');
+
+    await pressCategoryKey(host, '通用', 'End');
+    expect(findButton(host, '高级').getAttribute('aria-selected')).toBe('true');
+
+    await pressCategoryKey(host, '高级', 'Home');
+    expect(findButton(host, '通用').getAttribute('aria-selected')).toBe('true');
+
+    await act(async () => root.unmount());
+  });
+
+  it('uses horizontal arrow keys with wrapping, Home, and End without consuming vertical arrows', async () => {
+    const { host, root } = await renderSettings(560);
+    expect(host.querySelector('[role="tablist"]')?.getAttribute('aria-orientation')).toBe(
+      'horizontal'
+    );
+
+    const irrelevantEvent = await pressCategoryKey(host, '通用', 'ArrowDown');
+    expect(irrelevantEvent.defaultPrevented).toBe(false);
+    expect(findButton(host, '通用').getAttribute('aria-selected')).toBe('true');
+
+    expect((await pressCategoryKey(host, '通用', 'ArrowLeft')).defaultPrevented).toBe(true);
+    expect(findButton(host, '高级').getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(findButton(host, '高级'));
+
+    await pressCategoryKey(host, '高级', 'ArrowRight');
+    expect(findButton(host, '通用').getAttribute('aria-selected')).toBe('true');
+
+    await pressCategoryKey(host, '通用', 'End');
+    expect(findButton(host, '高级').getAttribute('aria-selected')).toBe('true');
+
+    await pressCategoryKey(host, '高级', 'Home');
+    expect(findButton(host, '通用').getAttribute('aria-selected')).toBe('true');
+
+    await act(async () => root.unmount());
+  });
+
+  it('keeps every tab control target stable while only mounting the active section', async () => {
+    const { host, root } = await renderSettings();
+    const tabs = Array.from(host.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    const panels = Array.from(host.querySelectorAll<HTMLElement>('[role="tabpanel"]'));
+
+    expect(panels).toHaveLength(4);
+    for (const tab of tabs) {
+      const panelId = tab.getAttribute('aria-controls');
+      expect(panelId).not.toBeNull();
+      const panel = panelId ? host.querySelector<HTMLElement>(`#${panelId}`) : null;
+      expect(panel).not.toBeNull();
+      expect(panel?.getAttribute('aria-labelledby')).toBe(tab.id);
+    }
+
+    const generalPanel = host.querySelector<HTMLElement>('#settings-panel-general');
+    expect(generalPanel?.hidden).toBe(false);
+    expect(generalPanel?.querySelector('[data-testid="general-section"]')).not.toBeNull();
+    for (const section of ['harness', 'task-bus', 'advanced']) {
+      const panel = host.querySelector<HTMLElement>(`#settings-panel-${section}`);
+      expect(panel?.hidden).toBe(true);
+      expect(panel?.children).toHaveLength(0);
+    }
+    expect(host.querySelector('[data-testid="harness-section"]')).toBeNull();
+    expect(host.querySelector('[data-testid="task-bus-section"]')).toBeNull();
+    expect(host.querySelector('[data-testid="advanced-section"]')).toBeNull();
+
+    await clickCategory(host, 'Harness');
+    expect(generalPanel?.hidden).toBe(true);
+    expect(generalPanel?.children).toHaveLength(0);
+    const harnessPanel = host.querySelector<HTMLElement>('#settings-panel-harness');
+    expect(harnessPanel?.hidden).toBe(false);
+    expect(harnessPanel?.querySelector('[data-testid="harness-section"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="general-section"]')).toBeNull();
 
     await act(async () => root.unmount());
   });

@@ -48,12 +48,13 @@ interface SettingsTabsProps {
 function activateAdjacentCategory(
   event: KeyboardEvent<HTMLButtonElement>,
   currentIndex: number,
+  compact: boolean,
   onSectionChange: (section: SettingsSection) => void
 ): void {
   const { key } = event;
-  const vertical = key === 'ArrowUp' || key === 'ArrowDown';
-  const horizontal = key === 'ArrowLeft' || key === 'ArrowRight';
-  if (!vertical && !horizontal && key !== 'Home' && key !== 'End') return;
+  const previousKey = compact ? 'ArrowLeft' : 'ArrowUp';
+  const nextKey = compact ? 'ArrowRight' : 'ArrowDown';
+  if (key !== previousKey && key !== nextKey && key !== 'Home' && key !== 'End') return;
 
   event.preventDefault();
   const nextIndex =
@@ -61,7 +62,7 @@ function activateAdjacentCategory(
       ? 0
       : key === 'End'
         ? SETTINGS_CATEGORIES.length - 1
-        : key === 'ArrowUp' || key === 'ArrowLeft'
+        : key === previousKey
           ? (currentIndex - 1 + SETTINGS_CATEGORIES.length) % SETTINGS_CATEGORIES.length
           : (currentIndex + 1) % SETTINGS_CATEGORIES.length;
 
@@ -99,7 +100,7 @@ const CategoryButton = ({
       aria-controls={`settings-panel-${category.id}`}
       tabIndex={isActive ? 0 : -1}
       onClick={() => onSectionChange(category.id)}
-      onKeyDown={(event) => activateAdjacentCategory(event, index, onSectionChange)}
+      onKeyDown={(event) => activateAdjacentCategory(event, index, compact, onSectionChange)}
       className={`group flex border text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-surface)] ${
         compact
           ? 'min-w-[168px] flex-1 items-center gap-2.5 rounded-md px-3 py-2'

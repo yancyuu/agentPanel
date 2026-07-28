@@ -162,46 +162,60 @@ export const SettingsView = (): React.JSX.Element | null => {
             />
           </div>
 
-          <main
-            id={`settings-panel-${activeSection}`}
-            role="tabpanel"
-            aria-labelledby={`settings-tab-${activeSection}`}
-            className={`${compactNavigation ? 'mt-5' : ''} min-w-0 max-w-3xl flex-1`}
-          >
-            <div className="border-b border-[var(--color-border)] pb-4">
-              <h2 className="text-sm font-semibold text-[var(--color-text)]">
-                {activeCategory.label}
-              </h2>
-              <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
-                {activeCategory.description}
-              </p>
-            </div>
+          <main className={`${compactNavigation ? 'mt-5' : ''} min-w-0 max-w-3xl flex-1`}>
+            {SETTINGS_CATEGORIES.map((category) => {
+              const isActive = category.id === activeSection;
 
-            <div className="mt-5 min-w-0 duration-150 animate-in fade-in">
-              {activeSection === 'general' && (
-                <GeneralSection
-                  safeConfig={safeConfig}
-                  saving={saving}
-                  onGeneralToggle={handlers.handleGeneralToggle}
-                  onThemeChange={handlers.handleThemeChange}
-                  onLanguageChange={handlers.handleLanguageChange}
-                />
-              )}
+              return (
+                <section
+                  key={category.id}
+                  id={`settings-panel-${category.id}`}
+                  role="tabpanel"
+                  aria-labelledby={`settings-tab-${category.id}`}
+                  hidden={!isActive}
+                  className="min-w-0"
+                >
+                  {isActive ? (
+                    <>
+                      <div className="border-b border-[var(--color-border)] pb-4">
+                        <h2 className="text-sm font-semibold text-[var(--color-text)]">
+                          {activeCategory.label}
+                        </h2>
+                        <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
+                          {activeCategory.description}
+                        </p>
+                      </div>
 
-              {activeSection === 'harness' && <HarnessSection />}
+                      <div className="mt-5 min-w-0 duration-150 animate-in fade-in">
+                        {activeSection === 'general' && (
+                          <GeneralSection
+                            safeConfig={safeConfig}
+                            saving={saving}
+                            onGeneralToggle={handlers.handleGeneralToggle}
+                            onThemeChange={handlers.handleThemeChange}
+                            onLanguageChange={handlers.handleLanguageChange}
+                          />
+                        )}
 
-              {activeSection === 'task-bus' && <TaskBusSection />}
+                        {activeSection === 'harness' && <HarnessSection />}
 
-              {activeSection === 'advanced' && (
-                <AdvancedSection
-                  saving={saving}
-                  onResetToDefaults={handlers.handleResetToDefaults}
-                  onExportConfig={handlers.handleExportConfig}
-                  onImportConfig={handlers.handleImportConfig}
-                  onOpenInEditor={handlers.handleOpenInEditor}
-                />
-              )}
-            </div>
+                        {activeSection === 'task-bus' && <TaskBusSection />}
+
+                        {activeSection === 'advanced' && (
+                          <AdvancedSection
+                            saving={saving}
+                            onResetToDefaults={handlers.handleResetToDefaults}
+                            onExportConfig={handlers.handleExportConfig}
+                            onImportConfig={handlers.handleImportConfig}
+                            onOpenInEditor={handlers.handleOpenInEditor}
+                          />
+                        )}
+                      </div>
+                    </>
+                  ) : null}
+                </section>
+              );
+            })}
           </main>
         </div>
       </div>
