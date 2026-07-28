@@ -123,6 +123,7 @@ import {
 } from './serverContext';
 import { registerAppConfigRoutes } from './routes/appConfigRoutes';
 import { registerEditorRoutes } from './routes/editorRoutes';
+import { registerReviewCompatibilityRoutes } from './routes/reviewCompatibilityRoutes';
 import { isSseFallbackRequest, openSseFallbackStream, registerSseRoutes } from './routes/sseRoutes';
 import { registerSystemManagerRoutes } from './routes/systemManagerRoutes';
 import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
@@ -6483,39 +6484,7 @@ app.get('/api/telemetry/status', async (request, reply) => {
   }
 });
 
-app.get<{ Params: { name: string; memberName: string } }>(
-  '/api/teams/:name/review/agent-changes/:memberName',
-  async (request) => ({
-    teamName: request.params.name,
-    memberName: request.params.memberName,
-    files: [],
-    totalLinesAdded: 0,
-    totalLinesRemoved: 0,
-    totalFiles: 0,
-    computedAt: new Date().toISOString(),
-  })
-);
-app.get<{ Params: { name: string; taskId: string } }>(
-  '/api/teams/:name/review/task-changes/:taskId',
-  async () => ({ changes: [] })
-);
-app.get<{ Params: { name: string; memberName: string } }>(
-  '/api/teams/:name/review/change-stats/:memberName',
-  async () => ({ stats: {} })
-);
-app.get<{ Params: { name: string } }>('/api/teams/:name/review/file-content', async () => ({
-  content: '',
-}));
-app.post<{ Params: { name: string } }>('/api/teams/:name/review/apply-decisions', async () => ({
-  ok: true,
-}));
-app.post('/api/teams/review/check-conflict', async () => ({ conflict: false }));
-app.post('/api/teams/review/preview-reject', async () => ({ preview: '' }));
-app.post('/api/teams/review/save-edited-file', async () => ({ ok: true }));
-app.post('/api/teams/review/decisions/load', async () => ({ decisions: {} }));
-app.post('/api/teams/review/decisions/save', async () => ({ ok: true }));
-app.post('/api/teams/review/decisions/clear', async () => ({ ok: true }));
-app.get('/api/teams/review/git-file-log', async () => ({ log: [] }));
+registerReviewCompatibilityRoutes(app);
 
 // ===========================================================================
 // SSE 推送端点 — 前端 EventSource 连接此处接收实时事件
