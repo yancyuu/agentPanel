@@ -24,7 +24,7 @@
 - [x] 覆盖 direct-cli/bridge 路由和事件写入
 - [ ] 覆盖 setup/digital-worker 创建入口
 - [x] 覆盖 editor 路径安全
-- [ ] 覆盖 extensions 基本路由
+- [x] 覆盖 extensions 基本路由
 - [ ] 记录 telemetry 删除前的现有行为基线
 
 ### Task 0.3: Create Server Context
@@ -54,8 +54,8 @@
 - [x] 抽取 editor routes
 - [ ] 抽取 schedules routes
 - [x] 抽取 projects/dashboard/graph/context routes
-- [ ] 抽取 extensions routes
-- [ ] 每抽一个模块运行类型检查和聚焦测试
+- [x] 抽取 extensions routes
+- [x] 每抽一个模块运行类型检查和聚焦测试
 
 ### Task 0.6: Extract High-Risk Route Domains
 

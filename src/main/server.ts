@@ -58,6 +58,36 @@ import {
   setCapabilityPackLocalSource,
   setSkillsWatcherEmitter,
 } from './ipc/extensions';
+import { registerAppConfigRoutes } from './routes/appConfigRoutes';
+import { registerBridgeConfigRoutes } from './routes/bridgeConfigRoutes';
+import { registerBridgeProxyRoutes } from './routes/bridgeProxyRoutes';
+import { registerCapabilityPackRoutes } from './routes/capabilityPackRoutes';
+import { registerConversationTelemetryRoutes } from './routes/conversationTelemetryRoutes';
+import { registerEditorRoutes } from './routes/editorRoutes';
+import { registerExtensionCredentialRoutes } from './routes/extensionCredentialRoutes';
+import { registerExtensionMcpStoreRoutes } from './routes/extensionMcpStoreRoutes';
+import { registerExtensionPluginRoutes } from './routes/extensionPluginRoutes';
+import { registerExtensionSkillRoutes } from './routes/extensionSkillRoutes';
+import { registerGraphRoutes } from './routes/graphRoutes';
+import { registerHarnessRoutes } from './routes/harnessRoutes';
+import { registerHeartbeatRoutes } from './routes/heartbeatRoutes';
+import { registerHermitConfigRoutes } from './routes/hermitConfigRoutes';
+import { registerMcpRoutes } from './routes/mcpRoutes';
+import { registerWorkbenchNotFoundHandler } from './routes/notFoundHandler';
+import { registerPlatformSetupRoutes } from './routes/platformSetupRoutes';
+import { registerReviewCompatibilityRoutes } from './routes/reviewCompatibilityRoutes';
+import { registerRuntimeRoutes } from './routes/runtimeRoutes';
+import { registerScheduleRoutes } from './routes/scheduleRoutes';
+import { registerSseRoutes } from './routes/sseRoutes';
+import { registerStaticRoutes } from './routes/staticRoutes';
+import { registerSystemManagerRoutes } from './routes/systemManagerRoutes';
+import { registerTaskBusSettingsRoutes } from './routes/taskBusSettingsRoutes';
+import { registerTerminalRoutes } from './routes/terminalRoutes';
+import { registerToolApprovalRoutes } from './routes/toolApprovalRoutes';
+import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
+import { registerWorkbenchStatusRoutes } from './routes/workbenchStatusRoutes';
+import { registerWorkerRoutes } from './routes/workerRoutes';
+import { registerWorkspaceRoutes } from './routes/workspaceRoutes';
 import { buildDirectReplyMessageId, DirectCliSessionManager } from './services/direct-cli';
 import { buildTeamCapabilityTelemetrySnapshots } from './services/extensions/capability-packs/CapabilityPackLoaderService';
 import { httpsGetFollowRedirects } from './services/extensions/catalog/PluginCatalogService';
@@ -106,39 +136,6 @@ import {
 import { WorkflowPromptService } from './services/system-manager/WorkflowPromptService';
 import { ClaudeBinaryResolver } from './services/team/ClaudeBinaryResolver';
 import { TeamProvisioningService } from './services/team-management';
-import { createServerContext, createServerRuntimeState } from './serverContext';
-import { registerAppConfigRoutes } from './routes/appConfigRoutes';
-import { registerBridgeConfigRoutes } from './routes/bridgeConfigRoutes';
-import { registerBridgeProxyRoutes } from './routes/bridgeProxyRoutes';
-import { registerConversationTelemetryRoutes } from './routes/conversationTelemetryRoutes';
-import { registerGraphRoutes } from './routes/graphRoutes';
-import { registerHarnessRoutes } from './routes/harnessRoutes';
-import { registerHermitConfigRoutes } from './routes/hermitConfigRoutes';
-import { registerMcpRoutes } from './routes/mcpRoutes';
-import { registerPlatformSetupRoutes } from './routes/platformSetupRoutes';
-import { registerEditorRoutes } from './routes/editorRoutes';
-import { registerHeartbeatRoutes } from './routes/heartbeatRoutes';
-import { registerWorkbenchNotFoundHandler } from './routes/notFoundHandler';
-import { registerReviewCompatibilityRoutes } from './routes/reviewCompatibilityRoutes';
-import { registerRuntimeRoutes } from './routes/runtimeRoutes';
-import { registerScheduleRoutes } from './routes/scheduleRoutes';
-import { registerSseRoutes } from './routes/sseRoutes';
-import { registerStaticRoutes } from './routes/staticRoutes';
-import { registerSystemManagerRoutes } from './routes/systemManagerRoutes';
-import { registerTaskBusSettingsRoutes } from './routes/taskBusSettingsRoutes';
-import { registerTerminalRoutes } from './routes/terminalRoutes';
-import { registerToolApprovalRoutes } from './routes/toolApprovalRoutes';
-import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
-import { registerWorkbenchStatusRoutes } from './routes/workbenchStatusRoutes';
-import { registerWorkerRoutes } from './routes/workerRoutes';
-import { registerWorkspaceRoutes } from './routes/workspaceRoutes';
-import { registerServerEventHandlers } from './serverEventHandlers';
-import {
-  createServerShutdown,
-  createWorkbenchShutdown,
-  installServerProcessHandlers,
-} from './serverProcessLifecycle';
-import { startStandaloneServerRuntime } from './serverStartup';
 import { HERMIT_OPS_GUIDE_URL } from './services/team-management/OpsRunbookContext';
 import { UpdateService } from './services/UpdateService';
 import {
@@ -151,6 +148,14 @@ import {
   resolveExternalPlatformSessionTeamSlug,
 } from './utils/externalPlatformSessionRouting';
 import { resolveCcProjectName } from './utils/teamProjectResolution';
+import { createServerContext, createServerRuntimeState } from './serverContext';
+import { registerServerEventHandlers } from './serverEventHandlers';
+import {
+  createServerShutdown,
+  createWorkbenchShutdown,
+  installServerProcessHandlers,
+} from './serverProcessLifecycle';
+import { startStandaloneServerRuntime } from './serverStartup';
 
 import type {
   HermitBridgeAgentType,
@@ -4031,113 +4036,6 @@ async function getCapabilityTelemetrySnapshots(): Promise<TeamCapabilityTelemetr
   return promise;
 }
 
-function sanitizeDownloadFilename(value: string): string {
-  return (
-    value
-      .trim()
-      .replace(/[^a-zA-Z0-9._-]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'download'
-  );
-}
-
-function crc32(buffer: Buffer): number {
-  let crc = 0xffffffff;
-  for (const byte of buffer) {
-    crc ^= byte;
-    for (let i = 0; i < 8; i++) {
-      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
-    }
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function dosDateTime(date: Date): { date: number; time: number } {
-  const year = Math.max(1980, date.getFullYear());
-  return {
-    time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
-    date: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
-  };
-}
-
-async function zipDirectoryForDownload(rootDir: string): Promise<Buffer> {
-  const files: { relativePath: string; data: Buffer; mtime: Date }[] = [];
-  const visit = async (dir: string): Promise<void> => {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue;
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) {
-        await visit(fullPath);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      const stat = await fs.stat(fullPath);
-      files.push({
-        relativePath: path.relative(rootDir, fullPath).replace(/\\/g, '/'),
-        data: await fs.readFile(fullPath),
-        mtime: stat.mtime,
-      });
-    }
-  };
-  await visit(rootDir);
-
-  const localParts: Buffer[] = [];
-  const centralParts: Buffer[] = [];
-  let offset = 0;
-  for (const file of files.sort((a, b) => a.relativePath.localeCompare(b.relativePath))) {
-    const name = Buffer.from(file.relativePath, 'utf8');
-    const crc = crc32(file.data);
-    const { date, time } = dosDateTime(file.mtime);
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(0x0800, 6);
-    local.writeUInt16LE(0, 8);
-    local.writeUInt16LE(time, 10);
-    local.writeUInt16LE(date, 12);
-    local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(file.data.length, 18);
-    local.writeUInt32LE(file.data.length, 22);
-    local.writeUInt16LE(name.length, 26);
-    local.writeUInt16LE(0, 28);
-    localParts.push(local, name, file.data);
-
-    const central = Buffer.alloc(46);
-    central.writeUInt32LE(0x02014b50, 0);
-    central.writeUInt16LE(20, 4);
-    central.writeUInt16LE(20, 6);
-    central.writeUInt16LE(0x0800, 8);
-    central.writeUInt16LE(0, 10);
-    central.writeUInt16LE(time, 12);
-    central.writeUInt16LE(date, 14);
-    central.writeUInt32LE(crc, 16);
-    central.writeUInt32LE(file.data.length, 20);
-    central.writeUInt32LE(file.data.length, 24);
-    central.writeUInt16LE(name.length, 28);
-    central.writeUInt16LE(0, 30);
-    central.writeUInt16LE(0, 32);
-    central.writeUInt16LE(0, 34);
-    central.writeUInt16LE(0, 36);
-    central.writeUInt32LE(0, 38);
-    central.writeUInt32LE(offset, 42);
-    centralParts.push(central, name);
-    offset += local.length + name.length + file.data.length;
-  }
-
-  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(0, 4);
-  end.writeUInt16LE(0, 6);
-  end.writeUInt16LE(files.length, 8);
-  end.writeUInt16LE(files.length, 10);
-  end.writeUInt32LE(centralSize, 12);
-  end.writeUInt32LE(offset, 16);
-  end.writeUInt16LE(0, 20);
-  return Buffer.concat([...localParts, ...centralParts, end]);
-}
-
 async function enrichTelemetryProjectNames<T extends { projects: TelemetryProjectRow[] }>(
   status: T
 ): Promise<T> {
@@ -4501,264 +4399,33 @@ registerSseRoutes(app, {
 
 // ── Extension Store routes (wired to extensionHandlers) ────────────────
 
-setCapabilityPackLocalSource({
-  projectPath: REPO_ROOT,
-  listCronJobs: () => cc.listCronJobs(),
-  listTeams: async () => {
-    const manifests = await svc.listTeams().catch(() => []);
-    return manifests
-      .filter((team) => !team.deletedAt)
-      .map((team) => ({
-        slug: team.slug,
-        displayName: team.displayName,
-        workDir: team.workDir,
-        bindProject: team.bindProject,
-      }));
+const extensionHandlers = serverContext.services.extensions;
+
+registerExtensionPluginRoutes(app, { handlers: extensionHandlers });
+registerExtensionMcpStoreRoutes(app, { handlers: extensionHandlers });
+registerCapabilityPackRoutes(app, {
+  handlers: extensionHandlers,
+  localSource: {
+    projectPath: REPO_ROOT,
+    listCronJobs: () => cc.listCronJobs(),
+    listTeams: async () => {
+      const manifests = await svc.listTeams().catch(() => []);
+      return manifests
+        .filter((team) => !team.deletedAt)
+        .map((team) => ({
+          slug: team.slug,
+          displayName: team.displayName,
+          workDir: team.workDir,
+          bindProject: team.bindProject,
+        }));
+    },
   },
+  setLocalSource: setCapabilityPackLocalSource,
+  setSkillsWatcherEmitter,
+  broadcastSse,
 });
-
-// Broadcast skill file-watcher changes to connected frontends via SSE.
-setSkillsWatcherEmitter((event) => broadcastSse('skills:changed', event));
-
-app.get('/api/extensions/plugins', async () => {
-  const result = await ext.pluginGetAll();
-  return result;
-});
-
-app.get('/api/extensions/plugins/readme/:pluginId', async (request) => {
-  const { pluginId } = request.params as { pluginId: string };
-  const result = await ext.pluginGetReadme(pluginId);
-  return result;
-});
-
-app.post('/api/extensions/plugins/install', async (request) => {
-  const body = request.body as Record<string, unknown>;
-  const result = await ext.pluginInstall(body as unknown as PluginInstallRequest);
-  return result;
-});
-
-app.post('/api/extensions/plugins/uninstall', async (request) => {
-  const body = request.body as Record<string, unknown>;
-  const result = await ext.pluginUninstall(
-    body.pluginId as string,
-    body.scope as string,
-    body.projectPath as string,
-    body.harnessType as HermitBridgeAgentType | undefined
-  );
-  return result;
-});
-
-app.get('/api/extensions/mcp/installed', async (request) => {
-  const projectPath = (request.query as Record<string, string>).projectPath;
-  const result = await ext.mcpGetInstalled(projectPath);
-  return result;
-});
-
-app.post('/api/extensions/mcp/install-custom', async (request) => {
-  const body = request.body as Record<string, unknown>;
-  const result = await ext.mcpInstallCustom(body as unknown as McpCustomInstallRequest);
-  return result;
-});
-
-app.post('/api/extensions/mcp/uninstall', async (request) => {
-  const body = request.body as Record<string, unknown>;
-  const result = await ext.mcpUninstall(
-    body.name as string,
-    body.scope as string,
-    body.projectPath as string,
-    body.harnessType as HermitBridgeAgentType | undefined
-  );
-  return result;
-});
-
-app.get('/api/extensions/mcp/library', async () => {
-  return ext.mcpLibraryList();
-});
-
-app.post('/api/extensions/mcp/library', async (request) => {
-  return ext.mcpLibraryUpsert(request.body as McpLibraryUpsertRequest);
-});
-
-app.delete('/api/extensions/mcp/library/:id', async (request) => {
-  const { id } = request.params as { id: string };
-  return ext.mcpLibraryDelete(id);
-});
-
-app.post('/api/extensions/mcp/library/import', async (request) => {
-  return ext.mcpLibraryImport((request.body ?? {}) as McpLibraryImportRequest);
-});
-
-app.get('/api/extensions/capability-packs', async () => {
-  return ext.capabilityPacksList();
-});
-
-app.post('/api/extensions/capability-packs/import', async (request) => {
-  return ext.capabilityPacksImport((request.body ?? {}) as CapabilityPackImportRequest);
-});
-
-app.post('/api/extensions/capability-packs/export', async (request) => {
-  return ext.capabilityPacksExport((request.body ?? {}) as CapabilityPackExportRequest);
-});
-
-app.post('/api/extensions/capability-packs/export/download', async (request, reply) => {
-  const result = (await ext.capabilityPacksExport(
-    (request.body ?? {}) as CapabilityPackExportRequest
-  )) as {
-    success: boolean;
-    data?: { pack?: { packDir?: string; manifest?: { id?: string } }; warnings?: string[] };
-    error?: string;
-  };
-  if (!result.success) {
-    return reply
-      .code(400)
-      .send({ success: false, error: result.error ?? 'Export capability pack failed' });
-  }
-
-  const packDir = result.data?.pack?.packDir;
-  if (!packDir) {
-    return reply
-      .code(500)
-      .send({ success: false, error: 'Exported capability pack directory is missing' });
-  }
-
-  const zip = await zipDirectoryForDownload(packDir);
-  const filename = `${sanitizeDownloadFilename(result.data?.pack?.manifest?.id ?? 'capability-pack')}.zip`;
-  reply.header('Content-Type', 'application/zip');
-  reply.header('Content-Disposition', `attachment; filename="${filename}"`);
-  reply.header(
-    'X-Capability-Pack-Warnings',
-    encodeURIComponent(JSON.stringify(result.data?.warnings ?? []))
-  );
-  return reply.send(zip);
-});
-
-app.post('/api/extensions/capability-packs/command-prompt', async (request) => {
-  return ext.capabilityPacksCommandPrompt((request.body ?? {}) as CapabilityCommandPromptRequest);
-});
-
-app.get('/api/extensions/skills', async (request) => {
-  const projectPath = (request.query as Record<string, string>).projectPath;
-  const result = await ext.skillsList(projectPath);
-  return result;
-});
-
-app.get('/api/extensions/skills/:skillId', async (request) => {
-  const { skillId } = request.params as { skillId: string };
-  const projectPath = (request.query as Record<string, string>).projectPath;
-  const result = await ext.skillsGetDetail(skillId, projectPath);
-  return result;
-});
-
-app.post('/api/extensions/skills/upsert', async (request) => {
-  const result = await ext.skillsUpsert(request.body as SkillUpsertRequest);
-  return result;
-});
-
-app.post('/api/extensions/skills/delete', async (request) => {
-  const result = await ext.skillsDelete(request.body as SkillDeleteRequest);
-  return result;
-});
-
-app.post('/api/extensions/skills/preview-upsert', async (request) => {
-  return ext.skillsPreviewUpsert(request.body as SkillUpsertRequest);
-});
-
-app.post('/api/extensions/skills/apply-upsert', async (request) => {
-  return ext.skillsApplyUpsert(request.body as SkillUpsertRequest);
-});
-
-app.post('/api/extensions/skills/preview-import', async (request) => {
-  return ext.skillsPreviewImport(request.body as SkillImportRequest);
-});
-
-app.post('/api/extensions/skills/apply-import', async (request) => {
-  return ext.skillsApplyImport(request.body as SkillImportRequest);
-});
-
-app.post('/api/extensions/skills/watching/start', async (request) => {
-  const projectPath = (request.query as Record<string, string>).projectPath;
-  return ext.skillsStartWatching(projectPath);
-});
-
-app.post('/api/extensions/skills/watching/stop', async (request) => {
-  const { watchId } = (request.body ?? {}) as { watchId?: string };
-  return ext.skillsStopWatching(watchId!);
-});
-
-app.get('/api/extensions/credentials/status', async () => {
-  const result = await ext.credentialsStatus();
-  return result;
-});
-
-app.get('/api/extensions/credentials/mcp/:mcpName', async (request) => {
-  const { mcpName } = request.params as { mcpName: string };
-  const result = await ext.credentialsGetMcp(mcpName);
-  return result;
-});
-
-app.post('/api/extensions/credentials/mcp', async (request) => {
-  const body = request.body as Record<string, unknown>;
-  const result = await ext.credentialsSaveMcp(
-    body.mcpName as string,
-    body.envValues as Record<string, string>
-  );
-  return result;
-});
-
-app.get('/api/extensions/credentials/project-env', async (request) => {
-  const projectPath = (request.query as Record<string, string>).projectPath;
-  if (!projectPath) return { error: 'projectPath required' };
-  const result = await ext.credentialsGetProjectEnv(projectPath);
-  return result;
-});
-
-app.post('/api/extensions/credentials/project-env', async (request) => {
-  const body = request.body as Record<string, unknown>;
-  const result = await ext.credentialsSaveProjectEnv(
-    body.projectPath as string,
-    body.vars as Record<string, string>
-  );
-  return result;
-});
-
-app.post('/api/extensions/credentials/scan-required', async (request) => {
-  const body = request.body as Record<string, unknown>;
-  const result = await ext.credentialsScanRequired(
-    body.projectPath as string,
-    body.mcpServers as {
-      name: string;
-      envVars?: { name: string; isRequired: boolean; description?: string }[];
-    }[],
-    body.skillReqs as {
-      name: string;
-      envVars: { name: string; isRequired?: boolean; description?: string }[];
-    }[]
-  );
-  return result;
-});
-
-app.get('/api/extensions/credentials/resolve-agent-env', async (request) => {
-  const projectPath = (request.query as Record<string, string>).projectPath;
-  if (!projectPath) return { error: 'projectPath required' };
-  const result = await ext.credentialsResolveAgentEnv(projectPath);
-  return result;
-});
-
-app.get('/api/extensions/credentials/skill-env', async (request) => {
-  const folderName = (request.query as Record<string, string>).folderName;
-  if (!folderName) return { error: 'folderName required' };
-  const result = await ext.credentialsGetSkillGlobalEnv(folderName);
-  return result;
-});
-
-app.post('/api/extensions/credentials/skill-env', async (request) => {
-  const body = request.body as Record<string, unknown>;
-  const result = await ext.credentialsSaveSkillGlobalEnv(
-    body.folderName as string,
-    body.vars as Record<string, string>
-  );
-  return result;
-});
+registerExtensionSkillRoutes(app, { handlers: extensionHandlers });
+registerExtensionCredentialRoutes(app, { handlers: extensionHandlers });
 
 registerWorkbenchNotFoundHandler(app, {
   staticDir: STATIC_DIR,

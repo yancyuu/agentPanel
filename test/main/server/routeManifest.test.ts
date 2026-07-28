@@ -167,7 +167,7 @@ describe('server route manifest baseline', () => {
       expect(route, `${method} ${path} must exist`).toBeDefined();
       return route as RouteRegistration;
     };
-    const expectInlineOrder = (
+    const expectSameFileOrder = (
       leftMethod: string,
       leftPath: string,
       rightMethod: string,
@@ -175,22 +175,21 @@ describe('server route manifest baseline', () => {
     ) => {
       const left = routeOf(leftMethod, leftPath);
       const right = routeOf(rightMethod, rightPath);
-      expect(left.file).toBe(SERVER_PATH);
-      expect(right.file).toBe(SERVER_PATH);
+      expect(left.file).toBe(right.file);
       expect(left.line).toBeLessThan(right.line);
     };
 
     expect(SERVER_SOURCE.indexOf('registerBridgeProxyRoutes(app')).toBeLessThan(
       SERVER_SOURCE.indexOf('registerRuntimeRoutes(app')
     );
-    expectInlineOrder(
+    expectSameFileOrder(
       'GET',
       '/api/telemetry/conversations/export',
       'GET',
       '/api/telemetry/conversations/:sessionId'
     );
     expect(SERVER_SOURCE.indexOf('registerSseRoutes(app')).toBeLessThan(
-      SERVER_SOURCE.indexOf("app.get('/api/extensions/plugins'")
+      SERVER_SOURCE.indexOf('registerExtensionPluginRoutes(app')
     );
   });
 });
