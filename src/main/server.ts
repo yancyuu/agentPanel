@@ -121,6 +121,7 @@ import {
 } from './serverContext';
 import { registerAppConfigRoutes } from './routes/appConfigRoutes';
 import { registerEditorRoutes } from './routes/editorRoutes';
+import { registerHeartbeatRoutes } from './routes/heartbeatRoutes';
 import { registerReviewCompatibilityRoutes } from './routes/reviewCompatibilityRoutes';
 import { isSseFallbackRequest, openSseFallbackStream, registerSseRoutes } from './routes/sseRoutes';
 import { registerSystemManagerRoutes } from './routes/systemManagerRoutes';
@@ -2663,90 +2664,9 @@ app.patch<{ Params: { name: string }; Body: { collaboration: boolean } }>(
   }
 );
 
-// ===========================================================================
-// 定时任务 — 透传 cc-connect heartbeat API
-// GET    /api/teams/:name/heartbeat
-// POST   /api/teams/:name/heartbeat/enable
-// POST   /api/teams/:name/heartbeat/disable
-// POST   /api/teams/:name/heartbeat/pause
-// POST   /api/teams/:name/heartbeat/resume
-// PATCH  /api/teams/:name/heartbeat  { interval_mins, only_when_idle, silent }
-// ===========================================================================
-
-app.get<{ Params: { name: string } }>('/api/teams/:name/heartbeat', async (request, reply) => {
-  try {
-    const bindProject = await resolveRouteCcProjectName(request.params.name);
-    const data = await cc.getHeartbeat(bindProject);
-    return { ok: true, data };
-  } catch (err) {
-    return reply.code(404).send(reply500(err));
-  }
-});
-
-app.post<{ Params: { name: string } }>(
-  '/api/teams/:name/heartbeat/enable',
-  async (request, reply) => {
-    try {
-      const bindProject = await resolveRouteCcProjectName(request.params.name);
-      await cc.resumeHeartbeat(bindProject);
-      return { ok: true };
-    } catch (err) {
-      return reply.code(500).send(reply500(err));
-    }
-  }
-);
-
-app.post<{ Params: { name: string } }>(
-  '/api/teams/:name/heartbeat/disable',
-  async (request, reply) => {
-    try {
-      const bindProject = await resolveRouteCcProjectName(request.params.name);
-      await cc.pauseHeartbeat(bindProject);
-      return { ok: true };
-    } catch (err) {
-      return reply.code(500).send(reply500(err));
-    }
-  }
-);
-
-app.post<{ Params: { name: string } }>(
-  '/api/teams/:name/heartbeat/pause',
-  async (request, reply) => {
-    try {
-      const bindProject = await resolveRouteCcProjectName(request.params.name);
-      await cc.pauseHeartbeat(bindProject);
-      return { ok: true };
-    } catch (err) {
-      return reply.code(500).send(reply500(err));
-    }
-  }
-);
-
-app.post<{ Params: { name: string } }>(
-  '/api/teams/:name/heartbeat/resume',
-  async (request, reply) => {
-    try {
-      const bindProject = await resolveRouteCcProjectName(request.params.name);
-      await cc.resumeHeartbeat(bindProject);
-      return { ok: true };
-    } catch (err) {
-      return reply.code(500).send(reply500(err));
-    }
-  }
-);
-
-app.patch<{
-  Params: { name: string };
-  Body: { interval_mins?: number; only_when_idle?: boolean; silent?: boolean };
-}>('/api/teams/:name/heartbeat', async (request, reply) => {
-  try {
-    const bindProject = await resolveRouteCcProjectName(request.params.name);
-    await cc.updateProject(bindProject, request.body as Record<string, unknown>);
-    const data = await cc.getHeartbeat(bindProject);
-    return { ok: true, data };
-  } catch (err) {
-    return reply.code(500).send(reply500(err));
-  }
+registerHeartbeatRoutes(app, {
+  bridgeClient: serverContext.services.bridgeClient,
+  resolveProjectName: resolveRouteCcProjectName,
 });
 
 // ===========================================================================
