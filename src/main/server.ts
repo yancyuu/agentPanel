@@ -120,6 +120,8 @@ import {
   type InMemoryScheduleRun,
 } from './serverContext';
 import { registerAppConfigRoutes } from './routes/appConfigRoutes';
+import { registerGraphRoutes } from './routes/graphRoutes';
+import { registerHarnessRoutes } from './routes/harnessRoutes';
 import { registerEditorRoutes } from './routes/editorRoutes';
 import { registerHeartbeatRoutes } from './routes/heartbeatRoutes';
 import { registerReviewCompatibilityRoutes } from './routes/reviewCompatibilityRoutes';
@@ -2674,21 +2676,9 @@ registerHeartbeatRoutes(app, {
 // GET /api/harnesses
 // ===========================================================================
 
-app.get('/api/harnesses', async () => {
-  try {
-    const projects = await cc.listProjects();
-    const usedTypes = new Set(projects.map((p) => p.agent_type));
-    return CC_AGENT_TYPES.map((type) => ({
-      type,
-      inUse: usedTypes.has(type),
-    }));
-  } catch {
-    // cc-connect 不可达时返回完整枚举列表
-    return CC_AGENT_TYPES.map((type) => ({
-      type,
-      inUse: false,
-    }));
-  }
+registerHarnessRoutes(app, {
+  agentTypes: CC_AGENT_TYPES,
+  listProjects: () => serverContext.services.bridgeClient.listProjects(),
 });
 
 function mapHermitBridgeSessionListItem(
@@ -3247,41 +3237,9 @@ app.post<{
 // 返回 nodes（团队）+ edges（任务 assignee 关系）供前端 Graph 渲染
 // ===========================================================================
 
-app.get('/api/graph', async () => {
-  try {
-    const projects = await cc.listProjects();
-    const nodes = projects.map((p) => ({
-      id: p.name,
-      label: p.name,
-      harness: p.agent_type,
-      color: 'blue',
-      collaboration: true,
-      bindProject: p.name,
-    }));
-
-    const edges: { source: string; target: string; taskId: string; taskTitle: string }[] = [];
-    for (const p of projects) {
-      try {
-        const tasks = await svc.readTasks(p.name);
-        for (const task of tasks) {
-          if (task.assignee && task.status !== 'done') {
-            edges.push({
-              source: p.name,
-              target: task.assignee,
-              taskId: task.id,
-              taskTitle: task.title,
-            });
-          }
-        }
-      } catch {
-        /* skip */
-      }
-    }
-
-    return { ok: true, data: { nodes, edges } };
-  } catch (err) {
-    return reply500(err);
-  }
+registerGraphRoutes(app, {
+  listProjects: () => serverContext.services.bridgeClient.listProjects(),
+  readTasks: (teamName) => serverContext.services.teamProvisioning.readTasks(teamName),
 });
 
 // ===========================================================================
