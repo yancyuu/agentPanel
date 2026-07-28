@@ -167,10 +167,13 @@ describe('server route manifest baseline', () => {
 
   it('preserves the team session and compatibility registrar sequence', () => {
     const registrars = [
+      "registerTeamMessageRoutes(app, teamMessageRouteDependencies, { routes: ['read'] })",
       'registerTeamSessionRoutes(app',
+      "registerTeamMessageRoutes(app, teamMessageRouteDependencies, { routes: ['process'] })",
       'registerTeamCompatibilityRoutes(app',
       'registerTeamMemberCompatibilityRoutes(app',
       'registerTeamProvisioningCompatibilityRoutes(app',
+      "registerTeamMessageRoutes(app, teamMessageRouteDependencies, { routes: ['send'] })",
       'registerTeamKanbanCompatibilityRoutes(app',
       'registerTeamActionCompatibilityRoutes(app',
       'registerTeamMemberStatsRoutes(app',

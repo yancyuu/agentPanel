@@ -90,6 +90,7 @@ import {
   registerTeamMemberStatsRoutes,
   registerTeamProvisioningCompatibilityRoutes,
 } from './routes/teamCompatibilityRoutes';
+import { registerTeamMessageRoutes } from './routes/teamMessageRoutes';
 import { registerTeamSessionRoutes } from './routes/teamSessionRoutes';
 import { registerTerminalRoutes } from './routes/terminalRoutes';
 import { registerToolApprovalRoutes } from './routes/toolApprovalRoutes';
@@ -174,8 +175,6 @@ import type {
 } from '../shared/types/hermitBridge';
 import type { TeamManifest } from './services/team-management/TeamWorkspaceService';
 import type {
-  AttachmentFileData,
-  AttachmentMeta,
   AttachmentPayload,
   SystemManagerSummary,
   TeamLaunchRequest,
@@ -259,40 +258,6 @@ function isReservedSystemTeamName(teamName: string): boolean {
     teamName === SYSTEM_MANAGER_BIND_PROJECT ||
     teamName === SYSTEM_MANAGER_TEAM_NAME
   );
-}
-
-function isAttachmentPayload(value: unknown): value is AttachmentPayload {
-  if (!value || typeof value !== 'object') return false;
-  const attachment = value as Partial<AttachmentPayload>;
-  return (
-    typeof attachment.id === 'string' &&
-    typeof attachment.filename === 'string' &&
-    typeof attachment.mimeType === 'string' &&
-    typeof attachment.size === 'number' &&
-    typeof attachment.data === 'string'
-  );
-}
-
-function toAttachmentMeta(attachment: AttachmentPayload): AttachmentMeta {
-  return {
-    id: attachment.id,
-    filename: attachment.filename,
-    mimeType: attachment.mimeType,
-    size: attachment.size,
-    filePath: attachment.filePath,
-  };
-}
-
-function toAttachmentFileData(attachment: AttachmentPayload): AttachmentFileData {
-  return {
-    id: attachment.id,
-    data: attachment.data,
-    mimeType: attachment.mimeType,
-  };
-}
-
-function shouldSendAttachmentsToAgent(settings: Record<string, unknown>): boolean {
-  return settings.attachment_send !== 'off';
 }
 
 // ===========================================================================
@@ -2532,106 +2497,23 @@ registerEditorRoutes(app);
 // 团队详情页强依赖的 stubs — 返回正确数据结构防止 store 解析失败
 // ===========================================================================
 
-// 消息分页 — store 期望 MessagesPage 结构
-app.get<{ Params: { name: string; messageId: string } }>(
-  '/api/teams/:name/messages/:messageId/attachments',
-  async (request) => {
-    const msgs = await svc.readMessages(request.params.name, { limit: 5000 });
-    const message = msgs.find((msg) => msg.id === request.params.messageId);
-    const attachments = Array.isArray(message?.meta?.attachmentData)
-      ? (message.meta.attachmentData as AttachmentFileData[])
-      : [];
-    return attachments.filter(
-      (attachment): attachment is AttachmentFileData =>
-        typeof attachment?.id === 'string' &&
-        typeof attachment.data === 'string' &&
-        typeof attachment.mimeType === 'string'
-    );
-  }
-);
-
-app.get<{ Params: { name: string }; Querystring: { cursor?: string; limit?: string } }>(
-  '/api/teams/:name/messages',
-  async (request) => {
-    const { name } = request.params;
-    const requestedLimit = Number(request.query.limit ?? 50);
-    const limit = Math.min(
-      Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50),
-      100
-    );
-    const rawCursor = request.query.cursor;
-    const offset = Math.max(
-      0,
-      Number.isFinite(Number(rawCursor)) ? Math.floor(Number(rawCursor)) : 0
-    );
-    try {
-      // Keep a bounded history snapshot in memory for pagination safety.
-      const bindProject = await resolveRouteCcProjectName(name);
-      const msgs = await svc.readMessages(name, { limit: 5000 });
-      const sessions = await cc.listSessions(bindProject).catch(() => []);
-      const sessionByKey = new Map(sessions.map((session) => [session.session_key, session]));
-      const newestFirstMessages = [...msgs].reverse();
-      const pageSlice = newestFirstMessages.slice(offset, offset + limit);
-      const page = pageSlice.map((m) => {
-        const explicitSessionKey =
-          typeof m.meta?.sessionKey === 'string'
-            ? m.meta.sessionKey
-            : typeof m.meta?.session_key === 'string'
-              ? m.meta.session_key
-              : undefined;
-        const sessionKey = explicitSessionKey ?? buildFallbackSessionKey(name);
-        const session = sessionKey ? sessionByKey.get(sessionKey) : undefined;
-        return {
-          messageId: m.id,
-          from: m.from,
-          to: m.to,
-          text: m.content,
-          timestamp: m.ts,
-          read: true,
-          source:
-            typeof m.meta?.source === 'string'
-              ? m.meta.source
-              : ((m.role === 'user' ? 'user_sent' : 'inbox') as string),
-          taskRefs: Array.isArray(m.meta?.taskRefs) ? m.meta.taskRefs : undefined,
-          summary: typeof m.meta?.summary === 'string' ? m.meta.summary : undefined,
-          conversationId:
-            typeof m.meta?.conversationId === 'string' ? m.meta.conversationId : undefined,
-          replyToConversationId:
-            typeof m.meta?.replyToConversationId === 'string'
-              ? m.meta.replyToConversationId
-              : undefined,
-          attachments: Array.isArray(m.meta?.attachments)
-            ? (m.meta.attachments as AttachmentMeta[])
-            : undefined,
-          session: sessionKey
-            ? {
-                id: session?.id,
-                key: sessionKey,
-                platform: session?.platform,
-                title: session?.name || session?.user_name || session?.chat_name || sessionKey,
-                chatName: session?.chat_name,
-                userName: session?.user_name,
-              }
-            : undefined,
-        };
-      });
-      // feedRevision = count:lastId で変更を確実に検出
-      const lastMsg = msgs[msgs.length - 1];
-      const firstMsg = msgs[0];
-      const feedRevision = `${msgs.length}:${firstMsg?.id ?? '0'}:${lastMsg?.id ?? '0'}`;
-      const nextOffset = offset + page.length;
-      const hasMore = nextOffset < newestFirstMessages.length;
-      return {
-        messages: page,
-        nextCursor: hasMore ? String(nextOffset) : null,
-        hasMore,
-        feedRevision,
-      };
-    } catch {
-      return { messages: [], nextCursor: null, hasMore: false, feedRevision: '0' };
-    }
-  }
-);
+const teamMessageRouteDependencies = {
+  readMessages: (teamName: string, options: { limit?: number }) =>
+    svc.readMessages(teamName, options),
+  appendMessage: (
+    teamName: string,
+    message: Parameters<TeamProvisioningService['appendMessage']>[1]
+  ) => svc.appendMessage(teamName, message),
+  resolveProjectName: resolveRouteCcProjectName,
+  listSessions: (projectName: string) => cc.listSessions(projectName),
+  buildFallbackSessionKey,
+  sendHarnessMessageViaBridge,
+  readEffectiveCcSettings,
+  resolveDirectCliWorkDir,
+  dispatchDirectCliMessage,
+  broadcastSse,
+};
+registerTeamMessageRoutes(app, teamMessageRouteDependencies, { routes: ['read'] });
 
 registerTeamSessionRoutes(app, {
   readTeamManifest: (teamName) => svc.readTeamManifest(teamName),
@@ -2650,27 +2532,7 @@ registerTeamSessionRoutes(app, {
   resolveProjectName: resolveRouteCcProjectName,
 });
 
-// process-send — 从 Hermit UI 注入到 harness，不回发到 IM 平台。
-app.post<{ Params: { name: string }; Body: { text?: string; message?: string } }>(
-  '/api/teams/:name/process-send',
-  async (request, reply) => {
-    try {
-      const text = request.body?.text ?? request.body?.message ?? '';
-      if (text) {
-        await sendHarnessMessageViaBridge({
-          teamName: request.params.name,
-          text,
-        });
-      }
-      return { ok: true };
-    } catch (err) {
-      return reply.code(502).send({
-        ok: false,
-        error: err instanceof Error ? err.message : '发送到 harness 失败',
-      });
-    }
-  }
-);
+registerTeamMessageRoutes(app, teamMessageRouteDependencies, { routes: ['process'] });
 
 registerTeamCompatibilityRoutes(app);
 
@@ -3327,103 +3189,7 @@ app.patch<{ Params: { name: string } }>('/api/teams/:name/config', async (reques
 
 registerTeamProvisioningCompatibilityRoutes(app);
 
-// send-message — 从 Hermit 会话面板注入到 harness，不使用 Management /send（那会回发到 IM）。
-app.post<{
-  Params: { name: string };
-  Body: {
-    member?: string;
-    text?: string;
-    content?: string;
-    summary?: string;
-    sessionKey?: string;
-    messageId?: string;
-    attachments?: unknown;
-  };
-}>('/api/teams/:name/send-message', async (request, reply) => {
-  const teamName = request.params.name;
-  const text = request.body?.text ?? request.body?.content ?? '';
-  if (!text.trim()) return { ok: true, messageId: null };
-
-  const requestedMessageId =
-    typeof request.body?.messageId === 'string' ? request.body.messageId.trim() : '';
-  const msgId =
-    requestedMessageId || `hermit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-  // 使用固定格式 session key，保证 reply 事件能正确映射回 teamName。
-  // UI 消息先落盘并广播，bridge 投递放后台执行，避免 bridge 重连窗口卡住发送按钮。
-  const requestedSessionKey =
-    typeof request.body?.sessionKey === 'string' ? request.body.sessionKey.trim() : '';
-  const sessionKey = requestedSessionKey || buildFallbackSessionKey(teamName);
-  const attachments = Array.isArray(request.body?.attachments)
-    ? request.body.attachments.filter(isAttachmentPayload)
-    : [];
-  const attachmentMeta = attachments.map(toAttachmentMeta);
-  const attachmentData = attachments.map(toAttachmentFileData);
-  const ccSettings = await readEffectiveCcSettings();
-  const attachmentsForAgent = shouldSendAttachmentsToAgent(ccSettings) ? attachments : [];
-
-  // 本地存储用户消息
-  const userMsg = await svc
-    .appendMessage(teamName, {
-      id: msgId,
-      from: 'user',
-      to: teamName,
-      role: 'user',
-      content: text,
-      meta: {
-        sessionKey,
-        attachments: attachmentMeta.length > 0 ? attachmentMeta : undefined,
-        attachmentData: attachmentData.length > 0 ? attachmentData : undefined,
-      },
-    })
-    .catch(() => null);
-
-  // 广播 SSE 让前端触发消息刷新
-  broadcastSse('team-change', { type: 'inbox', teamName });
-
-  // Member DM: dispatch to the local claude CLI directly (bypass cc-connect). One
-  // subprocess per member, resumed across messages. The reply streams back via the
-  // manager event listener and is persisted on the turn's `result` event. cc-connect's
-  // bridge stays reserved for external IM (Feishu/WeChat).
-  const member = typeof request.body?.member === 'string' ? request.body.member.trim() : '';
-  const directSessionKey = `${teamName}:member:${member || 'lead'}`;
-  const memberWorkDir = await resolveDirectCliWorkDir(teamName).catch(() => '');
-  const dispatchedDirect = Boolean(memberWorkDir);
-  if (dispatchedDirect) {
-    void dispatchDirectCliMessage({
-      teamName,
-      sessionKey: directSessionKey,
-      workDir: memberWorkDir,
-      from: member || teamName,
-      to: 'user',
-      text,
-      attachments: attachmentsForAgent,
-      // The agent reply needs its OWN id — distinct from the user message's
-      // `msgId`. Reusing `msgId` persisted the reply with the user message's id,
-      // colliding in the inbox so the renderer's id-keyed dedup dropped it
-      // (the team-3ond "回复的没了" bug).
-      messageId: buildDirectReplyMessageId(directSessionKey),
-    }).catch((err) => {
-      request.log.warn(
-        { err, teamName, sessionKey: directSessionKey },
-        'send-message direct-cli delivery failed'
-      );
-      broadcastSse('team-change', { type: 'inbox', teamName });
-    });
-  } else {
-    request.log.warn({ teamName }, 'send-message direct-cli skipped: no work_dir resolved');
-  }
-
-  return {
-    ok: true,
-    deliveredToInbox: true,
-    messageId: userMsg?.id ?? msgId,
-    runtimeDelivery: {
-      attempted: true,
-      delivered: dispatchedDirect,
-    },
-  };
-});
+registerTeamMessageRoutes(app, teamMessageRouteDependencies, { routes: ['send'] });
 
 // ===========================================================================
 // 路由别名 — 修正前端调用路径与服务端路径的不匹配
