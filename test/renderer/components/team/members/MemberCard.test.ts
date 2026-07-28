@@ -406,13 +406,60 @@ describe('MemberCard starting-state visuals', () => {
 
     const img = host.querySelector('img');
     const avatarRing = img?.parentElement;
-    const clickableCard = host.querySelector('[role="button"]') as HTMLElement | null;
+    const clickableCard = host.querySelector<HTMLElement>('[role="button"]');
 
     expect(avatarRing).not.toBeNull();
     expect(avatarRing?.style.borderColor).toBe('#3b82f6');
     expect(clickableCard?.style.borderLeft).toBe('');
     expect(clickableCard?.style.background).toBe('');
     expect(clickableCard?.className).not.toContain('px-');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('keeps keyboard activation of child actions independent from opening the member row', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onClick = vi.fn();
+    const onSendMessage = vi.fn();
+    const onAssignTask = vi.fn();
+
+    await act(async () => {
+      root.render(
+        React.createElement(MemberCard, {
+          member,
+          memberColor: 'blue',
+          isTeamAlive: true,
+          isTeamProvisioning: false,
+          onClick,
+          onSendMessage,
+          onAssignTask,
+        })
+      );
+      await Promise.resolve();
+    });
+
+    const messageButton = host.querySelector<HTMLButtonElement>(
+      '[aria-label="给 alice 发送消息"]'
+    )!;
+    const assignButton = host.querySelector<HTMLButtonElement>('[aria-label="给 alice 分配任务"]')!;
+
+    await act(async () => {
+      messageButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      messageButton.click();
+      assignButton.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+      assignButton.click();
+      await Promise.resolve();
+    });
+
+    expect(onSendMessage).toHaveBeenCalledTimes(1);
+    expect(onAssignTask).toHaveBeenCalledTimes(1);
+    expect(onClick).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();
@@ -550,8 +597,9 @@ describe('MemberCard starting-state visuals', () => {
         '[title="Worktree isolation is configured, but the runtime path is not available yet"]'
       )
     ).not.toBeNull();
-    expect(host.querySelector('[title="Worktree isolation configured. Runtime cwd: /tmp/project"]'))
-      .toBeNull();
+    expect(
+      host.querySelector('[title="Worktree isolation configured. Runtime cwd: /tmp/project"]')
+    ).toBeNull();
 
     await act(async () => {
       root.render(
@@ -673,7 +721,7 @@ describe('MemberCard starting-state visuals', () => {
       await Promise.resolve();
     });
 
-    const button = host.querySelector('[aria-label="Copy diagnostics"]') as HTMLButtonElement;
+    const button = host.querySelector<HTMLButtonElement>('[aria-label="Copy diagnostics"]')!;
     expect(button).not.toBeNull();
 
     await act(async () => {
@@ -886,9 +934,7 @@ describe('MemberCard starting-state visuals', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const root = createRoot(host);
-    const onRestartMember = vi.fn(async () => {
-      throw new Error('restart failed');
-    });
+    const onRestartMember = vi.fn(() => Promise.reject(new Error('restart failed')));
 
     await act(async () => {
       root.render(
@@ -933,9 +979,7 @@ describe('MemberCard starting-state visuals', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const root = createRoot(host);
-    const onSkipMemberForLaunch = vi.fn(async () => {
-      throw new Error('skip failed');
-    });
+    const onSkipMemberForLaunch = vi.fn(() => Promise.reject(new Error('skip failed')));
 
     await act(async () => {
       root.render(

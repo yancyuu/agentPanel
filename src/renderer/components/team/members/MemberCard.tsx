@@ -307,13 +307,14 @@ export const MemberCard = ({
       className={`border-b border-[var(--color-border)] transition-opacity duration-300 last:border-b-0 ${isRemoved ? 'opacity-50' : ''} ${spawnCardClass}`}
     >
       <div
-        className="group relative flex min-h-16 cursor-pointer items-center px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+        className="group relative min-h-16 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
         style={undefined}
         title={activityTitle}
         role="button"
         tabIndex={0}
         onClick={onClick}
         onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             onClick?.();
@@ -321,7 +322,7 @@ export const MemberCard = ({
         }}
       >
         <div className="pointer-events-none absolute inset-0 transition-colors group-hover:bg-[var(--color-surface-raised)] group-focus-visible:bg-[var(--color-surface-raised)]" />
-        <div className="flex w-full min-w-0 items-center gap-2.5">
+        <div className="flex min-h-16 w-full min-w-0 items-center gap-2.5 px-3 py-2">
           <div className="relative shrink-0">
             <div
               className="rounded-full border-2 p-px"

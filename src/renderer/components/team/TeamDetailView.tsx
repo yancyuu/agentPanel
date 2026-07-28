@@ -43,7 +43,7 @@ import {
   MEMBER_SPAWN_STATUS_REFRESH_MS,
 } from '@renderer/utils/memberSpawnStatusPolling';
 import { formatProjectPath } from '@renderer/utils/pathDisplay';
-import { normalizePath } from '@renderer/utils/pathNormalize';
+import { buildTaskCountsByOwner, normalizePath } from '@renderer/utils/pathNormalize';
 import { nameColorSet } from '@renderer/utils/projectColor';
 import { resolveProjectIdByPath } from '@renderer/utils/projectLookup';
 import {
@@ -75,6 +75,7 @@ import {
 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 
+import { CreateTaskDialog } from './dialogs/CreateTaskDialog';
 import { EditTeamDialog } from './dialogs/EditTeamDialog';
 import { LaunchTeamDialog, type TeamLaunchDialogMode } from './dialogs/LaunchTeamDialog';
 import { PlatformBindingDialog } from './dialogs/PlatformBindingDialog';
@@ -126,6 +127,7 @@ import type {
   GlobalProvider,
   MemberSpawnStatusEntry,
   ResolvedTeamMember,
+  TaskRef,
   TeamAgentRuntimeEntry,
   TeamCreateRequest,
   TeamFastMode,
@@ -870,6 +872,8 @@ export const TeamDetailView = ({
 }: TeamDetailViewProps): React.JSX.Element => {
   const [requestChangesTaskId, setRequestChangesTaskId] = useState<string | null>(null);
   const [selectedMember, setSelectedMember] = useState<ResolvedTeamMember | null>(null);
+  const [taskAssignee, setTaskAssignee] = useState<ResolvedTeamMember | null>(null);
+  const [creatingTask, setCreatingTask] = useState(false);
   const [pendingRepliesByMember, setPendingRepliesByMember] = useState<Record<string, number>>(() =>
     getTeamPendingRepliesState(teamName)
   );
@@ -1126,6 +1130,7 @@ export const TeamDetailView = ({
     sendTeamMessage,
     requestReview,
     startTaskByUser,
+    createTeamTask,
     deleteTeam,
     openTeamsTab,
     closeTab,
@@ -1169,6 +1174,7 @@ export const TeamDetailView = ({
       sendTeamMessage: s.sendTeamMessage,
       requestReview: s.requestReview,
       startTaskByUser: s.startTaskByUser,
+      createTeamTask: s.createTeamTask,
       deleteTeam: s.deleteTeam,
       openTeamsTab: s.openTeamsTab,
       closeTab: s.closeTab,
@@ -1514,6 +1520,7 @@ export const TeamDetailView = ({
   );
 
   const taskMap = useMemo(() => new Map((data?.tasks ?? []).map((t) => [t.id, t])), [data?.tasks]);
+  const memberTaskCounts = useMemo(() => buildTaskCountsByOwner(data?.tasks ?? []), [data?.tasks]);
   const taskMapRef = useRef(taskMap);
   taskMapRef.current = taskMap;
 
@@ -1628,13 +1635,48 @@ export const TeamDetailView = ({
 
   const handleSelectMember = useCallback((member: ResolvedTeamMember) => {
     setSelectedMember(member);
-    setSelectedMember(null);
   }, []);
 
   const closeSelectedMemberDialog = useCallback(() => {
     setSelectedMember(null);
-    setSelectedMember(null);
   }, []);
+
+  const handleAssignTask = useCallback((member: ResolvedTeamMember) => {
+    setTaskAssignee(member);
+  }, []);
+
+  const handleCreateTask = useCallback(
+    async (
+      subject: string,
+      description: string,
+      owner?: string,
+      blockedBy?: string[],
+      related?: string[],
+      prompt?: string,
+      startImmediately?: boolean,
+      descriptionTaskRefs?: TaskRef[],
+      promptTaskRefs?: TaskRef[]
+    ): Promise<void> => {
+      setCreatingTask(true);
+      try {
+        await createTeamTask(teamName, {
+          subject,
+          description: description || undefined,
+          descriptionTaskRefs,
+          owner,
+          blockedBy,
+          related,
+          prompt,
+          promptTaskRefs,
+          startImmediately,
+        });
+        setTaskAssignee(null);
+      } finally {
+        setCreatingTask(false);
+      }
+    },
+    [createTeamTask, teamName]
+  );
 
   const handleSendMessageToMember = useCallback((member: ResolvedTeamMember) => {
     setSendDialogRecipient(member.name);
@@ -1694,7 +1736,6 @@ export const TeamDetailView = ({
     const member = membersWithLiveBranches.find((m) => m.name === pendingMemberProfile);
     if (member) {
       setSelectedMember(member);
-      setSelectedMember(null);
     }
     useStore.getState().closeMemberProfile();
   }, [pendingMemberProfile, membersWithLiveBranches]);
@@ -2132,12 +2173,16 @@ export const TeamDetailView = ({
                 <TeamMemberListBridge
                   teamName={teamName}
                   members={membersWithLiveBranches}
+                  memberTaskCounts={memberTaskCounts}
+                  taskMap={taskMap}
                   pendingRepliesByMember={pendingRepliesByMember}
                   isTeamAlive={data.isAlive}
                   isTeamProvisioning={isTeamProvisioning}
                   launchParams={launchParams}
                   onMemberClick={handleSelectMember}
                   onSendMessage={handleSendMessageToMember}
+                  onAssignTask={handleAssignTask}
+                  onOpenTask={handleTaskIdClick}
                   onRestartMember={handleRestartMember}
                   onSkipMemberForLaunch={handleSkipMemberForLaunch}
                 />
@@ -2256,6 +2301,23 @@ export const TeamDetailView = ({
                     }
                   })();
                 }}
+              />
+
+              <CreateTaskDialog
+                key={taskAssignee?.name ?? 'closed'}
+                open={taskAssignee !== null}
+                teamName={teamName}
+                members={membersWithLiveBranches}
+                tasks={data.tasks}
+                isTeamAlive={data.isAlive}
+                defaultOwner={taskAssignee?.name ?? ''}
+                onClose={() => setTaskAssignee(null)}
+                onSubmit={(...args) => {
+                  void handleCreateTask(...args).catch((createError: unknown) => {
+                    console.error('Failed to create task from member roster:', createError);
+                  });
+                }}
+                submitting={creatingTask}
               />
 
               <TeamMemberDetailDialogBridge

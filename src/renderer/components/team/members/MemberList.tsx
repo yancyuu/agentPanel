@@ -249,6 +249,10 @@ function areMemberListPropsEqual(
     prev.isTeamAlive === next.isTeamAlive &&
     prev.isTeamProvisioning === next.isTeamProvisioning &&
     prev.leadActivity === next.leadActivity &&
+    prev.onMemberClick === next.onMemberClick &&
+    prev.onSendMessage === next.onSendMessage &&
+    prev.onAssignTask === next.onAssignTask &&
+    prev.onOpenTask === next.onOpenTask &&
     prev.onRestartMember === next.onRestartMember &&
     prev.onSkipMemberForLaunch === next.onSkipMemberForLaunch &&
     areLaunchParamsEquivalent(prev.launchParams, next.launchParams)

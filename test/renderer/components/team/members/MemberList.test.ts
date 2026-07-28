@@ -2,7 +2,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { MemberSpawnStatusEntry, ResolvedTeamMember } from '@shared/types';
+import type { MemberSpawnStatusEntry, ResolvedTeamMember, TeamTaskWithKanban } from '@shared/types';
 
 vi.mock('@renderer/components/team/members/MemberCard', () => ({
   MemberCard: ({
@@ -13,6 +13,7 @@ vi.mock('@renderer/components/team/members/MemberCard', () => ({
     onClick,
     onSendMessage,
     onAssignTask,
+    onOpenTask,
     onRestartMember,
     onSkipMemberForLaunch,
   }: {
@@ -23,6 +24,7 @@ vi.mock('@renderer/components/team/members/MemberCard', () => ({
     onClick?: () => void;
     onSendMessage?: () => void;
     onAssignTask?: () => void;
+    onOpenTask?: () => void;
     onRestartMember?: (memberName: string) => void;
     onSkipMemberForLaunch?: (memberName: string) => void;
   }) =>
@@ -49,6 +51,13 @@ vi.mock('@renderer/components/team/members/MemberCard', () => ({
             'button',
             { 'data-testid': `assign-${member.name}`, type: 'button', onClick: onAssignTask },
             'assign'
+          )
+        : null,
+      onOpenTask
+        ? React.createElement(
+            'button',
+            { 'data-testid': `task-${member.name}`, type: 'button', onClick: onOpenTask },
+            'task'
           )
         : null,
       onRestartMember && (spawnStatus === 'error' || spawnLaunchState === 'failed_to_start')
@@ -244,6 +253,71 @@ describe('MemberList spawn-status memoization', () => {
     expect(onMemberClick).toHaveBeenCalledWith(member);
     expect(onSendMessage).toHaveBeenCalledWith(member);
     expect(onAssignTask).toHaveBeenCalledWith(member);
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('rerenders member interaction callbacks when their identities change', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const task = {
+      id: 'task-1',
+      displayId: 'task-1',
+      subject: '交付团队名册',
+      status: 'in_progress',
+    } as TeamTaskWithKanban;
+    const activeMember = { ...member, currentTaskId: task.id };
+    const firstCallbacks = {
+      onMemberClick: vi.fn(),
+      onSendMessage: vi.fn(),
+      onAssignTask: vi.fn(),
+      onOpenTask: vi.fn(),
+    };
+    const secondCallbacks = {
+      onMemberClick: vi.fn(),
+      onSendMessage: vi.fn(),
+      onAssignTask: vi.fn(),
+      onOpenTask: vi.fn(),
+    };
+    const renderList = (callbacks: typeof firstCallbacks): React.ReactElement =>
+      React.createElement(MemberList, {
+        members: [activeMember],
+        taskMap: new Map([[task.id, task]]),
+        isTeamAlive: true,
+        ...callbacks,
+      });
+
+    await act(async () => {
+      root.render(renderList(firstCallbacks));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      root.render(renderList(secondCallbacks));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="open-bob"]')!.click();
+      host.querySelector<HTMLButtonElement>('[data-testid="message-bob"]')!.click();
+      host.querySelector<HTMLButtonElement>('[data-testid="assign-bob"]')!.click();
+      host.querySelector<HTMLButtonElement>('[data-testid="task-bob"]')!.click();
+      await Promise.resolve();
+    });
+
+    expect(firstCallbacks.onMemberClick).not.toHaveBeenCalled();
+    expect(firstCallbacks.onSendMessage).not.toHaveBeenCalled();
+    expect(firstCallbacks.onAssignTask).not.toHaveBeenCalled();
+    expect(firstCallbacks.onOpenTask).not.toHaveBeenCalled();
+    expect(secondCallbacks.onMemberClick).toHaveBeenCalledWith(activeMember);
+    expect(secondCallbacks.onSendMessage).toHaveBeenCalledWith(activeMember);
+    expect(secondCallbacks.onAssignTask).toHaveBeenCalledWith(activeMember);
+    expect(secondCallbacks.onOpenTask).toHaveBeenCalledWith(task.id);
 
     await act(async () => {
       root.unmount();
