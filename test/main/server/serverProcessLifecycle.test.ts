@@ -65,36 +65,66 @@ describe('server process lifecycle', () => {
     expect(lifecycle.disposePromise).toBe(firstShutdown);
     expect(sseClients.size).toBe(0);
 
-    const shutdown = createServerShutdown({ shutdownWorkbenchServer, processTarget });
+    const removeProcessHandlers = vi.fn(() => calls.push('process.remove'));
+    const shutdown = createServerShutdown({
+      shutdownWorkbenchServer,
+      processTarget,
+      removeProcessHandlers,
+    });
     await shutdown();
-    expect(calls).toHaveLength(8);
+    expect(calls).toHaveLength(9);
+    expect(calls.at(-1)).toBe('process.remove');
     expect(processTarget.exit).toHaveBeenCalledWith(0);
   });
 
-  it('exits with failure when workbench cleanup rejects', async () => {
+  it('attempts every cleanup and keeps the exit backstop when an early step fails', async () => {
+    const calls: string[] = [];
     const processTarget = createProcessTarget();
+    const removeProcessHandlers = vi.fn(() => calls.push('process.remove'));
     const shutdownWorkbenchServer = createWorkbenchShutdown({
       app: {
         close: vi.fn(async () => {
-          throw new Error('close failed');
+          calls.push('app.close');
         }),
         log: { error: vi.fn() },
       },
       lifecycle: {
-        listenerDisposers: [],
+        listenerDisposers: [
+          vi.fn(() => {
+            calls.push('listeners.dispose');
+            throw new Error('listener cleanup failed');
+          }),
+        ],
         startPromise: null,
         disposePromise: null,
       },
-      imLiveWatcher: { stop: vi.fn() },
-      directCliManager: { shutdown: vi.fn() },
-      bridgeLauncher: { stop: vi.fn() },
-      bridge: { dispose: vi.fn() },
+      stopTelemetry: vi.fn(async () => {
+        calls.push('telemetry.stop');
+      }),
+      imLiveWatcher: { stop: vi.fn(() => calls.push('watcher.stop')) },
+      directCliManager: { shutdown: vi.fn(() => calls.push('direct.shutdown')) },
+      bridgeLauncher: { stop: vi.fn(() => calls.push('launcher.stop')) },
+      bridge: { dispose: vi.fn(() => calls.push('bridge.dispose')) },
       closeTimeoutMs: 25,
     });
-    const shutdown = createServerShutdown({ shutdownWorkbenchServer, processTarget });
+    const shutdown = createServerShutdown({
+      shutdownWorkbenchServer,
+      processTarget,
+      removeProcessHandlers,
+    });
 
     await shutdown();
 
+    expect(calls).toEqual([
+      'listeners.dispose',
+      'watcher.stop',
+      'telemetry.stop',
+      'direct.shutdown',
+      'launcher.stop',
+      'bridge.dispose',
+      'app.close',
+    ]);
+    expect(removeProcessHandlers).not.toHaveBeenCalled();
     expect(processTarget.exit).toHaveBeenCalledWith(1);
   });
 

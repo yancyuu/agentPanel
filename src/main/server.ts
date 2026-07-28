@@ -32,11 +32,9 @@ import {
   cpSync,
   existsSync as _existsSync2,
   mkdirSync,
-  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import fs from 'node:fs/promises';
@@ -6850,18 +6848,19 @@ const shutdownWorkbenchServer = createWorkbenchShutdown({
   bridgeLauncher: serverContext.services.bridgeLauncher,
   bridge: serverContext.services.bridgeConnection,
 });
+let removeProcessHandlers: () => void = () => undefined;
 const shutdown = createServerShutdown({
   shutdownWorkbenchServer,
   processTarget: process,
+  removeProcessHandlers: () => removeProcessHandlers(),
 });
 
 // Last-resort safety net: log unhandled rejections instead of letting them
 // kill the process, and reap direct-CLI subprocesses on any exit path that
 // skips the asynchronous shutdown path.
-const removeProcessHandlers = installServerProcessHandlers({
+removeProcessHandlers = installServerProcessHandlers({
   app,
   directCliManager: serverContext.services.directCli,
   processTarget: process,
   shutdown,
 });
-serverContext.lifecycle.listenerDisposers.push(removeProcessHandlers);

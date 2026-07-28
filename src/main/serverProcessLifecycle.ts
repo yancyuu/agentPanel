@@ -32,6 +32,7 @@ interface WorkbenchShutdownDependencies {
 interface ServerShutdownDependencies {
   shutdownWorkbenchServer(): Promise<void>;
   processTarget: ServerProcessTarget;
+  removeProcessHandlers?: () => void;
 }
 
 interface ServerProcessHandlerDependencies {
@@ -45,6 +46,14 @@ function closeTimeout(timeoutMs: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, timeoutMs).unref();
   });
+}
+
+async function attemptCleanup(errors: unknown[], cleanup: () => Promise<unknown> | unknown) {
+  try {
+    await cleanup();
+  } catch (error) {
+    errors.push(error);
+  }
 }
 
 export function createWorkbenchShutdown({
@@ -61,23 +70,27 @@ export function createWorkbenchShutdown({
   return () => {
     if (!lifecycle.disposePromise) {
       lifecycle.disposePromise = (async () => {
-        for (const dispose of lifecycle.listenerDisposers.splice(0)) dispose();
-        imLiveWatcher.stop();
-        await stopTelemetry();
+        const errors: unknown[] = [];
+        for (const dispose of lifecycle.listenerDisposers.splice(0)) {
+          await attemptCleanup(errors, dispose);
+        }
+        await attemptCleanup(errors, () => imLiveWatcher.stop());
+        await attemptCleanup(errors, stopTelemetry);
         for (const client of sseClients) {
-          try {
-            client.res.end();
-          } catch {
-            // Best-effort shutdown for already-closed renderer connections.
-          }
+          await attemptCleanup(errors, () => client.res.end());
         }
         sseClients.clear();
-        directCliManager.shutdown();
-        bridgeLauncher.stop();
-        bridge.dispose?.();
+        await attemptCleanup(errors, () => directCliManager.shutdown());
+        await attemptCleanup(errors, () => bridgeLauncher.stop());
+        await attemptCleanup(errors, () => bridge.dispose?.());
         // Bound app.close() so a stuck SSE/websocket client cannot hold an
         // Electron or standalone process alive forever.
-        await Promise.race([app.close(), closeTimeout(closeTimeoutMs)]);
+        await attemptCleanup(errors, () =>
+          Promise.race([app.close(), closeTimeout(closeTimeoutMs)])
+        );
+        if (errors.length > 0) {
+          throw new AggregateError(errors, 'workbench shutdown completed with errors');
+        }
       })();
     }
     return lifecycle.disposePromise;
@@ -87,10 +100,12 @@ export function createWorkbenchShutdown({
 export function createServerShutdown({
   shutdownWorkbenchServer,
   processTarget,
+  removeProcessHandlers = () => undefined,
 }: ServerShutdownDependencies): () => Promise<void> {
   return async () => {
     try {
       await shutdownWorkbenchServer();
+      removeProcessHandlers();
       processTarget.exit(0);
     } catch {
       processTarget.exit(1);

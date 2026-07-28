@@ -19,7 +19,18 @@ function collectTypeScriptFiles(directory: string): string[] {
   });
 }
 
-const ROUTE_SOURCE_PATHS = [SERVER_PATH, ...collectTypeScriptFiles(ROUTES_DIR)];
+const ROUTE_MODULES = collectTypeScriptFiles(ROUTES_DIR).map((sourcePath) => {
+  const sourceText = readFileSync(sourcePath, 'utf8');
+  const registrar = /export function (register[A-Za-z0-9]+Routes)\s*\(/.exec(sourceText)?.[1];
+  return { sourcePath, sourceText, registrar };
+});
+const ACTIVE_ROUTE_MODULES = ROUTE_MODULES.filter(
+  (module) => module.registrar && SERVER_SOURCE.includes(`${module.registrar}(`)
+);
+const ROUTE_SOURCE_PATHS = [
+  SERVER_PATH,
+  ...ACTIVE_ROUTE_MODULES.map((module) => module.sourcePath),
+];
 
 interface RouteRegistration {
   file: string;
@@ -95,6 +106,13 @@ describe('server route manifest baseline', () => {
     });
   });
 
+  it('does not count orphaned route modules as active registrations', () => {
+    const orphanedRegistrars = ROUTE_MODULES.filter(
+      (module) => module.registrar && !SERVER_SOURCE.includes(`${module.registrar}(`)
+    ).map((module) => module.registrar);
+    expect(orphanedRegistrars).toEqual([]);
+  });
+
   it('does not register duplicate method/path pairs', () => {
     const keys = routes.map(routeKey);
     expect(new Set(keys).size).toBe(keys.length);
@@ -141,17 +159,34 @@ describe('server route manifest baseline', () => {
     expect(standaloneStarts).toHaveLength(1);
   });
 
-  it('records the current source ordering that extraction must preserve semantically', () => {
-    const lineOf = (method: string, path: string): number => {
+  it('records inline and composition ordering that extraction must preserve semantically', () => {
+    const routeOf = (method: string, path: string): RouteRegistration => {
       const route = routes.find((candidate) => routeKey(candidate) === `${method} ${path}`);
       expect(route, `${method} ${path} must exist`).toBeDefined();
-      return route?.line ?? -1;
+      return route as RouteRegistration;
+    };
+    const expectInlineOrder = (
+      leftMethod: string,
+      leftPath: string,
+      rightMethod: string,
+      rightPath: string
+    ) => {
+      const left = routeOf(leftMethod, leftPath);
+      const right = routeOf(rightMethod, rightPath);
+      expect(left.file).toBe(SERVER_PATH);
+      expect(right.file).toBe(SERVER_PATH);
+      expect(left.line).toBeLessThan(right.line);
     };
 
-    expect(lineOf('ALL', '/api/v1/*')).toBeLessThan(lineOf('GET', '/api/v1/system/readiness'));
-    expect(lineOf('GET', '/api/telemetry/conversations/export')).toBeLessThan(
-      lineOf('GET', '/api/telemetry/conversations/:sessionId')
+    expectInlineOrder('ALL', '/api/v1/*', 'GET', '/api/v1/system/readiness');
+    expectInlineOrder(
+      'GET',
+      '/api/telemetry/conversations/export',
+      'GET',
+      '/api/telemetry/conversations/:sessionId'
     );
-    expect(lineOf('GET', '/api/events')).toBeLessThan(lineOf('GET', '/api/extensions/plugins'));
+    expect(SERVER_SOURCE.indexOf('registerSseRoutes(app')).toBeLessThan(
+      SERVER_SOURCE.indexOf("app.get('/api/extensions/plugins'")
+    );
   });
 });
