@@ -10,15 +10,15 @@
 
 ### Task 0.1: Inventory Routes And Shared State
 
-- [ ] 建立 99 个现有 `/api` routes 的路径、方法、所属领域和依赖清单
-- [ ] 列出所有顶层 stateful service、client、watcher、SSE set 和 runtime map
-- [ ] 标记 startup/shutdown ownership
-- [ ] 标记 teams/tasks/messages、auth、provider、review 和 Feishu 高风险路径
-- [ ] 记录 Phase 0 不允许变化的 HTTP contracts
+- [x] 建立 235 个现有 Fastify routes 的路径、方法、所属领域和依赖清单
+- [x] 列出所有顶层 stateful service、client、watcher、SSE set 和 runtime map
+- [x] 标记 startup/shutdown ownership
+- [x] 标记 teams/tasks/messages、auth、provider、review 和 Feishu 高风险路径
+- [x] 记录 Phase 0 不允许变化的 HTTP contracts
 
 ### Task 0.2: Add Baseline Tests
 
-- [ ] 检查每个 route domain 的现有测试
+- [x] 检查每个 route domain 的现有测试
 - [ ] 为缺失的关键 route 注册和响应契约补测试
 - [ ] 覆盖 teams/tasks/message ID 和状态映射
 - [ ] 覆盖 direct-cli/bridge 路由和事件写入

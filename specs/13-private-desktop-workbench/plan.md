@@ -132,7 +132,13 @@ bin/
 
 ### Objective
 
-把当前约 7,800 行、99 个 `/api` 路由的单体 `src/main/server.ts` 收缩为应用装配入口，同时保持现有 HTTP 行为、数据语义和进程生命周期不变。
+把当前约 7,800 行、235 个 Fastify 路由的单体 `src/main/server.ts` 收缩为应用装配入口，同时保持现有 HTTP 行为、数据语义和进程生命周期不变。
+
+Phase 0 基线材料：
+
+- [`route-inventory.md`](route-inventory.md)：235 个 routes 全量清单与顺序约束；
+- [`server-context-inventory.md`](server-context-inventory.md)：共享实例、状态和生命周期所有权；
+- [`test-coverage.md`](test-coverage.md)：现有测试映射与拆分前补测缺口。
 
 ### Step 0.1: Add Baseline Tests
 
@@ -198,7 +204,7 @@ Electron main process后续只能调用 factory，不得通过 import 触发 `li
 只有全部满足后才能进入下一阶段：
 
 - `server.ts` 只保留配置、装配、启动和关闭，目标不超过约 400 行；
-- 99 个现有 routes 均已登记到明确的 route module，或有书面删除决定；
+- 235 个现有 routes 均已登记到明确的 route module，或有书面删除决定；
 - route modules 通过显式 context 获得依赖；
 - 无重复 bridge/watcher/service 实例；
 - `pnpm typecheck` 通过；

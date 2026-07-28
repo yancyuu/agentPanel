@@ -10,7 +10,7 @@
 
 当前 `agentcli` 同时承担 CLI、Fastify 工作台 server、React renderer、cc-connect 运行时接入和 usage telemetry，导致：
 
-- `src/main/server.ts` 约 7,800 行并内联注册约 99 个 `/api` 路由，难以独立迁移或安全维护；
+- `src/main/server.ts` 约 7,800 行并内联注册 235 个 Fastify 路由，难以独立迁移或安全维护；
 - CLI 依赖 localhost 工作台 server，无法真正保持轻量和独立；
 - 工作台作为 CLI 附属功能分发，不符合桌面产品的生命周期、安装和升级方式；
 - 当前管理后台式信息架构不适合私人用户持续发布任务、查看执行和追加下一轮指令；
