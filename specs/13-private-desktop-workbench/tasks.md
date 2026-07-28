@@ -43,9 +43,9 @@
 - [x] 抽取 version/update routes
 - [x] 抽取 status routes
 - [x] 抽取 app configuration routes
-- [ ] 抽取 system-manager routes
+- [x] 抽取 system-manager routes
 - [x] 抽取 notifications/events routes
-- [ ] 每抽一个模块运行类型检查和聚焦测试
+- [x] 每抽一个模块运行类型检查和聚焦测试
 
 ### Task 0.5: Extract Workbench Route Domains
 

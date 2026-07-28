@@ -123,6 +123,7 @@ import {
 } from './serverContext';
 import { registerAppConfigRoutes } from './routes/appConfigRoutes';
 import { isSseFallbackRequest, openSseFallbackStream, registerSseRoutes } from './routes/sseRoutes';
+import { registerSystemManagerRoutes } from './routes/systemManagerRoutes';
 import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
 import { registerWorkbenchStatusRoutes } from './routes/workbenchStatusRoutes';
 import { registerServerEventHandlers } from './serverEventHandlers';
@@ -1913,90 +1914,13 @@ app.post('/api/cc-reload', async () => {
 // Teams — cc-connect projects 即团队，本地 ~/.hermit/teams/ 仅存 tasks + 额外元数据
 // ===========================================================================
 
-// POST /api/system-manager/ensure → 确保项目级 Helm Loop存在
-app.post('/api/system-manager/ensure', async (_request, reply) => {
-  try {
-    const summary = await ensureSystemManager();
-    // Fire-and-forget the one-shot ops-guide bootstrap. Idempotent (skips once the
-    // marker is set) and retries on fetch failure each time the console opens.
-    void ensureAdminLoopInitialized();
-    return summary;
-  } catch (err) {
-    return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
-  }
+registerSystemManagerRoutes(app, {
+  ensureSystemManager,
+  ensureAdminLoopInitialized,
+  systemManagerConfig: serverContext.services.systemManagerConfig,
+  workflowPrompt: serverContext.services.workflowPrompt,
+  assertTrustedBrowserOrigin,
 });
-
-app.get('/api/system-manager/status', async (_request, reply) => {
-  try {
-    return await systemManagerConfig.getStatus();
-  } catch (err) {
-    return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-
-app.get('/api/system-manager/config', async (_request, reply) => {
-  try {
-    const config = await systemManagerConfig.getConfig();
-    return config;
-  } catch (err) {
-    return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-
-app.put<{ Body: { selectedWorkDir?: string } }>(
-  '/api/system-manager/config',
-  async (request, reply) => {
-    try {
-      const config = await systemManagerConfig.updateConfig(request.body ?? {});
-      return config;
-    } catch (err) {
-      return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) });
-    }
-  }
-);
-
-app.post<{ Body: { folder?: string } }>(
-  '/api/system-manager/workflows/list',
-  async (request, reply) => {
-    try {
-      assertTrustedBrowserOrigin(request);
-      const config = await systemManagerConfig.getConfig();
-      const workspaceRoot = config.selectedWorkDir.replace(/[\\/]+$/, '');
-      const folder =
-        typeof request.body?.folder === 'string' && request.body.folder.trim().length > 0
-          ? request.body.folder
-          : path.join(workspaceRoot, '.claude', 'commands');
-      if (!folder) return { folder: '', prompts: [], warnings: [] };
-      return await workflowPromptService.list(folder);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (message.startsWith('Forbidden origin:')) {
-        return reply.code(403).send({ error: message });
-      }
-      return { folder: '', prompts: [], warnings: [] };
-    }
-  }
-);
-
-app.post<{ Body: { folder?: string; id?: string } }>(
-  '/api/system-manager/workflows/read',
-  async (request, reply) => {
-    try {
-      assertTrustedBrowserOrigin(request);
-      const config = await systemManagerConfig.getConfig();
-      const workspaceRoot = config.selectedWorkDir.replace(/[\\/]+$/, '');
-      const folder =
-        typeof request.body?.folder === 'string' && request.body.folder.trim().length > 0
-          ? request.body.folder
-          : path.join(workspaceRoot, '.claude', 'commands');
-      if (!folder) return reply.code(400).send({ error: 'command folder is not configured' });
-      const id = typeof request.body?.id === 'string' ? request.body.id : '';
-      return await workflowPromptService.read(folder, id);
-    } catch (err) {
-      return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) });
-    }
-  }
-);
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
