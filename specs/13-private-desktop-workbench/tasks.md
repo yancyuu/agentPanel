@@ -23,7 +23,7 @@
 - [ ] 覆盖 teams/tasks/message ID 和状态映射
 - [x] 覆盖 direct-cli/bridge 路由和事件写入
 - [ ] 覆盖 setup/digital-worker 创建入口
-- [ ] 覆盖 editor 路径安全
+- [x] 覆盖 editor 路径安全
 - [ ] 覆盖 extensions 基本路由
 - [ ] 记录 telemetry 删除前的现有行为基线
 
@@ -50,7 +50,7 @@
 ### Task 0.5: Extract Workbench Route Domains
 
 - [ ] 抽取 setup/workers routes
-- [ ] 抽取 editor routes
+- [x] 抽取 editor routes
 - [ ] 抽取 schedules routes
 - [ ] 抽取 projects/dashboard/graph/context routes
 - [ ] 抽取 extensions routes
