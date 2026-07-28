@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { WorkbenchPageHeader } from '@features/collaborative-workbench/renderer';
 import { useStore } from '@renderer/store';
 import { getTriggerColorDef } from '@shared/constants/triggerColors';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -21,7 +22,7 @@ const ROW_HEIGHT = 56;
 const OVERSCAN = 5;
 
 /** Label used for notifications without a triggerName */
-const OTHER_LABEL = 'Other';
+const OTHER_LABEL = '其他';
 
 interface FilterChip {
   label: string;
@@ -175,197 +176,187 @@ export const NotificationsView = (): React.JSX.Element => {
     setActiveFilter((prev) => (prev === label ? null : label));
   };
 
-  // Loading state
-  if (isLoading) {
-    return (
-      <div
-        className="flex flex-1 flex-col overflow-hidden"
-        style={{ backgroundColor: 'var(--color-surface)' }}
-      >
-        <div className="flex items-center justify-center py-16">
-          <Loader2
-            className="mr-2 size-5 animate-spin"
-            style={{ color: 'var(--color-text-muted)' }}
-          />
-          <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            Loading notifications...
+  const headerDescription =
+    activeFilter !== null
+      ? filteredUnreadCount > 0
+        ? `当前筛选中有 ${filteredUnreadCount} 条未读通知`
+        : `当前筛选中有 ${filteredNotifications.length} 条通知`
+      : unreadCount > 0
+        ? `${unreadCount} 条未读通知`
+        : notifications.length > 0
+          ? `共 ${notifications.length} 条通知`
+          : '集中查看运行时、任务和团队事件。';
+
+  const headerActions =
+    !isLoading && notifications.length > 0 ? (
+      <div className="flex items-center gap-1">
+        {filteredUnreadCount > 0 && (
+          <button
+            type="button"
+            onClick={handleMarkAllRead}
+            className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+            title={activeFilter !== null ? '将筛选结果全部标为已读' : '将全部通知标为已读'}
+            aria-label={activeFilter !== null ? '将筛选结果全部标为已读' : '将全部通知标为已读'}
+          >
+            <CheckCheck className="size-4" />
+            <span className="hidden sm:inline">
+              {activeFilter !== null ? '筛选已读' : '全部已读'}
+            </span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={handleClearAll}
+          className={`flex h-8 items-center gap-1.5 rounded-md px-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${
+            showClearConfirm
+              ? 'bg-red-500/15 text-red-400 hover:bg-red-500/20'
+              : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)]'
+          }`}
+          title={activeFilter !== null ? '清除筛选结果' : '清除全部通知'}
+          aria-label={
+            showClearConfirm
+              ? '再次点击确认清除通知'
+              : activeFilter !== null
+                ? '清除筛选结果'
+                : '清除全部通知'
+          }
+        >
+          <Trash2 className="size-4" />
+          <span className="hidden sm:inline">
+            {showClearConfirm ? '确认清除' : activeFilter !== null ? '清除筛选' : '清除全部'}
           </span>
-        </div>
+        </button>
       </div>
-    );
-  }
+    ) : undefined;
 
   return (
-    <div
-      className="flex flex-1 flex-col overflow-hidden"
-      style={{ backgroundColor: 'var(--color-surface)' }}
-    >
-      {/* Header */}
-      <div className="shrink-0 border-b" style={{ borderColor: 'var(--color-border-subtle)' }}>
-        <div className="flex items-center justify-between px-4 py-3">
-          {/* Title */}
-          <div className="flex items-center gap-2">
-            <Inbox className="size-4" style={{ color: 'var(--color-text-secondary)' }} />
-            <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-              Notifications
-            </span>
-            {notifications.length > 0 && (
-              <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                {activeFilter !== null
-                  ? filteredUnreadCount > 0
-                    ? `${filteredUnreadCount} unread in filter`
-                    : `${filteredNotifications.length} in filter`
-                  : unreadCount > 0
-                    ? `${unreadCount} unread`
-                    : `${notifications.length} total`}
-              </span>
-            )}
-          </div>
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-page-canvas">
+      <WorkbenchPageHeader
+        title="通知"
+        description={isLoading ? '正在加载通知...' : headerDescription}
+        count={isLoading ? undefined : notifications.length}
+        actions={headerActions}
+      />
 
-          {/* Action Buttons */}
-          {notifications.length > 0 && (
-            <div className="flex items-center gap-1">
-              {/* Mark all/filtered read */}
-              {filteredUnreadCount > 0 && (
-                <button
-                  onClick={handleMarkAllRead}
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors hover:opacity-80"
-                  style={{ color: 'var(--color-text-muted)' }}
-                  title={activeFilter !== null ? 'Mark filtered as read' : 'Mark all as read'}
-                >
-                  <CheckCheck className="size-4" />
-                  <span className="hidden sm:inline">
-                    {activeFilter !== null ? 'Mark filtered read' : 'Mark all read'}
-                  </span>
-                </button>
-              )}
-              {/* Clear all/filtered */}
-              <button
-                onClick={handleClearAll}
-                className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors ${
-                  showClearConfirm
-                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                    : 'hover:opacity-80'
-                }`}
-                style={showClearConfirm ? undefined : { color: 'var(--color-text-muted)' }}
-                title={
-                  activeFilter !== null ? 'Clear filtered notifications' : 'Clear all notifications'
-                }
-              >
-                <Trash2 className="size-4" />
-                <span className="hidden sm:inline">
-                  {showClearConfirm
-                    ? 'Click to confirm'
-                    : activeFilter !== null
-                      ? 'Clear filtered'
-                      : 'Clear all'}
-                </span>
-              </button>
-            </div>
-          )}
+      {isLoading ? (
+        <div className="flex flex-1 items-center justify-center py-16">
+          <Loader2 className="mr-2 size-5 animate-spin text-[var(--color-text-muted)]" />
+          <span className="text-sm text-[var(--color-text-muted)]">正在加载通知...</span>
         </div>
-      </div>
-
-      {/* Filter Chip Bar */}
-      {filterChips.length > 1 && (
-        <div
-          className="scrollbar-none shrink-0 overflow-x-auto border-b"
-          style={{ borderColor: 'var(--color-border-subtle)' }}
-        >
-          <div className="flex items-center gap-1.5 px-4 py-2">
-            {/* All chip */}
-            <button
-              onClick={() => setActiveFilter(null)}
-              className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-colors"
-              style={{
-                backgroundColor: activeFilter === null ? 'var(--color-surface-raised)' : undefined,
-                color: activeFilter === null ? 'var(--color-text)' : 'var(--color-text-muted)',
-                border:
-                  activeFilter === null
-                    ? '1px solid var(--color-border-emphasis)'
-                    : '1px solid var(--color-border)',
-              }}
+      ) : (
+        <>
+          {/* Filter Chip Bar */}
+          {filterChips.length > 1 && (
+            <div
+              className="scrollbar-none shrink-0 overflow-x-auto border-b"
+              style={{ borderColor: 'var(--color-border-subtle)' }}
             >
-              全部
-              <span className="opacity-60">({sortedNotifications.length})</span>
-            </button>
-            {/* Trigger chips */}
-            {filterChips.map((chip) => (
-              <button
-                key={chip.label}
-                onClick={() => handleFilterClick(chip.label)}
-                className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-colors"
-                style={{
-                  backgroundColor:
-                    activeFilter === chip.label ? 'var(--color-surface-raised)' : undefined,
-                  color:
-                    activeFilter === chip.label ? 'var(--color-text)' : 'var(--color-text-muted)',
-                  border:
-                    activeFilter === chip.label
-                      ? '1px solid var(--color-border-emphasis)'
-                      : '1px solid var(--color-border)',
-                }}
-              >
-                <span className="size-2 rounded-full" style={{ backgroundColor: chip.colorHex }} />
-                {chip.label}
-                <span className="opacity-60">({chip.count})</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Notifications List */}
-      <div ref={parentRef} className="flex-1 overflow-y-auto">
-        {filteredNotifications.length === 0 ? (
-          <div
-            className="flex flex-col items-center justify-center py-16"
-            style={{ color: 'var(--color-text-muted)' }}
-          >
-            <Inbox className="mb-3 size-10 opacity-30" />
-            <p className="mb-1 text-sm font-medium">
-              {activeFilter !== null ? '没有匹配的通知' : '暂无通知'}
-            </p>
-            <p className="text-xs opacity-70">
-              {activeFilter !== null ? 'Try a different filter' : "You're all caught up!"}
-            </p>
-          </div>
-        ) : (
-          <div
-            style={{
-              height: `${rowVirtualizer.getTotalSize()}px`,
-              width: '100%',
-              position: 'relative',
-            }}
-          >
-            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const notification = filteredNotifications[virtualRow.index];
-              if (!notification) return null;
-
-              return (
-                <div
-                  key={virtualRow.key}
+              <div className="flex items-center gap-1.5 px-4 py-2">
+                {/* All chip */}
+                <button
+                  type="button"
+                  aria-pressed={activeFilter === null}
+                  onClick={() => setActiveFilter(null)}
+                  className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-colors"
                   style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: `${virtualRow.size}px`,
-                    transform: `translateY(${virtualRow.start}px)`,
+                    backgroundColor:
+                      activeFilter === null ? 'var(--color-surface-raised)' : undefined,
+                    color: activeFilter === null ? 'var(--color-text)' : 'var(--color-text-muted)',
+                    border:
+                      activeFilter === null
+                        ? '1px solid var(--color-border-emphasis)'
+                        : '1px solid var(--color-border)',
                   }}
                 >
-                  <NotificationRow
-                    error={notification}
-                    onRowClick={() => handleRowClick(notification)}
-                    onArchive={() => handleArchive(notification.id)}
-                    onDelete={() => handleDelete(notification.id)}
-                  />
-                </div>
-              );
-            })}
+                  全部
+                  <span className="opacity-60">({sortedNotifications.length})</span>
+                </button>
+                {/* Trigger chips */}
+                {filterChips.map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    aria-pressed={activeFilter === chip.label}
+                    onClick={() => handleFilterClick(chip.label)}
+                    className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-colors"
+                    style={{
+                      backgroundColor:
+                        activeFilter === chip.label ? 'var(--color-surface-raised)' : undefined,
+                      color:
+                        activeFilter === chip.label
+                          ? 'var(--color-text)'
+                          : 'var(--color-text-muted)',
+                      border:
+                        activeFilter === chip.label
+                          ? '1px solid var(--color-border-emphasis)'
+                          : '1px solid var(--color-border)',
+                    }}
+                  >
+                    <span
+                      className="size-2 rounded-full"
+                      style={{ backgroundColor: chip.colorHex }}
+                    />
+                    {chip.label}
+                    <span className="opacity-60">({chip.count})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notifications List */}
+          <div ref={parentRef} className="min-w-0 flex-1 overflow-y-auto">
+            {filteredNotifications.length === 0 ? (
+              <div
+                className="flex flex-col items-center justify-center py-16"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                <Inbox className="mb-3 size-10 opacity-30" />
+                <p className="mb-1 text-sm font-medium">
+                  {activeFilter !== null ? '没有匹配的通知' : '暂无通知'}
+                </p>
+                <p className="text-xs opacity-70">
+                  {activeFilter !== null ? '请选择其他筛选条件。' : '当前没有需要处理的通知。'}
+                </p>
+              </div>
+            ) : (
+              <div
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const notification = filteredNotifications[virtualRow.index];
+                  if (!notification) return null;
+
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: `${virtualRow.size}px`,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      <NotificationRow
+                        error={notification}
+                        onRowClick={() => handleRowClick(notification)}
+                        onArchive={() => handleArchive(notification.id)}
+                        onDelete={() => handleDelete(notification.id)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 };

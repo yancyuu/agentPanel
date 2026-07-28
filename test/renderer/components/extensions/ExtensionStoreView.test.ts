@@ -30,10 +30,30 @@ interface StoreState {
   repositoryGroups: unknown[];
 }
 
+const apiState = vi.hoisted(() => ({ plugins: {} as object | undefined }));
 const storeState = {} as StoreState;
 const pluginsPanelSpy = vi.fn();
 const mcpServersPanelSpy = vi.fn();
 const customMcpDialogSpy = vi.fn();
+
+vi.mock('@features/collaborative-workbench/renderer', () => ({
+  WorkbenchPageHeader: ({
+    title,
+    description,
+    actions,
+  }: {
+    title: string;
+    description?: string;
+    actions?: React.ReactNode;
+  }) =>
+    React.createElement(
+      'header',
+      null,
+      React.createElement('h1', null, title),
+      description ? React.createElement('p', null, description) : null,
+      actions
+    ),
+}));
 
 vi.mock('@renderer/store', () => ({
   useStore: (selector: (state: StoreState) => unknown) => selector(storeState),
@@ -45,7 +65,9 @@ vi.mock('zustand/react/shallow', () => ({
 
 vi.mock('@renderer/api', () => ({
   api: {
-    plugins: {},
+    get plugins() {
+      return apiState.plugins;
+    },
     mcpRegistry: {},
     skills: {},
   },
@@ -296,6 +318,7 @@ function createLoadingMultimodelStatus(): CliInstallationStatus {
 describe('ExtensionStoreView provider loading placeholders', () => {
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    apiState.plugins = {};
     pluginsPanelSpy.mockReset();
     mcpServersPanelSpy.mockReset();
     customMcpDialogSpy.mockReset();
@@ -346,9 +369,45 @@ describe('ExtensionStoreView provider loading placeholders', () => {
     expect(storeState.bootstrapCliStatus).toHaveBeenCalledWith({ multimodelEnabled: true });
     expect(storeState.fetchCliStatus).not.toHaveBeenCalled();
 
+    expect(host.querySelector('header h1')?.textContent).toBe('扩展');
+    expect(host.textContent).toContain('刷新目录');
+    expect(host.textContent).toContain('plugins-panel');
+    expect(host.textContent).toContain('capability-packs-panel');
     expect(host.textContent).toContain('Anthropic');
     expect(host.textContent).toBeTruthy();
     expect(host.textContent).not.toContain('正在检查扩展运行时可用性');
+
+    await act(async () => {
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('刷新目录'))
+        ?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(storeState.bootstrapCliStatus).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('keeps the shared page header and browser guard when plugin APIs are unavailable', async () => {
+    apiState.plugins = undefined;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(React.createElement(ExtensionStoreView));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(host.querySelector('header h1')?.textContent).toBe('扩展');
+    expect(host.textContent).toContain('浏览器模式暂不支持扩展管理');
+    expect(host.textContent).not.toContain('刷新目录');
+    expect(pluginsPanelSpy).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();
@@ -459,6 +518,4 @@ describe('ExtensionStoreView provider loading placeholders', () => {
       await Promise.resolve();
     });
   });
-
 });
-

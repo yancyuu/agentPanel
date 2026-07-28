@@ -1,191 +1,190 @@
-/**
- * DashboardView - Main dashboard shell.
- * Keeps only screen composition and delegates recent-projects logic to the feature slice.
- */
-
 import React from 'react';
 
+import { WorkbenchPageHeader } from '@features/collaborative-workbench/renderer';
 import { RecentProjectsSection } from '@features/recent-projects/renderer';
 import { useStore } from '@renderer/store';
-import { PRODUCT_NAME } from '@shared/constants';
-import { Bot, MessageCircle, Settings, ShieldCheck, TerminalSquare, Users } from 'lucide-react';
+import { Bot, Inbox, MessageCircle, Settings, ShieldCheck, Users } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 
 const DASHBOARD_BOUNDARIES = [
   {
-    title: '本地优先控制面',
-    description: '把项目、运行时、工作流和执行记录收束在本机；你掌握代码、上下文和团队协作边界。',
-    badge: 'Local-first',
+    title: '本地优先',
+    description: '项目、运行时、执行记录与团队数据默认保留在本机。',
   },
   {
-    title: 'AI Workforce',
-    description:
-      '以团队为单位组织数字员工，对接飞书等渠道、进入真实业务场景：接需求、跟进任务、审阅交付，在业务里持续提供服务。',
-    badge: 'Agent Teams',
+    title: '团队协作',
+    description: '围绕任务组织 Agent、负责人、评审和交付状态。',
   },
   {
-    title: 'Loop Engineering',
-    description: '把诊断、巡检、复盘和改进提案变成可重复运行的循环，让系统自己维护系统。',
-    badge: 'Self-improving',
+    title: '持续改进',
+    description: '通过 Loop 工作流执行巡检、复盘和治理提案。',
   },
-];
+] as const;
 
 export const DashboardView = (): React.JSX.Element => {
-  const { openChatTab, openSettingsTab, openSystemManager, openTeamsTab, teams, teamsLoading } =
-    useStore(
-      useShallow((state) => ({
-        openChatTab: state.openChatTab,
-        openSettingsTab: state.openSettingsTab,
-        openSystemManager: state.openSystemManager,
-        openTeamsTab: state.openTeamsTab,
-        teams: state.teams,
-        teamsLoading: state.teamsLoading,
-      }))
-    );
+  const {
+    openChatTab,
+    openSettingsTab,
+    openSystemManager,
+    openTasksTab,
+    openTeamsTab,
+    teams,
+    teamsLoading,
+  } = useStore(
+    useShallow((state) => ({
+      openChatTab: state.openChatTab,
+      openSettingsTab: state.openSettingsTab,
+      openSystemManager: state.openSystemManager,
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- Zustand actions do not use `this`; preserve the stable store function reference.
+      openTasksTab: state.openTasksTab,
+      openTeamsTab: state.openTeamsTab,
+      teams: state.teams,
+      teamsLoading: state.teamsLoading,
+    }))
+  );
   const showQuickstartGuide = !teamsLoading && teams.length === 0;
 
-  return (
-    <div className="relative flex-1 overflow-auto bg-surface">
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-[600px] bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(99,102,241,0.1),transparent)]"
-        aria-hidden="true"
-      />
+  const quickActions = [
+    {
+      label: '打开收件箱',
+      description: '查看需要关注、评审或继续推进的任务。',
+      icon: Inbox,
+      onClick: openTasksTab,
+    },
+    {
+      label: '团队与 Agent',
+      description: '查看团队成员、运行状态和当前负责人。',
+      icon: Users,
+      onClick: openTeamsTab,
+    },
+    {
+      label: 'Helm Loop',
+      description: '执行全局巡检、诊断和持续改进工作流。',
+      icon: Bot,
+      onClick: () => void openSystemManager(),
+    },
+    {
+      label: '配置 Harness',
+      description: '检查并配置 Claude、Codex 或 Gemini 等运行时。',
+      icon: Settings,
+      onClick: () => openSettingsTab('harness'),
+    },
+    {
+      label: '飞书协作',
+      description: '进入现有渠道会话和团队消息入口。',
+      icon: MessageCircle,
+      onClick: openChatTab,
+    },
+  ] as const;
 
-      <div className="relative mx-auto max-w-6xl px-8 py-10">
-        <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-surface-raised shadow-sm">
-          <div className="grid gap-6 border-b border-border p-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-            <div>
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-3 py-1 text-[11px] font-medium text-indigo-700 dark:text-indigo-300">
-                <TerminalSquare className="size-3.5" />
-                {PRODUCT_NAME} Command Center
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-page-canvas">
+      <WorkbenchPageHeader title="工作台" description="从任务、团队和 Loop 入口继续本地协作。" />
+
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4">
+          <section aria-labelledby="dashboard-quick-actions-title">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div>
+                <h2 id="dashboard-quick-actions-title" className="text-sm font-medium text-text">
+                  快速入口
+                </h2>
+                <p className="mt-0.5 text-xs text-text-muted">选择下一项协作工作。</p>
               </div>
-              <h1 className="text-2xl font-semibold tracking-tight text-text">
-                你的本地 AI 员工操作系统
-              </h1>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-text-secondary">
-                {PRODUCT_NAME} 把 Claude Code、团队协作和 Loop
-                工作流收束到一个本地优先的控制面。你的数字员工对接飞书等外部渠道、深入真实业务场景，按团队分工自主跟进任务、审阅结果——不是开一个聊天窗口，而是养一支能接业务、持续交付服务的
-                AI 团队。
+              <span className="text-xs tabular-nums text-text-muted">
+                {teamsLoading ? '正在同步团队' : `${teams.length} 个团队`}
+              </span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+              {quickActions.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <button
+                    key={action.label}
+                    type="button"
+                    onClick={action.onClick}
+                    className="group rounded-md border border-[var(--surface-border)] bg-[var(--color-surface)] p-3 text-left transition-colors hover:bg-[var(--color-surface-raised)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+                  >
+                    <div className="flex items-center gap-2 text-sm font-medium text-text">
+                      <Icon className="size-4 text-text-muted transition-colors group-hover:text-text" />
+                      {action.label}
+                    </div>
+                    <p className="mt-1.5 text-xs leading-5 text-text-muted">{action.description}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section
+            aria-label="工作区边界"
+            className="grid gap-px overflow-hidden rounded-md border border-[var(--surface-border)] bg-[var(--surface-border)] md:grid-cols-3"
+          >
+            {DASHBOARD_BOUNDARIES.map((item) => (
+              <div key={item.title} className="bg-[var(--color-surface)] px-3 py-2.5">
+                <p className="text-xs font-medium text-text-secondary">{item.title}</p>
+                <p className="mt-1 text-xs leading-5 text-text-muted">{item.description}</p>
+              </div>
+            ))}
+          </section>
+
+          {showQuickstartGuide ? (
+            <section className="rounded-md border border-[var(--surface-border)] bg-[var(--color-surface)] p-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-text">
+                <ShieldCheck className="size-4 text-text-muted" />
+                快速开始
+              </div>
+              <p className="mt-1 text-xs text-text-muted">
+                先连接可用的 Agent 运行时，再创建团队并开始分发任务。
               </p>
-              <div className="mt-5 flex flex-wrap gap-2">
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <button
                   type="button"
-                  onClick={() => void openSystemManager()}
-                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/35 bg-indigo-500/10 px-4 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-500/15 dark:text-indigo-100"
+                  onClick={() => openSettingsTab('harness')}
+                  className="rounded-md border border-[var(--surface-border)] bg-page-canvas p-3 text-left transition-colors hover:bg-[var(--color-surface-raised)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
                 >
-                  <Bot className="size-4" />
-                  打开 Helm Loop
+                  <p className="flex items-center gap-2 text-sm font-medium text-text">
+                    <Settings className="size-4" />
+                    配置 Harness
+                  </p>
+                  <p className="mt-1 text-xs text-text-muted">
+                    连接 Claude、Codex 或 Gemini 等运行时。
+                  </p>
                 </button>
                 <button
                   type="button"
                   onClick={openTeamsTab}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-overlay hover:text-text"
+                  className="rounded-md border border-[var(--surface-border)] bg-page-canvas p-3 text-left transition-colors hover:bg-[var(--color-surface-raised)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
                 >
-                  <Users className="size-4" />
-                  进入团队
+                  <p className="flex items-center gap-2 text-sm font-medium text-text">
+                    <Users className="size-4" />
+                    创建团队并启动
+                  </p>
+                  <p className="mt-1 text-xs text-text-muted">设置工作目录后即可开始分发任务。</p>
                 </button>
+              </div>
+            </section>
+          ) : (
+            <section aria-labelledby="recent-projects-title">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <h2 id="recent-projects-title" className="text-sm font-medium text-text">
+                    最近打开的项目
+                  </h2>
+                  <p className="mt-0.5 text-xs text-text-muted">继续最近的本地工作区。</p>
+                </div>
                 <button
                   type="button"
-                  onClick={openChatTab}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-overlay hover:text-text"
+                  onClick={() => void openSystemManager()}
+                  className="shrink-0 text-xs text-text-muted transition-colors hover:text-text"
                 >
-                  <MessageCircle className="size-4" />
-                  加入飞书群
+                  打开 Helm Loop
                 </button>
               </div>
-            </div>
-
-            <div className="rounded-xl border border-border bg-surface p-4">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="text-sm font-medium text-text">工作区状态</div>
-                <span className="rounded-full border border-border bg-surface-overlay px-2 py-0.5 text-[10px] text-text-muted">
-                  {teamsLoading ? '加载中' : `${teams.length} 个团队`}
-                </span>
-              </div>
-              <div className="space-y-2 text-xs text-text-muted">
-                <div className="flex items-center justify-between rounded-lg border border-border bg-surface-overlay px-3 py-2">
-                  <span>本地团队</span>
-                  <span>{teamsLoading ? '同步中' : `${teams.length} 支`}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-border bg-surface-overlay px-3 py-2">
-                  <span>运行入口</span>
-                  <span>Team / Helm / Channel</span>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-border bg-surface-overlay px-3 py-2">
-                  <span>数据边界</span>
-                  <span>Local-first by default</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-3 px-6 py-5 md:grid-cols-3">
-            {DASHBOARD_BOUNDARIES.map((item) => (
-              <div key={item.title} className="rounded-xl border border-border bg-surface p-4">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <div className="text-sm font-medium text-text">{item.title}</div>
-                  <span className="rounded-full border border-border bg-surface-overlay px-2 py-0.5 text-[10px] text-text-muted">
-                    {item.badge}
-                  </span>
-                </div>
-                <p className="text-xs leading-5 text-text-muted">{item.description}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {showQuickstartGuide ? (
-          <section className="rounded-xl border border-border bg-surface-raised p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold text-text">
-              <ShieldCheck className="size-4 text-indigo-600 dark:text-indigo-300" />
-              快速开始（2 步）
-            </div>
-            <p className="mt-1 text-xs text-text-muted">
-              首次使用会看到空白首页。先连接运行时，再创建团队或进入 Helm Loop。
-            </p>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => openSettingsTab('harness')}
-                className="rounded-lg border border-border bg-surface p-3 text-left transition-colors hover:bg-surface-overlay"
-              >
-                <p className="flex items-center gap-2 text-sm font-medium text-text">
-                  <Settings className="size-4" />
-                  配置 Harness
-                </p>
-                <p className="mt-1 text-xs text-text-muted">连接 Claude/Codex/Gemini 等运行时。</p>
-              </button>
-              <button
-                type="button"
-                onClick={openTeamsTab}
-                className="rounded-lg border border-border bg-surface p-3 text-left transition-colors hover:bg-surface-overlay"
-              >
-                <p className="flex items-center gap-2 text-sm font-medium text-text">
-                  <Users className="size-4" />
-                  创建团队并启动
-                </p>
-                <p className="mt-1 text-xs text-text-muted">设置工作目录后即可开始分发任务。</p>
-              </button>
-            </div>
-          </section>
-        ) : (
-          <>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xs font-medium uppercase tracking-wider text-text-muted">
-                最近打开的项目
-              </h2>
-              <button
-                type="button"
-                onClick={() => void openSystemManager()}
-                className="text-xs text-text-muted transition-colors hover:text-text"
-              >
-                Helm Loop →
-              </button>
-            </div>
-
-            <RecentProjectsSection searchQuery="" />
-          </>
-        )}
+              <RecentProjectsSection searchQuery="" />
+            </section>
+          )}
+        </div>
       </div>
     </div>
   );

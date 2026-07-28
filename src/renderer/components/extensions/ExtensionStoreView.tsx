@@ -7,13 +7,17 @@
 import { useCallback, useEffect, useMemo } from 'react';
 
 // Stubs for removed codex-account feature
-function useCodexAccountSnapshot(_opts: { enabled: boolean; includeRateLimits?: boolean }) {
+function useCodexAccountSnapshot(_opts: { enabled: boolean; includeRateLimits?: boolean }): {
+  snapshot: null;
+  loading: false;
+} {
   return { snapshot: null, loading: false };
 }
 function mergeCodexProviderStatusWithSnapshot<T>(provider: T, _snapshot: unknown): T {
   return provider;
 }
 
+import { WorkbenchPageHeader } from '@features/collaborative-workbench/renderer';
 import { api } from '@renderer/api';
 import { ProviderBrandLogo } from '@renderer/components/common/ProviderBrandLogo';
 import { Badge } from '@renderer/components/ui/badge';
@@ -338,99 +342,120 @@ export const ExtensionStoreView = (): React.JSX.Element => {
     effectiveCliStatus,
     effectiveCliStatusLoading,
     openDashboard,
+    runtimeDisplayName,
   ]);
+
+  const pageHeader = (
+    <WorkbenchPageHeader
+      title="扩展"
+      description="管理 cc 扩展、Skills、MCP、连接器和能力包。"
+      actions={
+        api.plugins ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+              >
+                <RefreshCw className={`size-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">刷新目录</span>
+                <span className="sm:hidden">刷新</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>刷新扩展目录</TooltipContent>
+          </Tooltip>
+        ) : undefined
+      }
+    />
+  );
 
   // Browser mode guard
   if (!api.plugins) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-center">
-          <Puzzle className="mx-auto mb-3 size-12 text-text-muted" />
-          <h2 className="text-lg font-semibold text-text">扩展</h2>
-          <p className="mt-1 text-sm text-text-muted">仅桌面应用可用。</p>
+      <TooltipProvider>
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-page-canvas">
+          {pageHeader}
+          <div className="flex flex-1 items-center justify-center p-4">
+            <div className="rounded-md border border-[var(--surface-border)] bg-[var(--color-surface)] px-8 py-10 text-center">
+              <Puzzle className="mx-auto mb-3 size-8 text-text-muted" />
+              <h2 className="text-sm font-medium text-text">浏览器模式暂不支持扩展管理</h2>
+              <p className="mt-1 text-xs text-text-muted">请在桌面应用中管理和安装扩展。</p>
+            </div>
+          </div>
         </div>
-      </div>
+      </TooltipProvider>
     );
   }
 
   return (
     <TooltipProvider>
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto">
-          {cliStatusBanner}
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center gap-3">
-              <Puzzle className="size-5 text-text-muted" />
-              <h1 className="text-lg font-semibold text-text">扩展</h1>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-page-canvas">
+        {pageHeader}
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="mx-auto w-full max-w-7xl">
+            {cliStatusBanner}
+
+            {/* Sub-tabs */}
+            <div className="p-4">
+              {/* CLI not installed warning */}
+              {!cliInstalled && (
+                <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-400">
+                  <AlertTriangle className="size-4 shrink-0" />
+                  安装或卸载扩展需要配置运行时。请前往首页安装或修复。
+                </div>
+              )}
+              {/* Active sessions warning */}
+              {hasOngoingSessions && (
+                <div className="mb-4 flex items-center gap-2 rounded-md border border-indigo-500/30 bg-indigo-500/5 px-4 py-3 text-sm text-indigo-400">
+                  <Info className="size-4 shrink-0" />
+                  正在运行的会话需要重启后才会应用扩展变更。
+                </div>
+              )}
+              <Tabs
+                value={tabState.activeSubTab}
+                onValueChange={(v) => tabState.setActiveSubTab(v as ExtensionsSubTab)}
+              >
+                <div className="-mx-4 flex items-end justify-between border-b border-border px-4">
+                  <TabsList className="gap-1 rounded-b-none">
+                    {subTabs.map((subTab) => (
+                      <ExtensionsSubTabTrigger
+                        key={subTab.value}
+                        value={subTab.value}
+                        label={subTab.label}
+                        icon={subTab.icon}
+                        description={subTab.description}
+                      />
+                    ))}
+                  </TabsList>
+                </div>
+
+                <TabsContent value="plugins" className="mt-0 pt-4">
+                  <PluginsPanel
+                    projectPath={projectPath}
+                    pluginFilters={tabState.pluginFilters}
+                    pluginSort={tabState.pluginSort}
+                    setPluginSort={tabState.setPluginSort}
+                    selectedPluginId={tabState.selectedPluginId}
+                    setSelectedPluginId={tabState.setSelectedPluginId}
+                    updatePluginSearch={tabState.updatePluginSearch}
+                    toggleCategory={tabState.toggleCategory}
+                    toggleCapability={tabState.toggleCapability}
+                    toggleInstalledOnly={tabState.toggleInstalledOnly}
+                    clearFilters={tabState.clearFilters}
+                    hasActiveFilters={tabState.hasActiveFilters}
+                    cliStatus={effectiveCliStatus}
+                    cliStatusLoading={effectiveCliStatusLoading}
+                  />
+                </TabsContent>
+
+                <TabsContent value="capability-packs" className="mt-0 pt-4">
+                  <CapabilityPacksPanel />
+                </TabsContent>
+              </Tabs>
             </div>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={handleRefresh} disabled={isRefreshing}>
-                  <RefreshCw className={`size-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>刷新目录</TooltipContent>
-            </Tooltip>
-          </div>
-
-          {/* Sub-tabs */}
-          <div className="px-6 py-4">
-            {/* CLI not installed warning */}
-            {!cliInstalled && (
-              <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-400">
-                <AlertTriangle className="size-4 shrink-0" />
-                安装或卸载扩展需要配置运行时。请前往首页安装或修复。
-              </div>
-            )}
-            {/* Active sessions warning */}
-            {hasOngoingSessions && (
-              <div className="mb-4 flex items-center gap-2 rounded-md border border-indigo-500/30 bg-indigo-500/5 px-4 py-3 text-sm text-indigo-400">
-                <Info className="size-4 shrink-0" />
-                正在运行的会话需要重启后才会应用扩展变更。
-              </div>
-            )}
-            <Tabs
-              value={tabState.activeSubTab}
-              onValueChange={(v) => tabState.setActiveSubTab(v as ExtensionsSubTab)}
-            >
-              <div className="-mx-6 flex items-end justify-between border-b border-border px-6">
-                <TabsList className="gap-1 rounded-b-none">
-                  {subTabs.map((subTab) => (
-                    <ExtensionsSubTabTrigger
-                      key={subTab.value}
-                      value={subTab.value}
-                      label={subTab.label}
-                      icon={subTab.icon}
-                      description={subTab.description}
-                    />
-                  ))}
-                </TabsList>
-              </div>
-
-              <TabsContent value="plugins" className="mt-0 pt-4">
-                <PluginsPanel
-                  projectPath={projectPath}
-                  pluginFilters={tabState.pluginFilters}
-                  pluginSort={tabState.pluginSort}
-                  setPluginSort={tabState.setPluginSort}
-                  selectedPluginId={tabState.selectedPluginId}
-                  setSelectedPluginId={tabState.setSelectedPluginId}
-                  updatePluginSearch={tabState.updatePluginSearch}
-                  toggleCategory={tabState.toggleCategory}
-                  toggleCapability={tabState.toggleCapability}
-                  toggleInstalledOnly={tabState.toggleInstalledOnly}
-                  clearFilters={tabState.clearFilters}
-                  hasActiveFilters={tabState.hasActiveFilters}
-                  cliStatus={effectiveCliStatus}
-                  cliStatusLoading={effectiveCliStatusLoading}
-                />
-              </TabsContent>
-
-              <TabsContent value="capability-packs" className="mt-0 pt-4">
-                <CapabilityPacksPanel />
-              </TabsContent>
-            </Tabs>
           </div>
         </div>
       </div>

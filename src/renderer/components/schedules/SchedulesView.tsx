@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { WorkbenchPageHeader } from '@features/collaborative-workbench/renderer';
 import { Button } from '@renderer/components/ui/button';
 import { getTeamColorSet } from '@renderer/constants/teamColors';
 import { useStore } from '@renderer/store';
@@ -19,6 +20,7 @@ export const SchedulesView = (): React.JSX.Element => {
     useShallow((s) => ({
       schedules: s.schedules,
       schedulesLoading: s.schedulesLoading,
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- Zustand actions do not use `this`; preserve the stable store function reference.
       fetchSchedules: s.fetchSchedules,
       openTeamTab: s.openTeamTab,
       teamByName: s.teamByName,
@@ -63,6 +65,11 @@ export const SchedulesView = (): React.JSX.Element => {
     [schedules]
   );
 
+  const activeScheduleCount = useMemo(
+    () => schedules.filter((schedule) => schedule.status === 'active').length,
+    [schedules]
+  );
+
   const handleEdit = useCallback((schedule: Schedule) => {
     setEditingSchedule(schedule);
     setDialogOpen(true);
@@ -86,50 +93,43 @@ export const SchedulesView = (): React.JSX.Element => {
   );
 
   return (
-    <div className="flex h-full flex-col bg-[var(--color-surface)]">
-      {/* Minimal header */}
-      <div className="flex shrink-0 items-center justify-between px-4 pb-2 pt-4">
-        <div className="flex items-center gap-2">
-          <h1
-            className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider"
-            style={{ color: 'var(--color-text-muted)' }}
+    <div className="flex h-full min-w-0 flex-col overflow-hidden bg-page-canvas">
+      <WorkbenchPageHeader
+        title="计划任务"
+        description={
+          schedules.length > 0
+            ? `${activeScheduleCount} 个计划正在运行`
+            : '按计划触发团队任务和 Loop 工作流。'
+        }
+        count={schedules.length}
+        actions={
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5 text-xs"
+            onClick={handleCreate}
           >
-            <span className="text-cyan-400/40">#</span>
-            定时任务
-          </h1>
-          {schedules.length > 0 && (
-            <span
-              className="rounded-full px-2 py-0.5 text-[10px]"
-              style={{ color: 'var(--color-text-muted)', background: 'rgba(148,163,184,0.06)' }}
-            >
-              {schedules.filter((s) => s.status === 'active').length} 运行中
-            </span>
-          )}
-        </div>
-        <Button size="sm" variant="ghost" className="gap-1.5 text-xs" onClick={handleCreate}>
-          <Plus className="size-3.5" />
-          添加计划
-        </Button>
-      </div>
+            <Plus className="size-3.5" />
+            <span className="hidden sm:inline">添加计划</span>
+            <span className="sm:hidden">添加</span>
+          </Button>
+        }
+      />
 
-      {/* Content — fills remaining space */}
-      <div className="min-h-0 flex-1 overflow-auto px-2 pb-4">
+      <div className="min-h-0 flex-1 overflow-auto p-4">
         {schedulesLoading && schedules.length === 0 ? (
           <div className="flex items-center justify-center py-24 text-sm text-[var(--color-text-muted)]">
             正在加载计划...
           </div>
         ) : schedules.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[var(--color-border)] py-20 text-center">
-            <Calendar
-              className="size-6"
-              style={{ color: 'var(--color-text-muted)', opacity: 0.4 }}
-            />
-            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-              暂无定时任务。在 Loop workspace 中创建计划即可自动运行。
+          <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-[var(--surface-border)] bg-[var(--color-surface)] px-4 text-center">
+            <Calendar className="size-6 text-[var(--color-text-muted)] opacity-40" />
+            <p className="max-w-md text-xs leading-5 text-[var(--color-text-muted)]">
+              暂无计划任务。在 Loop 工作区中创建计划后，系统会按设定时间自动运行。
             </p>
             <Button
               size="sm"
-              variant="ghost"
+              variant="outline"
               className="mt-1 gap-1.5 text-xs"
               onClick={handleCreate}
             >

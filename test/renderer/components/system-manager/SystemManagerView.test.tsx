@@ -1,6 +1,6 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   getStatusMock,
@@ -70,7 +70,7 @@ const storeState = {
       },
     },
   ],
-  fetchCapabilityPacks: vi.fn(async () => undefined),
+  fetchCapabilityPacks: vi.fn(() => Promise.resolve()),
 };
 
 vi.mock('@renderer/store', () => {
@@ -80,7 +80,9 @@ vi.mock('@renderer/store', () => {
 });
 
 vi.mock('@renderer/components/team/loop-console/LoopConsolePanel', () => ({
-  LoopConsolePanel: (props: { commandSuggestions?: Array<{ command?: string; name?: string; description?: string }> }) => {
+  LoopConsolePanel: (props: {
+    commandSuggestions?: { command?: string; name?: string; description?: string }[];
+  }) => {
     loopConsolePanelPropsMock(props);
     return <div data-testid="admin-loop-panel">Embedded Helm Loop Panel</div>;
   },
@@ -197,16 +199,21 @@ function mockAdminLoopRuntime(workDir = '/repo') {
 }
 
 describe('SystemManagerView', () => {
+  beforeEach(() => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  });
+
   afterEach(() => {
     document.body.innerHTML = '';
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('renders embedded Helm Loop panel with project and scoped command support', async () => {
     getStatusMock.mockResolvedValue(baseStatus());
     getConfigMock.mockResolvedValue(baseConfig());
-    updateConfigMock.mockImplementation(async (patch: { selectedWorkDir?: string }) =>
-      baseConfig(patch.selectedWorkDir ?? '/repo')
+    updateConfigMock.mockImplementation((patch: { selectedWorkDir?: string }) =>
+      Promise.resolve(baseConfig(patch.selectedWorkDir ?? '/repo'))
     );
     mockAdminLoopRuntime();
     fetchTeamsMock.mockResolvedValue(undefined);
@@ -219,7 +226,10 @@ describe('SystemManagerView', () => {
       await Promise.resolve();
     });
 
-    expect(host.textContent).toContain('helm 指令台');
+    expect(host.querySelector('header h1')?.textContent).toBe('Helm Loop');
+    expect(host.textContent).toContain('作用域');
+    expect(host.textContent).toContain('命令源');
+    expect(host.textContent).toContain('默认边界');
     expect(host.textContent).toContain('Embedded Helm Loop Panel');
     expect(host.textContent).toContain('运行时');
     expect(host.textContent).not.toContain('打开终端');
@@ -243,7 +253,22 @@ describe('SystemManagerView', () => {
     );
 
     await act(async () => {
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('运行时'))
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(host.querySelector('[data-testid="admin-runtime-config"]')).not.toBeNull();
+    expect(runtimeConfigDialogPropsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        open: true,
+        teamName: 'system-manager',
+      })
+    );
+
+    await act(async () => {
       root.unmount();
+      await Promise.resolve();
     });
   });
 
@@ -254,9 +279,9 @@ describe('SystemManagerView', () => {
     fetchTeamsMock.mockResolvedValue(undefined);
 
     const order: string[] = [];
-    ensureSystemManagerMock.mockImplementation(async () => {
+    ensureSystemManagerMock.mockImplementation(() => {
       order.push('ensure');
-      return {
+      return Promise.resolve({
         teamName: 'system-manager',
         displayName: 'Helm Loop',
         bindProject: 'my-project',
@@ -266,15 +291,15 @@ describe('SystemManagerView', () => {
         localStatus: 'ready',
         ccConnectProjectStatus: 'bound',
         feishuStatus: 'bound',
-      };
+      });
     });
-    getTeamDataMock.mockImplementation(async () => {
+    getTeamDataMock.mockImplementation(() => {
       order.push('data');
-      return baseTeamData('/repo');
+      return Promise.resolve(baseTeamData('/repo'));
     });
-    getTeamSessionsMock.mockImplementation(async () => {
+    getTeamSessionsMock.mockImplementation(() => {
       order.push('sessions');
-      return [
+      return Promise.resolve([
         {
           id: 'oc_admin',
           title: 'Helm Loop 飞书',
@@ -290,7 +315,7 @@ describe('SystemManagerView', () => {
           updatedAt: '2026-06-05T00:00:00.000Z',
           lastMessage: null,
         },
-      ];
+      ]);
     });
 
     const { root } = renderSystemManager();
@@ -311,6 +336,7 @@ describe('SystemManagerView', () => {
 
     await act(async () => {
       root.unmount();
+      await Promise.resolve();
     });
   });
 });

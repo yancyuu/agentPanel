@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { WorkbenchPageHeader } from '@features/collaborative-workbench/renderer';
 import { api } from '@renderer/api';
 import { Button } from '@renderer/components/ui/button';
 import { useStore } from '@renderer/store';
 import { buildCapabilityPackCommandSuggestions } from '@renderer/utils/slashCommandRegistry';
-import { SYSTEM_MANAGER_DISPLAY_NAME, SYSTEM_MANAGER_TEAM_NAME } from '@shared/types/team';
-import { Settings2, TerminalSquare } from 'lucide-react';
+import { SYSTEM_MANAGER_TEAM_NAME } from '@shared/types/team';
+import { Settings2 } from 'lucide-react';
 
 import { RuntimeConfigDialog } from '../team/dialogs/RuntimeConfigDialog';
 import { LoopConsolePanel } from '../team/loop-console/LoopConsolePanel';
@@ -32,7 +33,7 @@ function formatPathForTitle(pathValue: string): string {
 
 const EMPTY_ADMIN_TASKS: TeamTaskWithKanban[] = [];
 const EMPTY_CAPABILITY_PACKS = [] as const;
-const NOOP_FETCH_CAPABILITY_PACKS = () => Promise.resolve();
+const NOOP_FETCH_CAPABILITY_PACKS = (): Promise<void> => Promise.resolve();
 
 function buildAdminLoopMember(teamData: TeamViewSnapshot | null): ResolvedTeamMember[] {
   const lead = teamData?.members[0];
@@ -105,91 +106,94 @@ export const SystemManagerView = ({
     void load();
   }, [load]);
 
-  const adminWorkflowCommandSuggestions = useMemo(
+  const adminWorkflowCommandSuggestions = useMemo<MentionSuggestion[]>(
     () => buildCapabilityPackCommandSuggestions(capabilityPacks, 'admin-loop', {}),
     [capabilityPacks]
   );
   const adminMembers = useMemo(() => buildAdminLoopMember(adminTeamData), [adminTeamData]);
   const adminTasks = adminTeamData?.tasks ?? EMPTY_ADMIN_TASKS;
+  const localStatusLabel = status?.localStatus === 'ready' ? '本地可用' : '本地异常';
 
   return (
-    <div className="flex size-full flex-col bg-[var(--color-surface)] p-4 text-[var(--color-text)]">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl shadow-black/20">
-        <div className="flex min-h-12 items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-raised)] px-4 py-2">
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="size-3 rounded-full bg-[#ff5f57]" />
-            <span className="size-3 rounded-full bg-[#febc2e]" />
-            <span className="size-3 rounded-full bg-[#28c840]" />
+    <div className="flex size-full min-w-0 flex-col overflow-hidden bg-page-canvas text-[var(--color-text)]">
+      <WorkbenchPageHeader
+        title="Helm Loop"
+        description="执行全局巡检、诊断、复盘、治理和改进提案。"
+        actions={
+          <div className="flex items-center gap-2">
+            <span className="hidden text-xs text-[var(--color-text-muted)] sm:inline">
+              {loading ? '正在连接' : localStatusLabel}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 shrink-0 border-[var(--surface-border)]"
+              onClick={() => setBindingDialogOpen(true)}
+            >
+              <Settings2 size={13} />
+              运行时
+            </Button>
           </div>
-          <div className="flex shrink-0 items-center gap-2 font-mono text-xs text-[var(--color-text-secondary)]">
-            <TerminalSquare size={14} className="text-[var(--color-text-muted)]" />
-            {SYSTEM_MANAGER_DISPLAY_NAME}
-          </div>
-          <div className="ml-auto shrink-0 text-[11px] text-[var(--color-text-muted)]">
-            {status?.localStatus ?? 'ready'}
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 shrink-0 border-[var(--color-border)]"
-            onClick={() => setBindingDialogOpen(true)}
+        }
+      />
+
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+          <section
+            aria-label="Helm Loop 运行边界"
+            className="grid gap-px overflow-hidden rounded-md border border-[var(--surface-border)] bg-[var(--surface-border)] text-xs sm:grid-cols-3"
           >
-            <Settings2 size={13} />
-            运行时
-          </Button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--color-surface)] p-4">
-          <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-            <div className="rounded-xl border border-indigo-500/20 bg-[var(--color-surface-raised)] p-4 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-mono text-sm text-[var(--color-text)]">helm 指令台</div>
-                  <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--color-text-secondary)]">
-                    全局巡检、诊断、复盘、治理和改进提案。团队消息、runtime 注入和本地会话在 Team
-                    Loop 指令台。
-                  </p>
-                </div>
-              </div>
-              <div className="mt-3 grid gap-2 text-[11px] text-[var(--color-text-muted)] sm:grid-cols-3">
-                <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] px-3 py-2">
-                  作用域：{formatPathForTitle(status?.adminWorkDir ?? '—')}
-                </div>
-                <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] px-3 py-2">
-                  命令源：当前工作空间 `.claude/commands`
-                </div>
-                <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] px-3 py-2">
-                  默认边界：只读/报告/提案优先
-                </div>
-              </div>
+            <div className="min-w-0 bg-[var(--color-surface)] px-3 py-2.5">
+              <p className="text-[11px] text-[var(--color-text-muted)]">作用域</p>
+              <p
+                className="mt-1 truncate text-[var(--color-text-secondary)]"
+                title={status?.adminWorkDir}
+              >
+                {formatPathForTitle(status?.adminWorkDir ?? '—')}
+              </p>
             </div>
+            <div className="min-w-0 bg-[var(--color-surface)] px-3 py-2.5">
+              <p className="text-[11px] text-[var(--color-text-muted)]">命令源</p>
+              <p className="mt-1 truncate text-[var(--color-text-secondary)]">
+                当前工作区 .claude/commands
+              </p>
+            </div>
+            <div className="min-w-0 bg-[var(--color-surface)] px-3 py-2.5">
+              <p className="text-[11px] text-[var(--color-text-muted)]">默认边界</p>
+              <p className="mt-1 truncate text-[var(--color-text-secondary)]">
+                只读、报告和提案优先
+              </p>
+            </div>
+          </section>
 
-            {(error || loading) && (
-              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2 text-xs">
-                {error ? <div className="text-red-300">{error}</div> : null}
-                {loading ? (
-                  <div className="text-[var(--color-text-muted)]">加载 Helm Loop 配置中...</div>
-                ) : null}
-              </div>
-            )}
+          {(error || loading) && (
+            <div
+              role={error ? 'alert' : 'status'}
+              className="rounded-md border border-[var(--surface-border)] bg-[var(--color-surface)] px-3 py-2 text-xs"
+            >
+              {error ? <div className="text-red-300">{error}</div> : null}
+              {loading ? (
+                <div className="text-[var(--color-text-muted)]">正在加载 Helm Loop 配置...</div>
+              ) : null}
+            </div>
+          )}
 
-            <LoopConsolePanel
-              teamName={SYSTEM_MANAGER_TEAM_NAME}
-              members={adminMembers}
-              tasks={adminTasks}
-              isTeamAlive={status?.localStatus === 'ready'}
-              statusLabel={status?.localStatus === 'ready' ? '本地可用' : '本地异常'}
-              sessionPendingRecipient={SYSTEM_MANAGER_TEAM_NAME}
-              isProvisioning={loading}
-              currentLeadSessionId={adminTeamData?.config.leadSessionId}
-              leadProjectPath={adminTeamData?.config.projectPath}
-              sessions={adminSessions}
-              commandSuggestions={adminWorkflowCommandSuggestions}
-              slashCommandMode="session"
-              pendingRepliesByMember={pendingRepliesByMember}
-              onPendingReplyChange={setPendingRepliesByMember}
-            />
-          </div>
+          <LoopConsolePanel
+            teamName={SYSTEM_MANAGER_TEAM_NAME}
+            members={adminMembers}
+            tasks={adminTasks}
+            isTeamAlive={status?.localStatus === 'ready'}
+            statusLabel={localStatusLabel}
+            sessionPendingRecipient={SYSTEM_MANAGER_TEAM_NAME}
+            isProvisioning={loading}
+            currentLeadSessionId={adminTeamData?.config.leadSessionId}
+            leadProjectPath={adminTeamData?.config.projectPath}
+            sessions={adminSessions}
+            commandSuggestions={adminWorkflowCommandSuggestions}
+            slashCommandMode="session"
+            pendingRepliesByMember={pendingRepliesByMember}
+            onPendingReplyChange={setPendingRepliesByMember}
+          />
         </div>
       </div>
       <RuntimeConfigDialog
