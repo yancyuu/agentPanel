@@ -122,6 +122,7 @@ import { registerAppConfigRoutes } from './routes/appConfigRoutes';
 import { registerBridgeProxyRoutes } from './routes/bridgeProxyRoutes';
 import { registerGraphRoutes } from './routes/graphRoutes';
 import { registerHarnessRoutes } from './routes/harnessRoutes';
+import { registerHermitConfigRoutes } from './routes/hermitConfigRoutes';
 import { registerEditorRoutes } from './routes/editorRoutes';
 import { registerHeartbeatRoutes } from './routes/heartbeatRoutes';
 import { registerWorkbenchNotFoundHandler } from './routes/notFoundHandler';
@@ -1461,72 +1462,13 @@ registerBridgeProxyRoutes(app, {
 // Hermit config (read/write ~/.hermit/config.json)
 // ===========================================================================
 
-app.get('/api/hermit-config', async () => ({
-  ok: true,
-  data: {
-    ccBaseUrl: runtimeConfig.ccBaseUrl,
-    // mask token: show only first 4 chars if present
-    ccToken: runtimeConfig.ccToken ? runtimeConfig.ccToken.slice(0, 4) + '****' : '',
-    ccTokenSet: runtimeConfig.ccToken.length > 0,
-    ccBridgeUrl: runtimeConfig.ccBridgeUrl,
-  },
-}));
-
-app.post<{
-  Body: { ccBaseUrl?: string; ccToken?: string; ccBridgeUrl?: string };
-}>('/api/hermit-config', async (request, reply) => {
-  const { ccBaseUrl, ccToken, ccBridgeUrl } = request.body ?? {};
-  const patch: Partial<HermitConfig> = {};
-  if (ccBaseUrl !== undefined) patch.ccBaseUrl = ccBaseUrl.trim() || 'http://127.0.0.1:9820';
-  if (ccToken !== undefined) patch.ccToken = ccToken.trim();
-  if (ccBridgeUrl !== undefined)
-    patch.ccBridgeUrl = ccBridgeUrl.trim() || 'ws://127.0.0.1:9810/bridge/ws';
-
-  runtimeConfig = saveConfig(patch);
-  // Hot-update the cc client so subsequent requests use new config immediately
-  cc.updateConfig({ baseUrl: runtimeConfig.ccBaseUrl, token: runtimeConfig.ccToken });
-  bridge.updateConfig({
-    bridgeUrl: runtimeConfig.ccBridgeUrl,
-    bridgeToken: runtimeConfig.ccBridgeToken || runtimeConfig.ccToken,
-  });
-
-  return {
-    ok: true,
-    data: { ccBaseUrl: runtimeConfig.ccBaseUrl, ccTokenSet: runtimeConfig.ccToken.length > 0 },
-  };
-});
-
-app.get('/api/hermit-config/raw', async () => {
-  try {
-    const data = readHermitConfigRaw();
-    return { ok: true, data };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-});
-
-app.post<{ Body: { content?: unknown } }>('/api/hermit-config/raw', async (request) => {
-  try {
-    const content = request.body?.content;
-    if (typeof content !== 'string') {
-      return { ok: false, error: 'content 必须是字符串' };
-    }
-    runtimeConfig = writeHermitConfigRaw(content);
-    cc.updateConfig({ baseUrl: runtimeConfig.ccBaseUrl, token: runtimeConfig.ccToken });
-    bridge.updateConfig({
-      bridgeUrl: runtimeConfig.ccBridgeUrl,
-      bridgeToken: runtimeConfig.ccBridgeToken || runtimeConfig.ccToken,
-    });
-    return {
-      ok: true,
-      data: {
-        ccBaseUrl: runtimeConfig.ccBaseUrl,
-        ccTokenSet: runtimeConfig.ccToken.length > 0,
-      },
-    };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
+registerHermitConfigRoutes(app, {
+  getConfig: () => runtimeConfig,
+  saveConfig: (patch) => (runtimeConfig = saveConfig(patch)),
+  readRaw: readHermitConfigRaw,
+  writeRaw: (content) => (runtimeConfig = writeHermitConfigRaw(content)),
+  updateBridgeClient: (config) => serverContext.services.bridgeClient.updateConfig(config),
+  updateBridgeConnection: (config) => serverContext.services.bridgeConnection.updateConfig(config),
 });
 
 // ===========================================================================
