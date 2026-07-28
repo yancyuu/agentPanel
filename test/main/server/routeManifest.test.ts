@@ -130,10 +130,14 @@ describe('server route manifest baseline', () => {
     expect(appConstruction).toBeLessThan(eventHandlerRegistration);
   });
 
-  it('pins bridge startup and on-demand retry behavior until ownership is explicit', () => {
+  it('keeps bridge startup behind event wiring with one on-demand retry call', () => {
+    const eventHandlerRegistration = SERVER_SOURCE.indexOf('registerServerEventHandlers({');
+    const standaloneStartup = SERVER_SOURCE.indexOf('startStandaloneServerRuntime({');
     const serverStarts = SERVER_SOURCE.match(/^\s*bridge\.start\(\);$/gm) ?? [];
     const standaloneStarts = STARTUP_SOURCE.match(/^\s*bridge\.start\(\);$/gm) ?? [];
-    expect(serverStarts).toHaveLength(2);
+
+    expect(eventHandlerRegistration).toBeLessThan(standaloneStartup);
+    expect(serverStarts).toHaveLength(1);
     expect(standaloneStarts).toHaveLength(1);
   });
 

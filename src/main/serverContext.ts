@@ -101,6 +101,7 @@ export interface ServerServices {
   imLiveWatcher: ImLiveWatcher;
   ccSettings: HermitCcSettingsService;
   update: UpdateService;
+  extensions: typeof import('./ipc/extensions').extensionHandlers;
 }
 
 export interface ServerLifecycleState {

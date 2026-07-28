@@ -96,13 +96,12 @@ Usage telemetry 另有模块级 singleton 状态：collector、scan interval、l
 
 ## 当前显式启动顺序
 
-源码中存在三个 `bridge.start()` 调用点，其中两个属于正常 standalone boot：
+源码现有两个 `bridge.start()` 调用点，且正常 standalone boot 只有一个 owner：
 
-1. SSE helper 后、direct-cli manager 构造前的 eager startup；
-2. `waitForHarnessBridgeConnected()` 在按需发送 harness 消息前的重试；
-3. 底部 standalone startup 编排中的第二次 boot 调用。
+1. `waitForHarnessBridgeConnected()` 在按需发送 harness 消息前的重试；
+2. `serverStartup.ts` 在 event handlers 注册完成后的 standalone startup。
 
-Fastify `app` 构造现已移动到所有 background bridge work 和 listener wiring 之前，避免旧 callback 在启动竞态中访问尚未初始化的 `app.log`。底部顺序已行为保持地抽到 `src/main/serverStartup.ts`：
+原先 SSE helper 后、listener wiring 前的 eager startup 已在独立 lifecycle 提交中移除。Fastify `app` 仍在所有 background bridge work 和 listener wiring 之前构造，避免旧 callback 在启动竞态中访问尚未初始化的 `app.log`。底部顺序已行为保持地抽到 `src/main/serverStartup.ts`：
 
 1. fire-and-forget `bridgeLauncher.ensureBinaryReady()`；
 2. fire-and-forget `bridgeLauncher.ensureRunning()`；
@@ -112,7 +111,7 @@ Fastify `app` 构造现已移动到所有 background bridge work 和 listener wi
 6. 初始化 global workflows；
 7. `app.listen()`。
 
-`HermitBridgeConnection.connect()` 会在已有 `ws` 时返回，因此正常 boot 的第二次调用通常不会建立第二条 live socket；但若第一次同步创建 WebSocket 失败，第二次调用可能在 reconnect timer 之前重试。Phase 0 暂时保留全部三个调用点，并用 composition/startup tests 锁定当前行为；创建 `ServerContext` 前必须明确最终单一 ownership 和 listener 安装顺序。
+Composition/startup tests 锁定了“先注册 listeners，再由 standalone startup 启动 bridge”的顺序；按需发送路径仍可调用幂等 `start()` 作为连接重试。
 
 另外，`ensureRunning()` 内部也会进行 binary readiness，当前两个 fire-and-forget 调用存在重复工作和错误传播不清晰的问题。Phase 0 先通过测试锁定现状，再决定是否在独立修复中调整。
 

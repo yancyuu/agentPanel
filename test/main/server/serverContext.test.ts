@@ -21,6 +21,7 @@ function createServices(): ServerServices {
     imLiveWatcher: { start: vi.fn(), stop: vi.fn() },
     ccSettings: { read: vi.fn() },
     update: { checkForUpdates: vi.fn() },
+    extensions: { pluginGetAll: vi.fn() },
   } as unknown as ServerServices;
 }
 

@@ -59,6 +59,12 @@ import { discoverableTeamToWorker, type DiscoverableWorker } from '@shared/types
 import { Cron } from 'croner';
 import Fastify from 'fastify';
 
+import {
+  extensionHandlers as ext,
+  getCapabilityPacks,
+  setCapabilityPackLocalSource,
+  setSkillsWatcherEmitter,
+} from './ipc/extensions';
 import { buildDirectReplyMessageId, DirectCliSessionManager } from './services/direct-cli';
 import { buildTeamCapabilityTelemetrySnapshots } from './services/extensions/capability-packs/CapabilityPackLoaderService';
 import { httpsGetFollowRedirects } from './services/extensions/catalog/PluginCatalogService';
@@ -1160,9 +1166,6 @@ function broadcastSse(eventName: string, data: unknown): void {
   }
 }
 
-// 启动 bridge 并把事件广播到 SSE 客户端
-bridge.start();
-
 // ---------------------------------------------------------------------------
 // Direct-CLI execution layer.
 // In-app Loop consoles (admin + team lead) and team-member DMs spawn the local
@@ -1199,6 +1202,7 @@ const serverContext = createServerContext({
     imLiveWatcher,
     ccSettings: hermitCcSettings,
     update: updateService,
+    extensions: ext,
   },
   state: serverRuntimeState,
 });
@@ -7140,13 +7144,6 @@ app.get('/api/events', (request, reply) => {
 const SSE_FALLBACK_RE = /^\/api\/(.*\/(events|stream|notifications\/stream))$/;
 
 // ── Extension Store routes (wired to extensionHandlers) ────────────────
-
-import {
-  extensionHandlers as ext,
-  getCapabilityPacks,
-  setCapabilityPackLocalSource,
-  setSkillsWatcherEmitter,
-} from './ipc/extensions';
 
 setCapabilityPackLocalSource({
   projectPath: REPO_ROOT,

@@ -32,7 +32,7 @@
 - [x] 新建 `ServerContext` 类型
 - [x] 新建 `createServerContext()`
 - [x] 收拢 `cc`、`bridge`、`bridgeLauncher` 和 `svc`
-- [ ] 收拢 extensions/system-manager/workflow services
+- [x] 收拢 extensions/system-manager/workflow services
 - [x] 收拢 direct-cli、IM watcher 和 cc settings services
 - [x] 收拢 update service、SSE clients 和 runtime maps
 - [x] 为 context 增加明确的 shutdown/dispose contract
