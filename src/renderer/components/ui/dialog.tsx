@@ -33,7 +33,7 @@ const DialogContent = React.forwardRef<
     <DialogOverlay />
     <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="pointer-events-auto relative">
-        <DialogPrimitive.Close className="absolute right-3 top-3 z-10 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:pointer-events-none">
+        <DialogPrimitive.Close className="hover:bg-surface-hover absolute right-3 top-3 z-10 rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:pointer-events-none">
           <X className="size-4 text-[var(--color-text-muted)]" />
           <span className="sr-only">关闭</span>
         </DialogPrimitive.Close>
