@@ -38,9 +38,16 @@ describe('server context', () => {
       teamName: 'team-a',
       expiresAt: 123,
     });
+    first.scheduleRunsById.set('schedule-1', []);
+    first.teamStatsCache.set('/code/agentcli', {
+      expiresAt: 123,
+      value: null,
+    });
 
     expect(second.directCliRoutes.size).toBe(0);
     expect(second.bridgeSessionTeamCache.size).toBe(0);
+    expect(second.scheduleRunsById.size).toBe(0);
+    expect(second.teamStatsCache.size).toBe(0);
     expect(first.sseClients).not.toBe(second.sseClients);
     expect(first.permissionSessionByRequestId).not.toBe(second.permissionSessionByRequestId);
   });

@@ -26,6 +26,8 @@ describe('server process lifecycle', () => {
       startPromise: null,
       disposePromise: null,
     };
+    const sseResponse = { end: vi.fn(() => calls.push('sse.end')) };
+    const sseClients = new Set([{ id: 'sse-1', res: sseResponse }]);
     const shutdownWorkbenchServer = createWorkbenchShutdown({
       app: {
         close: vi.fn(async () => {
@@ -34,6 +36,10 @@ describe('server process lifecycle', () => {
         log: { error: vi.fn() },
       },
       lifecycle,
+      sseClients,
+      stopTelemetry: vi.fn(async () => {
+        calls.push('telemetry.stop');
+      }),
       imLiveWatcher: { stop: vi.fn(() => calls.push('watcher.stop')) },
       directCliManager: { shutdown: vi.fn(() => calls.push('direct.shutdown')) },
       bridgeLauncher: { stop: vi.fn(() => calls.push('launcher.stop')) },
@@ -49,16 +55,19 @@ describe('server process lifecycle', () => {
     expect(calls).toEqual([
       'listeners.dispose',
       'watcher.stop',
+      'telemetry.stop',
+      'sse.end',
       'direct.shutdown',
       'launcher.stop',
       'bridge.dispose',
       'app.close',
     ]);
     expect(lifecycle.disposePromise).toBe(firstShutdown);
+    expect(sseClients.size).toBe(0);
 
     const shutdown = createServerShutdown({ shutdownWorkbenchServer, processTarget });
     await shutdown();
-    expect(calls).toHaveLength(6);
+    expect(calls).toHaveLength(8);
     expect(processTarget.exit).toHaveBeenCalledWith(0);
   });
 

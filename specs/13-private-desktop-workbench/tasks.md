@@ -34,14 +34,14 @@
 - [x] 收拢 `cc`、`bridge`、`bridgeLauncher` 和 `svc`
 - [ ] 收拢 extensions/system-manager/workflow services
 - [x] 收拢 direct-cli、IM watcher 和 cc settings services
-- [ ] 收拢 update service、SSE clients 和 runtime maps
+- [x] 收拢 update service、SSE clients 和 runtime maps
 - [x] 为 context 增加明确的 shutdown/dispose contract
 - [ ] 测试同一进程不会重复创建 stateful instances
 
 ### Task 0.4: Extract Small Route Domains
 
 - [x] 抽取 version/update routes
-- [ ] 抽取 status routes
+- [x] 抽取 status routes
 - [ ] 抽取 configuration/system-manager routes
 - [ ] 抽取 notifications/events routes
 - [ ] 每抽一个模块运行类型检查和聚焦测试

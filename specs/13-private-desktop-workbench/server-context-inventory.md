@@ -12,7 +12,7 @@
 - `serverProcessLifecycle.ts`：process signals 和有界 shutdown；
 - Fastify `app` 在任何 background bridge work 与 listener wiring 之前构造。
 
-尚未完成：extensions singleton adapter、其余 caches/schedule state、幂等 context dispose、route factory 和 import-time side-effect 移除。
+尚未完成：extensions singleton adapter、route factory 和 import-time side-effect 移除。Context dispose 已具备幂等 promise，但仍需补齐 telemetry、SSE response 和 process-handler cleanup。
 
 ## 顶层有状态实例
 

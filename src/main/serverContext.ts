@@ -10,6 +10,7 @@ import type { LoopAssetsScannerService } from './services/loop-assets/LoopAssets
 import type { ConversationTelemetryService } from './services/session-intelligence/ConversationTelemetryService';
 import type { ImLiveWatcher } from './services/session-intelligence/ImLiveWatcher';
 import type { LocalSessionScanner } from './services/session-intelligence/LocalSessionScanner';
+import type { ProjectUsageStats } from './services/session-intelligence/SessionUsageParser';
 import type { HermitCcSettingsService } from './services/settings/HermitCcSettingsService';
 import type { SystemManagerConfigService } from './services/system-manager/SystemManagerConfigService';
 import type { WorkflowPromptService } from './services/system-manager/WorkflowPromptService';
@@ -39,12 +40,51 @@ export interface BridgeSessionTeamCacheEntry {
   expiresAt: number;
 }
 
+export interface TeamStatsCacheEntry {
+  expiresAt: number;
+  value: ProjectUsageStats | null;
+  promise?: Promise<ProjectUsageStats | null>;
+}
+
+export interface InMemoryScheduleRun {
+  id: string;
+  scheduleId: string;
+  teamName: string;
+  status:
+    | 'pending'
+    | 'warming_up'
+    | 'warm'
+    | 'running'
+    | 'completed'
+    | 'failed'
+    | 'failed_interrupted'
+    | 'cancelled';
+  scheduledFor: string;
+  startedAt: string;
+  warmUpCompletedAt?: string;
+  executionStartedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  exitCode?: number | null;
+  error?: string;
+  retryCount: number;
+  summary?: string;
+}
+
+export interface ScheduleRunLog {
+  stdout: string;
+  stderr: string;
+}
+
 export interface ServerRuntimeState {
   sseClients: Set<SseClient>;
   directCliRoutes: Map<string, DirectCliRoute>;
   toolApprovalSettingsByName: Map<string, ToolApprovalSettings>;
   permissionSessionByRequestId: Map<string, PendingPermissionApproval>;
   bridgeSessionTeamCache: Map<string, BridgeSessionTeamCacheEntry>;
+  teamStatsCache: Map<string, TeamStatsCacheEntry>;
+  scheduleRunsById: Map<string, InMemoryScheduleRun[]>;
+  scheduleRunLogsByKey: Map<string, ScheduleRunLog>;
 }
 
 export interface ServerServices {
@@ -82,6 +122,9 @@ export function createServerRuntimeState(): ServerRuntimeState {
     toolApprovalSettingsByName: new Map(),
     permissionSessionByRequestId: new Map(),
     bridgeSessionTeamCache: new Map(),
+    teamStatsCache: new Map(),
+    scheduleRunsById: new Map(),
+    scheduleRunLogsByKey: new Map(),
   };
 }
 

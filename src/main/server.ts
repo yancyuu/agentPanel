@@ -29,7 +29,6 @@
 process.noDeprecation = true;
 
 import {
-  copyFileSync,
   cpSync,
   existsSync as _existsSync2,
   mkdirSync,
@@ -111,8 +110,14 @@ import {
 import { WorkflowPromptService } from './services/system-manager/WorkflowPromptService';
 import { ClaudeBinaryResolver } from './services/team/ClaudeBinaryResolver';
 import { TeamProvisioningService } from './services/team-management';
-import { createServerContext, createServerRuntimeState, type SseClient } from './serverContext';
+import {
+  createServerContext,
+  createServerRuntimeState,
+  type InMemoryScheduleRun,
+  type SseClient,
+} from './serverContext';
 import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
+import { registerWorkbenchStatusRoutes } from './routes/workbenchStatusRoutes';
 import { registerServerEventHandlers } from './serverEventHandlers';
 import {
   createServerShutdown,
@@ -144,10 +149,7 @@ import type {
   UsageUnresolvedSummary,
   UserUsageTelemetryRow,
 } from './services/session-intelligence/usageTypes';
-import type {
-  Task as TeamWorkspaceTask,
-  TeamManifest,
-} from './services/team-management/TeamWorkspaceService';
+import type { TeamManifest } from './services/team-management/TeamWorkspaceService';
 import type { CcSession, CcSessionDetail } from '@shared/types/api';
 import type {
   CapabilityCommandPromptRequest,
@@ -170,7 +172,6 @@ import type {
   SystemManagerSummary,
   TeamLaunchRequest,
   TelemetryConfig,
-  ToolApprovalAutoResolved,
   ToolApprovalSettings,
 } from '@shared/types/team';
 
@@ -496,6 +497,9 @@ const {
   toolApprovalSettingsByName,
   permissionSessionByRequestId,
   bridgeSessionTeamCache,
+  teamStatsCache,
+  scheduleRunsById,
+  scheduleRunLogsByKey,
 } = serverRuntimeState;
 
 // Mutable runtime config — updated via /api/hermit-config POST
@@ -661,14 +665,6 @@ configureUsageTelemetry();
 const localSessionScanner = new LocalSessionScanner();
 const loopAssetsScanner = new LoopAssetsScannerService();
 const TEAM_STATS_CACHE_TTL_MS = 30_000;
-const teamStatsCache = new Map<
-  string,
-  {
-    expiresAt: number;
-    value: ProjectUsageStats | null;
-    promise?: Promise<ProjectUsageStats | null>;
-  }
->();
 
 function getProjectStatsSnapshot(workDir: string): ProjectUsageStats | null {
   const normalizedWorkDir = workDir.trim();
@@ -3689,22 +3685,9 @@ registerVersionUpdateRoutes(app, {
   updateService: serverContext.services.update,
 });
 
-app.get('/api/dashboard/recent-projects', async () => dashboardRecentProjectsLoader());
-
-app.get('/api/projects', async () => []);
-app.get('/api/repository-groups', async () => []);
-
-app.get('/api/notifications/unread-count', async () => ({ count: 0 }));
-app.get('/api/notifications', async () => []);
-
-// CLI installer / runtime / context 相关查询(主仓启动时会调,mvp 没这些概念)
-app.get('/api/cli/status', async () => ({
-  installed: true,
-  version: 'cc-connect',
-  path: null,
-}));
-app.get('/api/contexts', async () => []);
-app.get('/api/contexts/active', async () => null);
+registerWorkbenchStatusRoutes(app, {
+  loadRecentProjects: dashboardRecentProjectsLoader,
+});
 
 const DEFAULT_APP_CONFIG = {
   notifications: {
@@ -3847,34 +3830,6 @@ const DEFAULT_SCHEDULE_TIMEZONE =
 const DEFAULT_SCHEDULE_WARMUP_MINUTES = 15;
 const DEFAULT_SCHEDULE_MAX_TURNS = 50;
 const DEFAULT_SCHEDULE_MAX_CONSECUTIVE_FAILURES = 3;
-
-interface InMemoryScheduleRun {
-  id: string;
-  scheduleId: string;
-  teamName: string;
-  status:
-    | 'pending'
-    | 'warming_up'
-    | 'warm'
-    | 'running'
-    | 'completed'
-    | 'failed'
-    | 'failed_interrupted'
-    | 'cancelled';
-  scheduledFor: string;
-  startedAt: string;
-  warmUpCompletedAt?: string;
-  executionStartedAt?: string;
-  completedAt?: string;
-  durationMs?: number;
-  exitCode?: number | null;
-  error?: string;
-  retryCount: number;
-  summary?: string;
-}
-
-const scheduleRunsById = new Map<string, InMemoryScheduleRun[]>();
-const scheduleRunLogsByKey = new Map<string, { stdout: string; stderr: string }>();
 
 function makeScheduleRunLogKey(scheduleId: string, runId: string): string {
   return `${scheduleId}:${runId}`;
@@ -7554,6 +7509,8 @@ await startStandaloneServerRuntime({
 const shutdownWorkbenchServer = createWorkbenchShutdown({
   app,
   lifecycle: serverContext.lifecycle,
+  sseClients: serverContext.state.sseClients,
+  stopTelemetry,
   imLiveWatcher: serverContext.services.imLiveWatcher,
   directCliManager: serverContext.services.directCli,
   bridgeLauncher: serverContext.services.bridgeLauncher,
@@ -7567,9 +7524,10 @@ const shutdown = createServerShutdown({
 // Last-resort safety net: log unhandled rejections instead of letting them
 // kill the process, and reap direct-CLI subprocesses on any exit path that
 // skips the asynchronous shutdown path.
-installServerProcessHandlers({
+const removeProcessHandlers = installServerProcessHandlers({
   app,
   directCliManager: serverContext.services.directCli,
   processTarget: process,
   shutdown,
 });
+serverContext.lifecycle.listenerDisposers.push(removeProcessHandlers);

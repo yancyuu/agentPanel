@@ -12,9 +12,16 @@ interface ClosableServerApp {
   log: Pick<FastifyBaseLogger, 'error'>;
 }
 
+interface SseClientCollection {
+  [Symbol.iterator](): IterableIterator<{ res: { end(): unknown } }>;
+  clear(): void;
+}
+
 interface WorkbenchShutdownDependencies {
   app: ClosableServerApp;
   lifecycle: ServerLifecycleState;
+  sseClients?: SseClientCollection;
+  stopTelemetry?: () => Promise<void> | void;
   imLiveWatcher: { stop(): void };
   directCliManager: { shutdown(): void };
   bridgeLauncher: { stop(): void };
@@ -43,6 +50,8 @@ function closeTimeout(timeoutMs: number): Promise<void> {
 export function createWorkbenchShutdown({
   app,
   lifecycle,
+  sseClients = new Set(),
+  stopTelemetry = () => undefined,
   imLiveWatcher,
   directCliManager,
   bridgeLauncher,
@@ -54,6 +63,15 @@ export function createWorkbenchShutdown({
       lifecycle.disposePromise = (async () => {
         for (const dispose of lifecycle.listenerDisposers.splice(0)) dispose();
         imLiveWatcher.stop();
+        await stopTelemetry();
+        for (const client of sseClients) {
+          try {
+            client.res.end();
+          } catch {
+            // Best-effort shutdown for already-closed renderer connections.
+          }
+        }
+        sseClients.clear();
         directCliManager.shutdown();
         bridgeLauncher.stop();
         bridge.dispose?.();
