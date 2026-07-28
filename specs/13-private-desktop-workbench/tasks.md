@@ -52,7 +52,7 @@
 - [ ] 抽取 setup/workers routes
 - [x] 抽取 editor routes
 - [ ] 抽取 schedules routes
-- [ ] 抽取 projects/dashboard/graph/context routes
+- [x] 抽取 projects/dashboard/graph/context routes
 - [ ] 抽取 extensions routes
 - [ ] 每抽一个模块运行类型检查和聚焦测试
 
