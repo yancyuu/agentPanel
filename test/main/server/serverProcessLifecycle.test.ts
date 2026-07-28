@@ -27,6 +27,7 @@ describe('server process lifecycle', () => {
         }),
         log: { error: vi.fn() },
       },
+      listenerDisposers: [vi.fn(() => calls.push('listeners.dispose'))],
       imLiveWatcher: { stop: vi.fn(() => calls.push('watcher.stop')) },
       directCliManager: { shutdown: vi.fn(() => calls.push('direct.shutdown')) },
       bridgeLauncher: { stop: vi.fn(() => calls.push('launcher.stop')) },
@@ -38,6 +39,7 @@ describe('server process lifecycle', () => {
     await shutdown();
 
     expect(calls).toEqual([
+      'listeners.dispose',
       'watcher.stop',
       'direct.shutdown',
       'launcher.stop',

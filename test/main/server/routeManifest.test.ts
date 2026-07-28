@@ -107,13 +107,11 @@ describe('server route manifest baseline', () => {
   it('constructs Fastify before import-time bridge and listener wiring', () => {
     const appConstruction = SERVER_SOURCE.indexOf('const app = Fastify(');
     const eagerBridgeStart = SERVER_SOURCE.indexOf('bridge.start();');
-    const directCliListener = SERVER_SOURCE.indexOf("directCliManager.on('event'");
-    const bridgeReplyListener = SERVER_SOURCE.indexOf("bridge.on('reply'");
+    const eventHandlerRegistration = SERVER_SOURCE.indexOf('registerServerEventHandlers({');
 
     expect(appConstruction).toBeGreaterThanOrEqual(0);
     expect(appConstruction).toBeLessThan(eagerBridgeStart);
-    expect(appConstruction).toBeLessThan(directCliListener);
-    expect(appConstruction).toBeLessThan(bridgeReplyListener);
+    expect(appConstruction).toBeLessThan(eventHandlerRegistration);
   });
 
   it('pins bridge startup and on-demand retry behavior until ownership is explicit', () => {

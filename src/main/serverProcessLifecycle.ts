@@ -12,6 +12,7 @@ interface ClosableServerApp {
 
 interface ServerShutdownDependencies {
   app: ClosableServerApp;
+  listenerDisposers?: Array<() => void>;
   imLiveWatcher: { stop(): void };
   directCliManager: { shutdown(): void };
   bridgeLauncher: { stop(): void };
@@ -35,6 +36,7 @@ function closeTimeout(timeoutMs: number): Promise<void> {
 
 export function createServerShutdown({
   app,
+  listenerDisposers = [],
   imLiveWatcher,
   directCliManager,
   bridgeLauncher,
@@ -44,6 +46,7 @@ export function createServerShutdown({
 }: ServerShutdownDependencies): () => Promise<void> {
   return async () => {
     try {
+      for (const dispose of listenerDisposers.splice(0)) dispose();
       imLiveWatcher.stop();
       directCliManager.shutdown();
       bridgeLauncher.stop();

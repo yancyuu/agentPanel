@@ -49,7 +49,6 @@ import cors from '@fastify/cors';
 import staticPlugin from '@fastify/static';
 import { createDashboardRecentProjectsLoader } from '@features/recent-projects/main/composition/dashboardRecentProjects';
 import { atomicWriteAsync } from '@main/utils/atomicWrite';
-import { shouldAutoAllow } from '@main/utils/toolApprovalRules';
 import { CROSS_TEAM_SENT_SOURCE } from '@shared/constants/crossTeam';
 import {
   SYSTEM_MANAGER_BIND_PROJECT,
@@ -61,11 +60,7 @@ import { discoverableTeamToWorker, type DiscoverableWorker } from '@shared/types
 import { Cron } from 'croner';
 import Fastify from 'fastify';
 
-import {
-  buildDirectReplyMessageId,
-  type DirectCliEvent,
-  DirectCliSessionManager,
-} from './services/direct-cli';
+import { buildDirectReplyMessageId, DirectCliSessionManager } from './services/direct-cli';
 import { buildTeamCapabilityTelemetrySnapshots } from './services/extensions/capability-packs/CapabilityPackLoaderService';
 import { httpsGetFollowRedirects } from './services/extensions/catalog/PluginCatalogService';
 import { HermitBridgeClient } from './services/hermitBridge/HermitBridgeClient';
@@ -116,6 +111,8 @@ import {
 import { WorkflowPromptService } from './services/system-manager/WorkflowPromptService';
 import { ClaudeBinaryResolver } from './services/team/ClaudeBinaryResolver';
 import { TeamProvisioningService } from './services/team-management';
+import { createServerContext, createServerRuntimeState, type SseClient } from './serverContext';
+import { registerServerEventHandlers } from './serverEventHandlers';
 import { createServerShutdown, installServerProcessHandlers } from './serverProcessLifecycle';
 import { startStandaloneServerRuntime } from './serverStartup';
 import { HERMIT_OPS_GUIDE_URL } from './services/team-management/OpsRunbookContext';
@@ -169,7 +166,6 @@ import type {
   TeamLaunchRequest,
   TelemetryConfig,
   ToolApprovalAutoResolved,
-  ToolApprovalRequest,
   ToolApprovalSettings,
 } from '@shared/types/team';
 
@@ -487,6 +483,15 @@ const app = Fastify({
   logger: { level: process.env.HERMIT_LOG_LEVEL ?? 'warn' },
   disableRequestLogging: true,
 });
+
+const serverRuntimeState = createServerRuntimeState();
+const {
+  sseClients,
+  directCliRoutes,
+  toolApprovalSettingsByName,
+  permissionSessionByRequestId,
+  bridgeSessionTeamCache,
+} = serverRuntimeState;
 
 // Mutable runtime config — updated via /api/hermit-config POST
 let runtimeConfig = loadConfig();
@@ -1143,12 +1148,6 @@ function isCcProjectNotFoundError(err: unknown): boolean {
 // SSE 客户端管理器 — 广播 bridge 事件到所有连接的前端客户端
 // ===========================================================================
 
-interface SseClient {
-  res: import('node:http').ServerResponse;
-  id: string;
-}
-const sseClients = new Set<SseClient>();
-
 function broadcastSse(eventName: string, data: unknown): void {
   const payload = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const client of sseClients) {
@@ -1182,6 +1181,26 @@ const imLiveWatcher = new ImLiveWatcher({
   emit: (workers) => broadcastSse('im-live-workers', workers),
 });
 const hermitCcSettings = new HermitCcSettingsService(HERMIT_SETTINGS_FILE);
+const updateService = new UpdateService();
+
+const serverContext = createServerContext({
+  services: {
+    bridgeClient: cc,
+    bridgeConnection: bridge,
+    bridgeLauncher,
+    teamProvisioning: svc,
+    systemManagerConfig,
+    workflowPrompt: workflowPromptService,
+    conversationTelemetry,
+    localSessionScanner,
+    loopAssetsScanner,
+    directCli: directCliManager,
+    imLiveWatcher,
+    ccSettings: hermitCcSettings,
+    update: updateService,
+  },
+  state: serverRuntimeState,
+});
 
 async function readEffectiveCcSettings(): Promise<Record<string, unknown>> {
   const localSettings = await hermitCcSettings.read();
@@ -1193,32 +1212,8 @@ async function readEffectiveCcSettings(): Promise<Record<string, unknown>> {
   }
 }
 
-/** Routes a sessionKey → the team inbox + reply sender/recipient it belongs to. */
-interface DirectCliRoute {
-  teamName: string;
-  /** `from` value persisted on the assistant reply (team name for lead, member name for DM). */
-  from: string;
-  to: string;
-}
-
-const directCliRoutes = new Map<string, DirectCliRoute>();
-
-// Per-team tool-approval settings (auto-allow categories). Synced from the renderer on
-// startup via /api/teams/:name/tool-approval/settings. Defaults deny everything so the user
-// is prompted — matching Claude Code's native cmd permission flow.
-const toolApprovalSettingsByName = new Map<string, ToolApprovalSettings>();
-
-/**
- * Maps a permission requestId → the DirectCli session it came from (lead or member DM), plus
- * the toolName/toolInput needed to build the AskUserQuestion `updatedInput` at respond time.
- */
-interface PendingPermissionApproval {
-  sessionKey: string;
-  toolName?: string;
-  toolInput?: Record<string, unknown>;
-}
-const permissionSessionByRequestId = new Map<string, PendingPermissionApproval>();
-
+// Per-team tool-approval settings are held in ServerRuntimeState. Defaults deny
+// everything so the user is prompted, matching Claude Code's native flow.
 function readToolApprovalSettings(teamName: string): ToolApprovalSettings {
   return toolApprovalSettingsByName.get(teamName) ?? DEFAULT_TOOL_APPROVAL_SETTINGS;
 }
@@ -1229,164 +1224,21 @@ function readToolApprovalSettings(teamName: string): ToolApprovalSettings {
 // e.g. `git rm`) stays byte-identical. Only `can_use_tool` is a real gate; other control
 // subtypes must be auto-allowed or the stream deadlocks on stdin.
 
-directCliManager.on('event', (event: DirectCliEvent) => {
-  const route = directCliRoutes.get(event.sessionKey);
-  if (!route) return;
-  const { teamName } = route;
-
-  if (event.kind === 'complete') {
-    void (async () => {
-      if (event.text) {
-        await svc
-          .appendMessage(teamName, {
-            // Carry the streaming messageId as the canonical id so the renderer's
-            // optimistic in-progress reply (same messageId) is pruned, not duplicated.
-            id: event.messageId,
-            from: route.from,
-            to: route.to,
-            role: 'agent',
-            content: event.text,
-            meta: { sessionKey: event.sessionKey, source: 'direct-cli' },
-          })
-          .catch((err) =>
-            app.log.warn({ err, sessionKey: event.sessionKey }, 'direct-cli append failed')
-          );
-      }
-      broadcastSse('team-change', { type: 'inbox', teamName });
-    })();
-    return;
-  }
-
-  if (event.kind === 'error') {
-    app.log.warn({ error: event.error, sessionKey: event.sessionKey }, 'direct-cli session error');
-    broadcastSse('team-change', { type: 'inbox', teamName });
-    return;
-  }
-
-  if (event.kind === 'permission-request') {
-    void (async () => {
-      const settings = readToolApprovalSettings(teamName);
-      // Non-`can_use_tool` subtypes (hook_callback, etc.) auto-allow to prevent deadlock;
-      // `can_use_tool` goes through the shared shouldAutoAllow rules.
-      const autoAllow =
-        event.subtype !== 'can_use_tool' ||
-        shouldAutoAllow(settings, event.toolName ?? 'Unknown', event.toolInput ?? {}).autoAllow;
-      if (autoAllow) {
-        try {
-          directCliManager.respondPermission(event.sessionKey, event.requestId, true);
-        } catch (err) {
-          app.log.warn(
-            { err, sessionKey: event.sessionKey },
-            'direct-cli auto-allow respond failed'
-          );
-        }
-        return;
-      }
-      // Surface to the renderer's CC-style approval sheet (Allow / Deny / Allow all). The
-      // user's choice comes back via /api/teams/:name/tool-approval/respond, which writes
-      // the control_response to stdin and unblocks the turn.
-      permissionSessionByRequestId.set(event.requestId, {
-        sessionKey: event.sessionKey,
-        toolName: event.toolName,
-        toolInput: event.toolInput,
-      });
-      broadcastSse('tool-approval-event', {
-        requestId: event.requestId,
-        runId: event.runId,
-        teamName,
-        source: 'lead',
-        toolName: event.toolName ?? 'Unknown',
-        toolInput: event.toolInput ?? {},
-        receivedAt: new Date().toISOString(),
-      } satisfies ToolApprovalRequest);
-    })();
-    return;
-  }
-
-  // init / delta / thinking / tool → live streaming payload for the renderer.
-  broadcastSse('team-change', {
-    type: 'direct-cli-stream',
-    teamName,
-    sessionKey: event.sessionKey,
-    messageId: 'messageId' in event ? event.messageId : undefined,
-    kind: event.kind,
-    text: 'text' in event ? event.text : undefined,
-    toolName: 'toolName' in event ? event.toolName : undefined,
-    toolInput: 'toolInput' in event ? event.toolInput : undefined,
-    from: route.from,
-  });
+const disposeServerEventHandlers = registerServerEventHandlers({
+  state: serverContext.state,
+  directCliManager: serverContext.services.directCli,
+  bridge: serverContext.services.bridgeConnection,
+  appendMessage: (teamName, message) =>
+    serverContext.services.teamProvisioning.appendMessage(teamName, message),
+  resolveTeamFromBridgeMessage: resolveTeamFromBridgeMessageWithRetry,
+  broadcastSse,
+  logger: app.log,
 });
-
-bridge.on('reply', (msg) => {
-  const sessionKey: string = (msg as { session_key?: string }).session_key ?? '';
-
-  void (async () => {
-    const teamName = await resolveTeamFromBridgeMessageWithRetry(msg);
-    if (!teamName) return;
-    // 先落盘再广播，否则前端可能在 appendFile 完成前刷新到旧 feed。
-    await svc.appendMessage(teamName, {
-      from: teamName,
-      to: 'user',
-      role: 'agent',
-      content: (msg as { content?: string }).content ?? '',
-      meta: { sessionKey },
-    });
-    broadcastSse('team-change', { type: 'inbox', teamName });
-  })().catch((err) => {
-    app.log.warn({ err, sessionKey }, 'bridge reply persistence failed');
-  });
-});
-
-bridge.on('reply_stream', (msg) => {
-  const sessionKey: string = (msg as { session_key?: string }).session_key ?? '';
-  const done = (msg as { done?: boolean }).done ?? false;
-
-  void (async () => {
-    if (done) {
-      const resolvedTeamName = await resolveTeamFromBridgeMessageWithRetry(msg);
-      if (!resolvedTeamName) return;
-      // 流式结束，存储完整回复
-      const fullText = (msg as { full_text?: string }).full_text ?? '';
-      if (fullText) {
-        await svc.appendMessage(resolvedTeamName, {
-          from: resolvedTeamName,
-          to: 'user',
-          role: 'agent',
-          content: fullText,
-          meta: { sessionKey },
-        });
-      }
-      broadcastSse('team-change', { type: 'inbox', teamName: resolvedTeamName });
-      return;
-    }
-    const teamName = await resolveTeamFromBridgeMessageWithRetry(msg);
-    if (!teamName) return;
-    broadcastSse('team-change', { type: 'lead-message', teamName });
-  })().catch((err) => {
-    app.log.warn({ err, sessionKey }, 'bridge stream reply persistence failed');
-  });
-});
-
-bridge.on('message', (msg) => {
-  const type = (msg as { type?: string }).type ?? '';
-  const sessionKey: string = (msg as { session_key?: string }).session_key ?? '';
-  if (!sessionKey) return; // 无 session_key 的控制帧（pong 等）不广播
-
-  void (async () => {
-    const teamName = await resolveTeamFromBridgeMessageWithRetry(msg);
-    if (!teamName) return;
-    // typing_start/stop → lead-message；其他 → inbox
-    const eventType = type === 'typing_start' || type === 'typing_stop' ? 'lead-message' : 'inbox';
-    broadcastSse('team-change', { type: eventType, teamName });
-  })().catch((err) => {
-    app.log.warn({ err, sessionKey, type }, 'bridge message routing failed');
-  });
-});
+serverContext.lifecycle.listenerDisposers.push(disposeServerEventHandlers);
 
 const BRIDGE_SESSION_TEAM_CACHE_TTL_MS = 60_000;
 const EXTERNAL_PLATFORM_ROUTE_RETRY_COUNT = 6;
 const EXTERNAL_PLATFORM_ROUTE_RETRY_DELAY_MS = 1_000;
-const bridgeSessionTeamCache = new Map<string, { teamName: string; expiresAt: number }>();
 
 /**
  * 从 bridge message/session_key 解析 Hermit team slug。
@@ -3833,7 +3685,6 @@ app.get('/api/version', async (_request, reply) =>
 );
 
 // GET /api/update/check — 检查是否有新版本
-const updateService = new UpdateService();
 app.get('/api/update/check', async () => updateService.checkForUpdates());
 
 // POST /api/update/apply — 应用更新（SSE 推送进度）
@@ -7702,10 +7553,10 @@ function reply500(err: unknown) {
 
 await startStandaloneServerRuntime({
   app,
-  bridgeLauncher,
-  bridgeClient: cc,
-  bridge,
-  imLiveWatcher,
+  bridgeLauncher: serverContext.services.bridgeLauncher,
+  bridgeClient: serverContext.services.bridgeClient,
+  bridge: serverContext.services.bridgeConnection,
+  imLiveWatcher: serverContext.services.imLiveWatcher,
   initializeTelemetryFromSettings,
   ensureGlobalWorkflows,
   markBridgeBinaryCheck,
@@ -7729,10 +7580,11 @@ await startStandaloneServerRuntime({
 
 const shutdown = createServerShutdown({
   app,
-  imLiveWatcher,
-  directCliManager,
-  bridgeLauncher,
-  bridge,
+  listenerDisposers: serverContext.lifecycle.listenerDisposers,
+  imLiveWatcher: serverContext.services.imLiveWatcher,
+  directCliManager: serverContext.services.directCli,
+  bridgeLauncher: serverContext.services.bridgeLauncher,
+  bridge: serverContext.services.bridgeConnection,
   processTarget: process,
 });
 
@@ -7741,7 +7593,7 @@ const shutdown = createServerShutdown({
 // skips the asynchronous shutdown path.
 installServerProcessHandlers({
   app,
-  directCliManager,
+  directCliManager: serverContext.services.directCli,
   processTarget: process,
   shutdown,
 });

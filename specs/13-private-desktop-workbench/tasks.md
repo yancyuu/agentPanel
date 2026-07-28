@@ -21,7 +21,7 @@
 - [x] 检查每个 route domain 的现有测试
 - [ ] 为缺失的关键 route 注册和响应契约补测试
 - [ ] 覆盖 teams/tasks/message ID 和状态映射
-- [ ] 覆盖 direct-cli/bridge 路由和事件写入
+- [x] 覆盖 direct-cli/bridge 路由和事件写入
 - [ ] 覆盖 setup/digital-worker 创建入口
 - [ ] 覆盖 editor 路径安全
 - [ ] 覆盖 extensions 基本路由
@@ -29,11 +29,11 @@
 
 ### Task 0.3: Create Server Context
 
-- [ ] 新建 `ServerContext` 类型
-- [ ] 新建 `createServerContext()`
-- [ ] 收拢 `cc`、`bridge`、`bridgeLauncher` 和 `svc`
+- [x] 新建 `ServerContext` 类型
+- [x] 新建 `createServerContext()`
+- [x] 收拢 `cc`、`bridge`、`bridgeLauncher` 和 `svc`
 - [ ] 收拢 extensions/system-manager/workflow services
-- [ ] 收拢 direct-cli、IM watcher 和 cc settings services
+- [x] 收拢 direct-cli、IM watcher 和 cc settings services
 - [ ] 收拢 update service、SSE clients 和 runtime maps
 - [ ] 为 context 增加明确的 shutdown/dispose contract
 - [ ] 测试同一进程不会重复创建 stateful instances

@@ -4,6 +4,16 @@
 
 > 本文记录 `src/main/server.ts` 当前由模块顶层隐式拥有的共享实例、内存状态、事件监听器和启动/关闭顺序。Phase 0 只显式化所有权并保持行为，不顺手修改产品语义。
 
+当前已落地的 ownership seam：
+
+- `serverContext.ts`：construction-only `ServerContext`、`ServerRuntimeState` 和 lifecycle bookkeeping；
+- `serverEventHandlers.ts`：direct-cli/bridge listeners 的单点注册与精确 disposer；
+- `serverStartup.ts`：standalone startup 编排；
+- `serverProcessLifecycle.ts`：process signals 和有界 shutdown；
+- Fastify `app` 在任何 background bridge work 与 listener wiring 之前构造。
+
+尚未完成：extensions singleton adapter、其余 caches/schedule state、幂等 context dispose、route factory 和 import-time side-effect 移除。
+
 ## 顶层有状态实例
 
 | 拟议 context 字段         | 当前符号                        |              `server.ts` 行 | 持有资源或依赖                                                          | 当前生命周期 API                      |
