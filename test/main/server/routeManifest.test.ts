@@ -165,6 +165,23 @@ describe('server route manifest baseline', () => {
     expect(standaloneStarts).toHaveLength(1);
   });
 
+  it('preserves the team session and compatibility registrar sequence', () => {
+    const registrars = [
+      'registerTeamSessionRoutes(app',
+      'registerTeamCompatibilityRoutes(app',
+      'registerTeamMemberCompatibilityRoutes(app',
+      'registerTeamProvisioningCompatibilityRoutes(app',
+      'registerTeamKanbanCompatibilityRoutes(app',
+      'registerTeamActionCompatibilityRoutes(app',
+      'registerTeamMemberStatsRoutes(app',
+      'registerToolApprovalRoutes(app',
+    ];
+    const positions = registrars.map((registrar) => SERVER_SOURCE.indexOf(registrar));
+
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+  });
+
   it('records inline and composition ordering that extraction must preserve semantically', () => {
     const routeOf = (method: string, path: string): RouteRegistration => {
       const route = routes.find((candidate) => routeKey(candidate) === `${method} ${path}`);

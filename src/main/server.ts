@@ -82,6 +82,15 @@ import { registerSseRoutes } from './routes/sseRoutes';
 import { registerStaticRoutes } from './routes/staticRoutes';
 import { registerSystemManagerRoutes } from './routes/systemManagerRoutes';
 import { registerTaskBusSettingsRoutes } from './routes/taskBusSettingsRoutes';
+import {
+  registerTeamActionCompatibilityRoutes,
+  registerTeamCompatibilityRoutes,
+  registerTeamKanbanCompatibilityRoutes,
+  registerTeamMemberCompatibilityRoutes,
+  registerTeamMemberStatsRoutes,
+  registerTeamProvisioningCompatibilityRoutes,
+} from './routes/teamCompatibilityRoutes';
+import { registerTeamSessionRoutes } from './routes/teamSessionRoutes';
 import { registerTerminalRoutes } from './routes/terminalRoutes';
 import { registerToolApprovalRoutes } from './routes/toolApprovalRoutes';
 import { createUsageTelemetryPresenter } from './routes/usageTelemetryPresenter';
@@ -112,10 +121,6 @@ import {
   type ProjectUsageStats,
   scanProjectStats,
 } from './services/session-intelligence/SessionUsageParser';
-import {
-  filterHiddenTeamSessions,
-  mergeLocalAndCcSessions,
-} from './services/session-intelligence/teamSessionListMapper';
 import {
   configureUsageTelemetry,
   getTelemetryRuntimeStatus,
@@ -166,11 +171,8 @@ import { startStandaloneServerRuntime } from './serverStartup';
 import type {
   HermitBridgeAgentType,
   HermitBridgeProjectPlatform,
-  HermitBridgeSessionDetail,
-  HermitBridgeSessionListItem,
 } from '../shared/types/hermitBridge';
 import type { TeamManifest } from './services/team-management/TeamWorkspaceService';
-import type { CcSessionDetail } from '@shared/types/api';
 import type {
   AttachmentFileData,
   AttachmentMeta,
@@ -1025,23 +1027,6 @@ async function resolveTeamSlugForMention(rawName: string): Promise<string | null
     return slug === lower || displayName === lower;
   });
   return matched?.slug ?? null;
-}
-
-function mapCcSessionDetail(detail: HermitBridgeSessionDetail): CcSessionDetail {
-  return {
-    id: detail.agent_session_id || detail.id,
-    name: detail.name || detail.session_key,
-    sessionKey: detail.session_key,
-    agentSessionId: detail.agent_session_id,
-    agentType: detail.agent_type,
-    active: detail.active,
-    live: detail.live,
-    historyCount: detail.history_count,
-    createdAt: detail.created_at,
-    updatedAt: detail.updated_at,
-    platform: detail.platform,
-    history: detail.history ?? [],
-  };
 }
 
 function normalizePlatformAllowFrom(value: unknown): Record<string, string> {
@@ -2648,173 +2633,21 @@ app.get<{ Params: { name: string }; Querystring: { cursor?: string; limit?: stri
   }
 );
 
-// 消息 head（messages-head 不是标准路由，storeok调 getMessagesPage 的同路由带 limit）
-// member-activity-meta
-app.get<{ Params: { name: string } }>('/api/teams/:name/member-activity-meta', async (request) => {
-  const { name } = request.params;
-  return {
-    teamName: name,
-    computedAt: new Date().toISOString(),
-    members: {},
-    feedRevision: '0',
-  };
-});
-
-// member-activity — GET /api/teams/:name/member-activity
-app.get<{ Params: { name: string } }>('/api/teams/:name/member-activity', async (request) => {
-  const { name } = request.params;
-  return {
-    teamName: name,
-    computedAt: new Date().toISOString(),
-    members: {},
-    feedRevision: '0',
-  };
-});
-
-// member-spawn-statuses — GET /api/teams/:name/member-spawn-statuses
-app.get<{ Params: { name: string } }>('/api/teams/:name/member-spawn-statuses', async (request) => {
-  const { name } = request.params;
-  return {
-    statuses: {},
-    runId: null,
-  };
-});
-
-// agent-runtime — GET /api/teams/:name/agent-runtime
-app.get<{ Params: { name: string } }>('/api/teams/:name/agent-runtime', async (request) => {
-  const { name } = request.params;
-  return {
-    teamName: name,
-    updatedAt: new Date().toISOString(),
-    runId: null,
-    members: {},
-  };
-});
-
-// lead-activity — GET /api/teams/:name/lead-activity
-app.get<{ Params: { name: string } }>('/api/teams/:name/lead-activity', async () => {
-  return { state: 'offline', updatedAt: new Date().toISOString() };
-});
-
-// lead-context — GET /api/teams/:name/lead-context
-app.get<{ Params: { name: string } }>('/api/teams/:name/lead-context', async () => {
-  return { usage: null };
-});
-
-// sessions — scan local JSONL files, optionally enrich with cc-connect identity metadata
-app.get<{ Params: { name: string } }>('/api/teams/:name/sessions', async (request) => {
-  try {
-    const team = await svc.readTeamManifest(request.params.name);
-    const workDir = team.workDir || team.bindProject || request.params.name;
-    const hiddenSessionIds = await svc.readHiddenSessionIds(request.params.name);
-    const localSessions = await localSessionScanner.scanSummaries(workDir, request.params.name);
-
-    // Merge cc-connect sessions into the response. External platform sessions (Feishu/Lark/etc.)
-    // may not have a local Claude JSONL yet, but users still expect to see them as listening sessions.
-    let ccSessions: HermitBridgeSessionListItem[] = [];
-    try {
-      const bindProject = await resolveRouteCcProjectName(request.params.name);
-      ccSessions = await cc.listSessions(bindProject);
-    } catch {
-      /* cc-connect unavailable — local-only data */
-    }
-
-    const visibleSessions = filterHiddenTeamSessions(localSessions, ccSessions, hiddenSessionIds);
-    return mergeLocalAndCcSessions(
-      visibleSessions.localSessions,
-      visibleSessions.ccSessions,
-      request.params.name
-    );
-  } catch {
-    return [];
-  }
-});
-
-// GET session detail — read local JSONL file for session history with pagination
-app.get<{
-  Params: { name: string; sessionId: string };
-  Querystring: { history_limit?: string; offset?: string };
-}>('/api/teams/:name/sessions/:sessionId', async (request, reply) => {
-  const limit = request.query.history_limit ? parseInt(request.query.history_limit, 10) : 500;
-  const offset = request.query.offset ? parseInt(request.query.offset, 10) : 0;
-  const team = await svc.readTeamManifest(request.params.name);
-  const workDir = team.workDir || team.bindProject || request.params.name;
-  const detail = await localSessionScanner.readSessionDetail(workDir, request.params.sessionId, {
-    offset,
-    limit,
-  });
-  if (detail) return detail;
-
-  try {
-    const bindProject = await resolveRouteCcProjectName(request.params.name);
-    const ccDetail = await cc.getSession(bindProject, request.params.sessionId, limit);
-    return mapCcSessionDetail(ccDetail);
-  } catch {
-    return reply.code(404).send({ error: 'Session not found' });
-  }
-});
-
-// DELETE session — archive in Hermit and best-effort close cc-connect live session.
-app.delete<{ Params: { name: string; sessionId: string } }>(
-  '/api/teams/:name/sessions/:sessionId',
-  async (request, reply) => {
-    try {
-      await svc.hideSession(request.params.name, request.params.sessionId);
-    } catch (err) {
-      return reply
-        .code(500)
-        .send({ ok: false, error: err instanceof Error ? err.message : String(err) });
-    }
-
-    try {
-      const bindProject = await resolveRouteCcProjectName(request.params.name);
-      await cc.deleteSession(bindProject, request.params.sessionId);
-      return { ok: true, archived: true, ccDeleted: true };
-    } catch (err) {
-      const warning = err instanceof Error ? err.message : String(err);
-      app.log.warn(
-        { err, teamName: request.params.name, sessionId: request.params.sessionId },
-        'archived session locally but cc-connect delete failed'
-      );
-      return { ok: true, archived: true, ccDeleted: false, warning };
-    }
-  }
-);
-
-// runtime/alive — 从 cc-connect 获取真实在线状态
-app.get('/api/teams/runtime/alive', async () => {
-  try {
-    const [projects, localTeams] = await Promise.all([
-      cc.listProjects(),
-      svc.listTeams().catch(() => []),
-    ]);
-    const localByProject = new Map(localTeams.map((team) => [team.bindProject, team]));
-    return await Promise.all(
-      projects.map(async (p) => {
-        let isAlive = false;
-        try {
-          const detail = await cc.getProject(p.name);
-          isAlive = Array.isArray(detail.platforms) && detail.platforms.some((pl) => pl.connected);
-        } catch {
-          /* degraded */
-        }
-        return { teamName: localByProject.get(p.name)?.slug ?? p.name, isAlive, runId: p.name };
-      })
-    );
-  } catch {
-    return [];
-  }
-});
-
-// process-alive — 查询 cc-connect project 在线状态
-app.get<{ Params: { name: string } }>('/api/teams/:name/process-alive', async (request) => {
-  try {
-    const bindProject = await resolveRouteCcProjectName(request.params.name);
-    const p = await cc.getProject(bindProject);
-    return Array.isArray(p.platforms) && p.platforms.some((pl) => pl.connected);
-  } catch {
-    return false;
-  }
+registerTeamSessionRoutes(app, {
+  readTeamManifest: (teamName) => svc.readTeamManifest(teamName),
+  readHiddenSessionIds: (teamName) => svc.readHiddenSessionIds(teamName),
+  hideSession: (teamName, sessionId) => svc.hideSession(teamName, sessionId),
+  listTeams: () => svc.listTeams(),
+  scanSummaries: (workDir, projectId) => localSessionScanner.scanSummaries(workDir, projectId),
+  readSessionDetail: (workDir, sessionId, options) =>
+    localSessionScanner.readSessionDetail(workDir, sessionId, options),
+  listSessions: (projectName) => cc.listSessions(projectName),
+  getSession: (projectName, sessionId, historyLimit) =>
+    cc.getSession(projectName, sessionId, historyLimit),
+  deleteSession: (projectName, sessionId) => cc.deleteSession(projectName, sessionId),
+  listProjects: () => cc.listProjects(),
+  getProject: (projectName) => cc.getProject(projectName),
+  resolveProjectName: resolveRouteCcProjectName,
 });
 
 // process-send — 从 Hermit UI 注入到 harness，不回发到 IM 平台。
@@ -2839,23 +2672,7 @@ app.post<{ Params: { name: string }; Body: { text?: string; message?: string } }
   }
 );
 
-// saved-request — 新版无此概念
-app.get<{ Params: { name: string } }>('/api/teams/:name/saved-request', async () => null);
-
-// kanban state — 返回空看板状态
-app.get<{ Params: { name: string } }>('/api/teams/:name/kanban', async (request) => ({
-  teamName: request.params.name,
-  reviewers: [],
-  tasks: {},
-}));
-
-// task-change-presence — 返回 {}
-app.get<{ Params: { name: string } }>('/api/teams/:name/task-change-presence', async () => ({}));
-
-// kanban column order — no-op
-app.post<{ Params: { name: string } }>('/api/teams/:name/kanban-column-order', async () => ({
-  ok: true,
-}));
+registerTeamCompatibilityRoutes(app);
 
 // teams/tasks (全局任务列表 — 跨所有团队)
 app.get('/api/teams/tasks', async () => {
@@ -3039,30 +2856,7 @@ app.post<{ Params: { name: string; id: string } }>(
   async () => ({ ok: true })
 );
 
-// 成员相关 stubs
-app.post<{ Params: { name: string } }>('/api/teams/:name/members', async () => ({ ok: true }));
-app.delete<{ Params: { name: string; memberName: string } }>(
-  '/api/teams/:name/members/:memberName',
-  async () => ({ ok: true })
-);
-app.patch<{ Params: { name: string; memberName: string } }>(
-  '/api/teams/:name/members/:memberName/role',
-  async () => ({ ok: true })
-);
-app.post<{ Params: { name: string; memberName: string } }>(
-  '/api/teams/:name/members/:memberName/restart',
-  async () => ({ ok: true })
-);
-app.post<{ Params: { name: string; memberName: string } }>(
-  '/api/teams/:name/members/:memberName/skip-launch',
-  async () => ({ ok: true })
-);
-
-// claude logs
-app.get<{ Params: { name: string } }>('/api/teams/:name/claude-logs', async () => ({
-  logs: [],
-  total: 0,
-}));
+registerTeamMemberCompatibilityRoutes(app);
 
 // restore / permanent delete
 app.post<{ Params: { name: string } }>('/api/teams/:name/restore', async (request, reply) => {
@@ -3531,35 +3325,7 @@ app.patch<{ Params: { name: string } }>('/api/teams/:name/config', async (reques
   }
 });
 
-// provisioning stubs (新版无 provisioning 概念)
-app.post('/api/teams/provisioning/prepare', async () => ({
-  runId: null,
-  warnings: [],
-}));
-app.get<{ Params: { runId: string } }>('/api/teams/provisioning/:runId', async () => ({
-  runId: '',
-  phase: 'done',
-  progress: 100,
-  message: '',
-  done: true,
-  error: null,
-}));
-app.post<{ Params: { runId: string } }>('/api/teams/provisioning/:runId/cancel', async () => ({
-  ok: true,
-}));
-
-// 团队创建已由上方 /api/teams/create 处理（cc-connect 直接调用）
-
-// templates stubs
-app.get('/api/teams/templates', async () => ({ sources: [], templates: [] }));
-app.post('/api/teams/templates/save', async () => ({ sources: [], templates: [] }));
-app.post('/api/teams/templates/refresh', async () => ({ sources: [], templates: [] }));
-
-// replace members
-app.put<{ Params: { name: string } }>('/api/teams/:name/members', async () => ({ ok: true }));
-
-// draft
-app.delete<{ Params: { name: string } }>('/api/teams/:name/draft', async () => ({ ok: true }));
+registerTeamProvisioningCompatibilityRoutes(app);
 
 // send-message — 从 Hermit 会话面板注入到 harness，不使用 Management /send（那会回发到 IM）。
 app.post<{
@@ -3684,16 +3450,7 @@ app.post<{ Params: { name: string; id: string } }>(
   }
 );
 
-// updateKanban: 前端调用 PATCH /kanban/:taskId
-app.patch<{ Params: { name: string; id: string }; Body: Record<string, unknown> }>(
-  '/api/teams/:name/kanban/:id',
-  async () => ({ ok: true })
-);
-
-// updateKanbanColumnOrder: 前端调用 PUT /kanban/column-order
-app.put<{ Params: { name: string } }>('/api/teams/:name/kanban/column-order', async () => ({
-  ok: true,
-}));
+registerTeamKanbanCompatibilityRoutes(app);
 
 // updateConfig: 前端调用 PUT /config（服务端原有 PATCH，补充 PUT 别名）
 app.put<{ Params: { name: string } }>('/api/teams/:name/config', async (request, reply) => {
@@ -3708,172 +3465,16 @@ app.put<{ Params: { name: string } }>('/api/teams/:name/config', async (request,
   }
 });
 
-// skipMemberForLaunch: 前端调用 /members/:memberName/skip
-app.post<{ Params: { name: string; memberName: string } }>(
-  '/api/teams/:name/members/:memberName/skip',
-  async () => ({ ok: true })
-);
+registerTeamActionCompatibilityRoutes(app);
 
-// setTaskClarification: 前端调用 POST /task-clarification/:taskId
-app.post<{ Params: { name: string; taskId: string } }>(
-  '/api/teams/:name/task-clarification/:taskId',
-  async () => ({ ok: true })
-);
-
-// removeTaskRelationship: 前端调用 DELETE /tasks/:id/relationships
-app.delete<{ Params: { name: string; id: string } }>(
-  '/api/teams/:name/tasks/:id/relationships',
-  async () => ({ ok: true })
-);
-
-// ===========================================================================
-// 缺失的 stub 路由 — 返回空数据防止前端 404 崩溃
-// ===========================================================================
-
-// createConfig
-app.post('/api/teams/config', async () => ({ ok: true }));
-
-// kill-process
-app.post<{ Params: { name: string }; Body: { pid?: number } }>(
-  '/api/teams/:name/kill-process',
-  async () => ({ ok: true })
-);
-
-// member-logs
-app.get<{ Params: { name: string; memberName: string } }>(
-  '/api/teams/:name/member-logs/:memberName',
-  async () => []
-);
-
-// task-logs
-app.get<{ Params: { name: string; taskId: string } }>(
-  '/api/teams/:name/task-logs/:taskId',
-  async () => []
-);
-
-// activity
-app.get<{ Params: { name: string } }>('/api/teams/:name/activity', async () => []);
-
-// task-activity-detail
-app.get<{ Params: { name: string } }>('/api/teams/:name/task-activity-detail', async () => ({
-  entries: [],
-}));
-
-// task-log-stream-summary
-app.get<{ Params: { name: string; taskId: string } }>(
-  '/api/teams/:name/task-log-stream-summary/:taskId',
-  async () => ({ chunks: [] })
-);
-
-// task-log-stream
-app.get<{ Params: { name: string; taskId: string } }>(
-  '/api/teams/:name/task-log-stream/:taskId',
-  async () => ({ chunks: [] })
-);
-
-// exact-log-summaries
-app.get<{ Params: { name: string; taskId: string } }>(
-  '/api/teams/:name/exact-log-summaries/:taskId',
-  async () => ({ logs: [] })
-);
-
-// exact-log-detail
-app.get<{ Params: { name: string; taskId: string } }>(
-  '/api/teams/:name/exact-log-detail/:taskId',
-  async () => ({ lines: [] })
-);
-
-// member-stats — aggregate from local JSONL session summaries
-app.get<{ Params: { name: string; memberName: string } }>(
-  '/api/teams/:name/member-stats/:memberName',
-  async (request) => {
-    try {
-      const team = await svc.readTeamManifest(request.params.name);
-      const workDir = team.workDir || team.bindProject || request.params.name;
-      const sessions = await localSessionScanner.scanSummaries(workDir, request.params.name);
-
-      let inputTokens = 0;
-      let outputTokens = 0;
-      let cacheReadTokens = 0;
-      let cacheCreationTokens = 0;
-      let totalTokens = 0;
-      let messageCount = 0;
-      let totalDurationMs = 0;
-
-      let earliestStart: string | null = null;
-      let latestEnd: string | null = null;
-
-      for (const s of sessions) {
-        inputTokens += s.inputTokens;
-        outputTokens += s.outputTokens;
-        cacheReadTokens += s.cacheReadTokens;
-        cacheCreationTokens += s.cacheCreationTokens;
-        totalTokens += s.totalTokens;
-        messageCount += s.messageCount;
-
-        if (s.startTime && (!earliestStart || s.startTime < earliestStart)) {
-          earliestStart = s.startTime;
-        }
-        if (s.endTime && (!latestEnd || s.endTime > latestEnd)) {
-          latestEnd = s.endTime;
-        }
-      }
-
-      if (earliestStart && latestEnd) {
-        totalDurationMs = Date.parse(latestEnd) - Date.parse(earliestStart);
-        if (totalDurationMs < 0) totalDurationMs = 0;
-      }
-
-      // Count completed tasks from the team's task board
-      let tasksCompleted = 0;
-      try {
-        // eslint-disable-next-line @typescript-eslint/dot-notation -- bracket access intentionally bypasses TS private modifier
-        const tasks = await svc['workspace'].readTasks(team.slug || request.params.name);
-        tasksCompleted = tasks.filter((t) => t.status === 'done').length;
-      } catch {
-        // board may not exist yet
-      }
-
-      return {
-        linesAdded: 0,
-        linesRemoved: 0,
-        filesTouched: [],
-        fileStats: {},
-        toolUsage: {},
-        inputTokens,
-        outputTokens,
-        cacheReadTokens,
-        cacheCreationTokens,
-        totalTokens,
-        costUsd: 0,
-        tasksCompleted,
-        messageCount,
-        totalDurationMs,
-        sessionCount: sessions.length,
-        computedAt: new Date().toISOString(),
-      };
-    } catch {
-      return {
-        linesAdded: 0,
-        linesRemoved: 0,
-        filesTouched: [],
-        fileStats: {},
-        toolUsage: {},
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheCreationTokens: 0,
-        totalTokens: 0,
-        costUsd: 0,
-        tasksCompleted: 0,
-        messageCount: 0,
-        totalDurationMs: 0,
-        sessionCount: 0,
-        computedAt: new Date().toISOString(),
-      };
-    }
-  }
-);
+registerTeamMemberStatsRoutes(app, {
+  readTeamManifest: (teamName) => svc.readTeamManifest(teamName),
+  scanSummaries: (workDir, projectId) => localSessionScanner.scanSummaries(workDir, projectId),
+  readTasksForStats: (teamName) => {
+    // eslint-disable-next-line @typescript-eslint/dot-notation -- bracket access intentionally bypasses TS private modifier
+    return svc['workspace'].readTasks(teamName);
+  },
+});
 
 registerToolApprovalRoutes(app, {
   state: serverContext.state,
