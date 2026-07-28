@@ -70,16 +70,22 @@ vi.mock('@renderer/components/team/CollapsibleTeamSection', () => ({
         },
         title
       ),
-      (title === 'Changes' || title === '变更') && open ? React.createElement('div', null, children) : null
+      (title === 'Changes' || title === '变更') && open
+        ? React.createElement('div', null, children)
+        : null
     );
   },
 }));
 
 vi.mock('@renderer/components/ui/dialog', () => ({
   Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
-    open ? React.createElement('div', null, children) : null,
-  DialogContent: ({ children }: { children: React.ReactNode }) =>
-    React.createElement('div', null, children),
+    open ? React.createElement('div', { 'data-dialog-root': true }, children) : null,
+  DialogContent: (props: { children: React.ReactNode } & Record<string, unknown>) =>
+    React.createElement(
+      'div',
+      { 'data-task-detail-presentation': props['data-task-detail-presentation'] },
+      props.children
+    ),
   DialogDescription: ({ children }: { children: React.ReactNode }) =>
     React.createElement('div', null, children),
   DialogHeader: ({ children }: { children: React.ReactNode }) =>
@@ -98,7 +104,8 @@ vi.mock('@renderer/components/ui/tooltip', () => ({
 }));
 
 vi.mock('@renderer/components/ui/badge', () => ({
-  Badge: ({ children }: { children: React.ReactNode }) => React.createElement('span', null, children),
+  Badge: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('span', null, children),
 }));
 
 vi.mock('@renderer/components/ui/button', () => ({
@@ -163,6 +170,7 @@ vi.mock('@renderer/components/team/taskLogs/TaskLogsPanel', () => ({
 }));
 
 import { TaskDetailDialog } from '@renderer/components/team/dialogs/TaskDetailDialog';
+import { TaskDetailPanel } from '@renderer/components/team/dialogs/TaskDetailPanel';
 
 import type { TaskChangeSetV2, TeamTaskWithKanban } from '@shared/types';
 
@@ -244,6 +252,51 @@ function clickChangesSection(host: HTMLElement): void {
   }
   button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 }
+
+describe('TaskDetailPanel presentations', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('uses the same task detail implementation for inline and dialog presentations', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const task = makeTask('task-shared');
+    const props = {
+      variant: 'global' as const,
+      teamName: 'team-a',
+      task,
+      taskMap: new Map([[task.id, task]]),
+      members: [],
+      onClose: vi.fn(),
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(React.createElement(TaskDetailPanel, { ...props, presentation: 'inline' }));
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('Task task-shared');
+    expect(host.querySelector('[data-task-detail-presentation="inline"]')).not.toBeNull();
+    expect(host.querySelector('[data-dialog-root]')).toBeNull();
+
+    await act(async () => {
+      root.render(React.createElement(TaskDetailDialog, { ...props, open: true }));
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('Task task-shared');
+    expect(host.querySelector('[data-task-detail-presentation="dialog"]')).not.toBeNull();
+    expect(host.querySelector('[data-dialog-root]')).not.toBeNull();
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+});
 
 describe('TaskDetailDialog changes summary loading', () => {
   afterEach(() => {

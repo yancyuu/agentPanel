@@ -1,6 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
-import { WorkbenchPageHeader } from '@features/collaborative-workbench/renderer';
+import {
+  CollaborativeInboxView,
+  WorkbenchPageHeader,
+} from '@features/collaborative-workbench/renderer';
 import { cn } from '@renderer/lib/utils';
 import { useStore } from '@renderer/store';
 import { deriveTaskDisplayId } from '@shared/utils/taskIdentity';
@@ -9,6 +12,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Columns3,
+  Inbox,
   PlayCircle,
   RefreshCw,
 } from 'lucide-react';
@@ -19,7 +23,7 @@ import { KanbanColumn } from '../team/kanban/KanbanColumn';
 
 import type { GlobalTask, TeamTaskStatus } from '@shared/types';
 
-type TasksSubTab = 'overview' | 'schedules';
+type TasksSubTab = 'inbox' | 'overview' | 'schedules';
 type OverviewStatus = Extract<TeamTaskStatus, 'pending' | 'in_progress' | 'completed'>;
 interface OverviewTaskEntry {
   task: GlobalTask;
@@ -27,7 +31,8 @@ interface OverviewTaskEntry {
 }
 
 const SUB_TABS: { id: TasksSubTab; label: string; icon: React.ReactNode }[] = [
-  { id: 'overview', label: '任务看板', icon: <Columns3 size={13} /> },
+  { id: 'inbox', label: '收件箱', icon: <Inbox size={13} /> },
+  { id: 'overview', label: '看板', icon: <Columns3 size={13} /> },
   { id: 'schedules', label: '定时任务', icon: <Calendar size={13} /> },
 ];
 
@@ -40,21 +45,21 @@ const COLUMNS: {
 }[] = [
   {
     id: 'pending',
-    title: 'TODO',
+    title: '待处理',
     headerBg: 'rgba(148, 163, 184, 0.08)',
     bodyBg: 'rgba(148, 163, 184, 0.02)',
     icon: <ClipboardList size={13} className="shrink-0 text-[var(--color-text-muted)]" />,
   },
   {
     id: 'in_progress',
-    title: 'IN PROGRESS',
+    title: '进行中',
     headerBg: 'rgba(6, 182, 212, 0.08)',
     bodyBg: 'rgba(6, 182, 212, 0.02)',
     icon: <PlayCircle size={13} className="shrink-0 text-cyan-400/60" />,
   },
   {
     id: 'completed',
-    title: 'DONE',
+    title: '已完成',
     headerBg: 'rgba(34, 197, 94, 0.08)',
     bodyBg: 'rgba(34, 197, 94, 0.02)',
     icon: <CheckCircle2 size={13} className="shrink-0 text-green-400/60" />,
@@ -77,11 +82,11 @@ function buildOptionLabel(value: string | null | undefined, fallback: string): s
 }
 
 export const TasksView = (): React.JSX.Element => {
-  const [activeTab, setActiveTab] = useState<TasksSubTab>('overview');
+  const [activeTab, setActiveTab] = useState<TasksSubTab>('inbox');
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-page-canvas">
-      <WorkbenchPageHeader title="收件箱" description="集中查看跨团队任务、负责人和定时工作" />
+      <WorkbenchPageHeader title="收件箱" description="集中处理跨团队任务、评论与 Agent 执行状态" />
       <div className="flex items-center gap-0 border-b border-[var(--surface-border-subtle)] px-4 pt-3">
         {SUB_TABS.map((tab) => (
           <button
@@ -99,9 +104,18 @@ export const TasksView = (): React.JSX.Element => {
           </button>
         ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
-        {activeTab === 'overview' && <TaskOverviewPool />}
-        {activeTab === 'schedules' && <SchedulesView />}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {activeTab === 'inbox' && <CollaborativeInboxView />}
+        {activeTab === 'overview' && (
+          <div className="h-full overflow-auto">
+            <TaskOverviewPool />
+          </div>
+        )}
+        {activeTab === 'schedules' && (
+          <div className="h-full overflow-auto">
+            <SchedulesView />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -229,9 +243,9 @@ const TaskOverviewPool = (): React.JSX.Element => {
           className={selectCls}
         >
           <option value="all">全部状态</option>
-          <option value="pending">TODO</option>
-          <option value="in_progress">IN PROGRESS</option>
-          <option value="completed">DONE</option>
+          <option value="pending">待处理</option>
+          <option value="in_progress">进行中</option>
+          <option value="completed">已完成</option>
         </select>
 
         <select
