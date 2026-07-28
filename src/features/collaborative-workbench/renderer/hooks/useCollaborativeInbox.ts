@@ -30,11 +30,12 @@ export interface CollaborativeInboxState {
   selectedKey: string | null;
   selectedTask: InboxTaskProjection | null;
   selectTask(key: string): void;
+  selectReferencedTask(taskId: string): void;
   loading: boolean;
   initialized: boolean;
   error: string | null;
   refresh(): void;
-  updateOwner(teamName: string, taskId: string, owner: string | null): void;
+  updateOwner(teamName: string, taskId: string, owner: string | null): Promise<void>;
 }
 
 export function useCollaborativeInbox(): CollaborativeInboxState {
@@ -135,9 +136,22 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
     void fetchAllTasks();
   }, [fetchAllTasks]);
 
+  const selectReferencedTask = useCallback(
+    (taskId: string) => {
+      const target = visibleBaseTasks.find((task) => task.id === taskId);
+      if (!target) return;
+      setQuery('');
+      setTeamFilter('all');
+      setOwnerFilter('all');
+      setView(target.status === 'completed' ? 'completed' : 'inbox');
+      setSelectedKey(getGlobalTaskKey(target));
+    },
+    [visibleBaseTasks]
+  );
+
   const updateOwner = useCallback(
-    (teamName: string, taskId: string, owner: string | null) => {
-      void updateTaskOwner(teamName, taskId, owner);
+    async (teamName: string, taskId: string, owner: string | null) => {
+      await updateTaskOwner(teamName, taskId, owner);
     },
     [updateTaskOwner]
   );
@@ -157,6 +171,7 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
     selectedKey,
     selectedTask: tasks.find((entry) => entry.key === selectedKey) ?? null,
     selectTask: setSelectedKey,
+    selectReferencedTask,
     loading: globalTasksLoading,
     initialized: globalTasksInitialized,
     error: globalTasksError,

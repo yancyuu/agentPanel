@@ -55,11 +55,17 @@ export function InboxTaskList({
   return (
     <div className="flex h-full min-w-0 flex-col bg-[var(--color-surface)]">
       <div className="border-b border-[var(--surface-border-subtle)] p-3">
-        <div className="flex items-center gap-1 rounded-md bg-[var(--color-surface-raised)] p-1">
+        <div
+          role="tablist"
+          aria-label="任务收件箱视图"
+          className="flex items-center gap-1 rounded-md bg-[var(--color-surface-raised)] p-1"
+        >
           {views.map((item) => (
             <button
               key={item.id}
               type="button"
+              role="tab"
+              aria-selected={view === item.id}
               onClick={() => onViewChange(item.id)}
               className={cn(
                 'flex h-7 flex-1 items-center justify-center gap-1 rounded px-2 text-xs transition-colors',

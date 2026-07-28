@@ -161,6 +161,17 @@ describe('team directory routes', () => {
         teamSlug: 'team-a',
         title: 'Active',
         status: 'todo',
+        comments: [
+          {
+            id: 'comment-1',
+            author: 'user',
+            text: 'Persisted comment',
+            createdAt: '2026-01-01',
+            type: 'regular',
+          },
+        ],
+        needsClarification: 'lead',
+        blockedBy: ['task-b'],
         createdAt: '2026-01-01',
         updatedAt: '2026-01-01',
         order: 0,
@@ -181,7 +192,14 @@ describe('team directory routes', () => {
     expect(online.json()).toEqual(
       expect.objectContaining({
         isAlive: true,
-        tasks: [expect.objectContaining({ id: 'active-task' })],
+        tasks: [
+          expect.objectContaining({
+            id: 'active-task',
+            comments: [expect.objectContaining({ text: 'Persisted comment' })],
+            needsClarification: 'lead',
+            blockedBy: ['task-b'],
+          }),
+        ],
         permissionMode: 'acceptEdits',
         providerRefs: ['provider-a'],
       })

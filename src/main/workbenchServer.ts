@@ -240,6 +240,7 @@ async function createWorkbenchServerUncached(
       task: Parameters<TeamProvisioningService['dispatchTask']>[1]
     ) => svc.dispatchTask(teamName, task),
     listProjects: () => cc.listProjects(),
+    readTeamManifest: (teamName: string) => svc.readTeamManifest(teamName),
     reply500: operations.reply500,
   };
   registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['core'] });

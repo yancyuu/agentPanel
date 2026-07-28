@@ -55,8 +55,9 @@ describe('TasksView presentation controls', () => {
     });
 
     expect(host.textContent).toContain('协作收件箱内容');
-    expect(buttonByText(host, '收件箱')).toBeTruthy();
-    expect(buttonByText(host, '看板')).toBeTruthy();
+    expect(host.querySelector('[role="tablist"]')).not.toBeNull();
+    expect(buttonByText(host, '收件箱').getAttribute('aria-selected')).toBe('true');
+    expect(buttonByText(host, '看板').getAttribute('role')).toBe('tab');
     expect(buttonByText(host, '定时任务')).toBeTruthy();
 
     await act(async () => {

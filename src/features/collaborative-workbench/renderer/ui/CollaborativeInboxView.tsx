@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
+
 import { TaskDetailPanel } from '@renderer/components/team/dialogs/TaskDetailPanel';
 import { useGlobalTaskDetailModel } from '@renderer/components/team/dialogs/useGlobalTaskDetailModel';
-import { Inbox } from 'lucide-react';
+import { ArrowLeft, Inbox } from 'lucide-react';
 
 import { useCollaborativeInbox } from '../hooks/useCollaborativeInbox';
 
@@ -10,11 +12,18 @@ export function CollaborativeInboxView(): React.JSX.Element {
   const inbox = useCollaborativeInbox();
   const selected = inbox.selectedTask;
   const model = useGlobalTaskDetailModel(selected?.task.teamName ?? '', selected?.task.id ?? '');
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+
+  useEffect(() => {
+    if (!selected) setMobileDetailOpen(false);
+  }, [selected]);
 
   return (
-    <div className="h-full min-h-0 min-w-0 overflow-x-auto">
-      <div className="grid h-full min-h-0 min-w-[620px] grid-cols-[minmax(280px,340px)_minmax(340px,1fr)]">
-        <div className="min-h-0 border-r border-[var(--surface-border-subtle)]">
+    <div className="h-full min-h-0 min-w-0">
+      <div className="grid h-full min-h-0 min-w-0 md:grid-cols-[minmax(280px,340px)_minmax(340px,1fr)]">
+        <div
+          className={`${mobileDetailOpen ? 'hidden md:block' : 'block'} min-h-0 border-r border-[var(--surface-border-subtle)]`}
+        >
           <InboxTaskList
             view={inbox.view}
             onViewChange={(view) => inbox.setView(view)}
@@ -28,13 +37,18 @@ export function CollaborativeInboxView(): React.JSX.Element {
             ownerOptions={inbox.ownerOptions}
             tasks={inbox.tasks}
             selectedKey={inbox.selectedKey}
-            onSelect={(key) => inbox.selectTask(key)}
+            onSelect={(key) => {
+              inbox.selectTask(key);
+              setMobileDetailOpen(true);
+            }}
             onRefresh={() => inbox.refresh()}
             loading={inbox.loading}
             error={inbox.error}
           />
         </div>
-        <div className="min-h-0 min-w-0 bg-page-canvas">
+        <div
+          className={`${mobileDetailOpen ? 'block' : 'hidden md:block'} min-h-0 min-w-0 bg-page-canvas`}
+        >
           {selected ? (
             <TaskDetailPanel
               key={selected.key}
@@ -50,9 +64,15 @@ export function CollaborativeInboxView(): React.JSX.Element {
                   : new Map([[selected.task.id, selected.task]])
               }
               members={model.members}
+              onScrollToTask={(taskId) => {
+                inbox.selectReferencedTask(taskId);
+                setMobileDetailOpen(true);
+              }}
               onOwnerChange={
                 model.isFullTeamLoaded
-                  ? (taskId, owner) => inbox.updateOwner(selected.task.teamName, taskId, owner)
+                  ? (taskId, owner) => {
+                      void inbox.updateOwner(selected.task.teamName, taskId, owner);
+                    }
                   : undefined
               }
               onViewChanges={
@@ -61,13 +81,23 @@ export function CollaborativeInboxView(): React.JSX.Element {
                   : undefined
               }
               headerExtra={
-                <button
-                  type="button"
-                  onClick={() => model.openTeam()}
-                  className="hover:bg-surface-hover rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text)]"
-                >
-                  打开团队
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setMobileDetailOpen(false)}
+                    className="hover:bg-surface-hover inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text)] md:hidden"
+                  >
+                    <ArrowLeft size={13} />
+                    返回列表
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => model.openTeam()}
+                    className="hover:bg-surface-hover rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text)]"
+                  >
+                    打开团队
+                  </button>
+                </div>
               }
             />
           ) : (

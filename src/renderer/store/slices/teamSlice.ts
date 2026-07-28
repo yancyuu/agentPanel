@@ -4240,6 +4240,7 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
       api.teams.updateTaskStatus(teamName, taskId, status)
     );
     await get().refreshTeamData(teamName);
+    await get().fetchAllTasks();
     void refreshTaskChangePresenceForUpdatedTask(get, teamName, taskId);
   },
 
@@ -4248,6 +4249,7 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
       api.teams.updateTaskOwner(teamName, taskId, owner)
     );
     await get().refreshTeamData(teamName);
+    await get().fetchAllTasks();
   },
 
   updateTaskFields: async (
@@ -4259,6 +4261,7 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
       api.teams.updateTaskFields(teamName, taskId, fields)
     );
     await get().refreshTeamData(teamName);
+    await get().fetchAllTasks();
   },
 
   addTaskRelationship: async (teamName, taskId, targetId, type) => {
@@ -4266,6 +4269,7 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
       api.teams.addTaskRelationship(teamName, taskId, targetId, type)
     );
     await get().refreshTeamData(teamName);
+    await get().fetchAllTasks();
   },
 
   removeTaskRelationship: async (teamName, taskId, targetId, type) => {
@@ -4273,6 +4277,7 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
       api.teams.removeTaskRelationship(teamName, taskId, targetId, type)
     );
     await get().refreshTeamData(teamName);
+    await get().fetchAllTasks();
   },
 
   setTaskNeedsClarification: async (teamName, taskId, value) => {
@@ -4312,6 +4317,7 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
       );
       set({ addingComment: false });
       await get().refreshTeamData(teamName);
+      await get().fetchAllTasks();
       return comment;
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Failed to add comment';

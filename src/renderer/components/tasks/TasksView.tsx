@@ -87,10 +87,17 @@ export const TasksView = (): React.JSX.Element => {
   return (
     <div className="flex h-full min-w-0 flex-col bg-page-canvas">
       <WorkbenchPageHeader title="收件箱" description="集中处理跨团队任务、评论与 Agent 执行状态" />
-      <div className="flex items-center gap-0 border-b border-[var(--surface-border-subtle)] px-4 pt-3">
+      <div
+        role="tablist"
+        aria-label="任务工作台视图"
+        className="flex items-center gap-0 border-b border-[var(--surface-border-subtle)] px-4 pt-3"
+      >
         {SUB_TABS.map((tab) => (
           <button
             key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
               'flex items-center gap-1.5 border-b-2 px-3 pb-2 text-xs transition-colors',

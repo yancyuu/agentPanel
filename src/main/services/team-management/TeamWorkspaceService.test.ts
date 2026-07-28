@@ -268,6 +268,36 @@ describe('TeamWorkspaceService task board', () => {
     expect(patched.updatedAt).not.toBe(t.updatedAt);
   });
 
+  it('persists optional collaboration fields without changing old board records', async () => {
+    const s = svc();
+    const created = await s.createTask('alpha', { title: 'Collaborate' });
+    const comment = {
+      id: 'comment-1',
+      author: 'user',
+      text: 'Please check the linked task',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      type: 'regular' as const,
+      taskRefs: [{ taskId: 'task-2', displayId: 'TASK-2', teamName: 'beta' }],
+    };
+
+    await s.patchTask('alpha', created.id, {
+      comments: [comment],
+      needsClarification: 'user',
+      blockedBy: ['task-2'],
+      related: ['task-3'],
+    });
+
+    const [persisted] = await s.readTasks('alpha');
+    expect(persisted).toEqual(
+      expect.objectContaining({
+        comments: [comment],
+        needsClarification: 'user',
+        blockedBy: ['task-2'],
+        related: ['task-3'],
+      })
+    );
+  });
+
   it('patchTask throws for an unknown id', async () => {
     await expect(svc().patchTask('alpha', 'nope', { status: 'done' })).rejects.toThrow('not found');
   });

@@ -42,6 +42,10 @@ function createHarness(overrides: Partial<Dependencies> = {}) {
     patchTask: vi.fn(async (_teamName, _taskId, patch) => task(patch)),
     dispatchTask: vi.fn(async () => undefined),
     listProjects: vi.fn(async () => [{ name: 'project-a' }, { name: 'project-b' }]),
+    readTeamManifest: vi.fn(async (teamName) => ({
+      slug: teamName === 'project-a' ? 'team-a' : teamName,
+      displayName: teamName === 'project-a' ? 'Team Alpha' : teamName,
+    })),
     reply500: (error) => ({
       ok: false,
       error: error instanceof Error ? error.message : String(error),
@@ -173,7 +177,13 @@ describe('team task routes', () => {
 
     const partial = await harness.app.inject({ method: 'GET', url: '/api/teams/tasks' });
     expect(partial.json()).toEqual([
-      expect.objectContaining({ id: 'task-12345678', subject: 'Task title' }),
+      expect.objectContaining({
+        id: 'task-12345678',
+        subject: 'Task title',
+        teamName: 'team-a',
+        teamDisplayName: 'Team Alpha',
+        teamDeleted: false,
+      }),
     ]);
 
     const failed = createHarness({
@@ -303,70 +313,90 @@ describe('team task routes', () => {
     });
   });
 
-  it('keeps kanban, comments, clarification, relationships, and taskRefs aliases as no-op compatibility routes', async () => {
-    const harness = createHarness();
-    const requests = [
-      { method: 'GET', url: '/api/teams/team-a/kanban' },
-      { method: 'GET', url: '/api/teams/team-a/task-change-presence' },
-      { method: 'POST', url: '/api/teams/team-a/kanban-column-order', payload: { column: 'todo' } },
-      {
-        method: 'PATCH',
-        url: '/api/teams/team-a/tasks/task-12345678/kanban',
-        payload: { op: 'remove' },
+  it('keeps kanban aliases as no-op compatibility routes while task collaboration routes persist data', async () => {
+    let stored = task();
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [stored]),
+      patchTask: vi.fn(async (_teamName, _taskId, patch) => {
+        stored = { ...stored, ...patch, updatedAt: '2026-01-01T00:00:02.000Z' };
+        return stored;
+      }),
+    });
+    const kanban = await harness.app.inject({ method: 'GET', url: '/api/teams/team-a/kanban' });
+    const presence = await harness.app.inject({
+      method: 'GET',
+      url: '/api/teams/team-a/task-change-presence',
+    });
+    const comment = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks/task-12345678/comments',
+      payload: {
+        text: 'Please check TASK-1',
+        taskRefs: [{ taskId: 'task-1', displayId: 'TASK-1', teamName: 'team-a' }],
+        attachments: [
+          {
+            id: 'attachment-1',
+            filename: 'note.txt',
+            mimeType: 'text/plain',
+            base64Data: Buffer.from('hello').toString('base64'),
+          },
+        ],
       },
-      {
-        method: 'POST',
-        url: '/api/teams/team-a/tasks/task-12345678/comments',
-        payload: {
-          text: 'Please check TASK-1',
-          taskRefs: [{ taskId: 'task-1', displayId: 'TASK-1', teamName: 'team-a' }],
-        },
-      },
-      {
-        method: 'POST',
-        url: '/api/teams/team-a/tasks/task-12345678/clarification',
-        payload: { text: 'Why?' },
-      },
-      {
-        method: 'POST',
-        url: '/api/teams/team-a/tasks/task-12345678/relationships',
-        payload: { taskId: 'task-2' },
-      },
-      {
-        method: 'PATCH',
-        url: '/api/teams/team-a/kanban/task-12345678',
-        payload: {
-          op: 'request_changes',
-          comment: 'Revise this',
-          taskRefs: [{ taskId: 'task-2', displayId: 'TASK-2', teamName: 'team-a' }],
-        },
-      },
-      {
-        method: 'PATCH',
-        url: '/api/teams/team-a/kanban/task-12345678',
-        payload: { op: 'set_column', column: 'approved' },
-      },
-      {
-        method: 'PUT',
-        url: '/api/teams/team-a/kanban/column-order',
-        payload: { columnId: 'done' },
-      },
-      {
-        method: 'POST',
-        url: '/api/teams/team-a/task-clarification/task-12345678',
-        payload: { text: 'Why?' },
-      },
-      { method: 'DELETE', url: '/api/teams/team-a/tasks/task-12345678/relationships' },
-    ] as const;
+    });
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks/task-12345678/clarification',
+      payload: { value: 'lead' },
+    });
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks/task-12345678/relationships',
+      payload: { targetId: 'task-2', type: 'blockedBy' },
+    });
+    const afterAdd = await harness.app.inject({
+      method: 'GET',
+      url: '/api/teams/team-a/tasks',
+    });
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/task-clarification/task-12345678',
+      payload: { value: 'user' },
+    });
+    await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/teams/team-a/tasks/task-12345678/relationships',
+      payload: { targetId: 'task-2', type: 'blockedBy' },
+    });
 
-    const responses = [];
-    for (const request of requests) responses.push(await harness.app.inject(request));
-
-    expect(responses.map((response) => response.statusCode)).toEqual(requests.map(() => 200));
-    expect(responses[0].json()).toEqual({ teamName: 'team-a', reviewers: [], tasks: {} });
-    expect(responses[1].json()).toEqual({});
-    for (const response of responses.slice(2)) expect(response.json()).toEqual({ ok: true });
-    expect(harness.dependencies.patchTask).not.toHaveBeenCalled();
+    expect(kanban.json()).toEqual({ teamName: 'team-a', reviewers: [], tasks: {} });
+    expect(presence.json()).toEqual({});
+    expect(comment.statusCode).toBe(200);
+    expect(comment.json()).toEqual(
+      expect.objectContaining({
+        author: 'user',
+        text: 'Please check TASK-1',
+        type: 'regular',
+        taskRefs: [{ taskId: 'task-1', displayId: 'TASK-1', teamName: 'team-a' }],
+        attachments: [
+          expect.objectContaining({
+            id: 'attachment-1',
+            filename: 'note.txt',
+            mimeType: 'text/plain',
+            size: 5,
+            filePath: null,
+          }),
+        ],
+      })
+    );
+    expect(afterAdd.json()).toEqual([
+      expect.objectContaining({
+        comments: [expect.objectContaining({ text: 'Please check TASK-1' })],
+        needsClarification: 'lead',
+        blockedBy: ['task-2'],
+      }),
+    ]);
+    expect(stored.needsClarification).toBe('user');
+    expect(stored.blockedBy).toBeUndefined();
     expect(harness.dependencies.dispatchTask).not.toHaveBeenCalled();
   });
 });

@@ -13,12 +13,23 @@
  */
 
 import { resolveExternalPlatformSessionTeamSlug } from '@main/utils/externalPlatformSessionRouting';
-import type { AgentCapability, DiscoverableTeam } from '@shared/types/team';
 import { createLogger } from '@shared/utils/logger';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+
+import type {
+  AgentCapability,
+  DiscoverableTeam,
+  SourceMessageSnapshot,
+  TaskAttachmentMeta,
+  TaskComment,
+  TaskHistoryEvent,
+  TaskRef,
+  TaskWorkInterval,
+  TeamReviewState,
+} from '@shared/types/team';
 
 const logger = createLogger('TeamWorkspace');
 
@@ -122,9 +133,26 @@ export interface Task {
   teamSlug: string;
   title: string;
   description?: string;
+  descriptionTaskRefs?: TaskRef[];
+  activeForm?: string;
+  prompt?: string;
+  promptTaskRefs?: TaskRef[];
   status: TaskStatus;
   /** 分配给哪个团队（team slug） */
   assignee?: string | null;
+  createdBy?: string;
+  workIntervals?: TaskWorkInterval[];
+  historyEvents?: TaskHistoryEvent[];
+  blocks?: string[];
+  blockedBy?: string[];
+  related?: string[];
+  comments?: TaskComment[];
+  needsClarification?: 'lead' | 'user';
+  deletedAt?: string;
+  attachments?: TaskAttachmentMeta[];
+  reviewState?: TeamReviewState;
+  sourceMessageId?: string;
+  sourceMessage?: SourceMessageSnapshot;
   /** agent 完成任务后写入的结果摘要 */
   result?: string | null;
   createdAt: string;

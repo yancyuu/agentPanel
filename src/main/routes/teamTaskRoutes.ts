@@ -1,4 +1,15 @@
+import { randomUUID } from 'node:crypto';
+
 import type { Task, TaskStatus } from '../services/team-management/TeamWorkspaceService';
+import type {
+  CommentAttachmentPayload,
+  GlobalTask,
+  TaskAttachmentMeta,
+  TaskComment,
+  TaskRef,
+  TeamTask,
+  TeamTaskStatus,
+} from '@shared/types/team';
 import type { FastifyInstance } from 'fastify';
 
 interface TeamTaskRouteDependencies {
@@ -15,6 +26,11 @@ interface TeamTaskRouteDependencies {
   patchTask(teamName: string, taskId: string, patch: Partial<Task>): Promise<Task>;
   dispatchTask(teamName: string, task: Task): Promise<void>;
   listProjects(): Promise<{ name: string }[]>;
+  readTeamManifest(teamName: string): Promise<{
+    slug: string;
+    displayName?: string;
+    deletedAt?: string;
+  }>;
   reply500(error: unknown): { ok: boolean; error: string };
 }
 
@@ -29,17 +45,16 @@ interface TeamTaskRouteOptions {
   routes?: TeamTaskRouteSection[];
 }
 
-export interface TeamTaskResponse {
-  id: string;
+export type TeamTaskResponse = TeamTask & {
   displayId: string;
-  subject: string;
   description: string;
-  status: string;
-  owner?: string;
   createdAt: string;
   updatedAt: string;
   result?: string;
-}
+};
+
+type GlobalTaskResponse = TeamTaskResponse &
+  Pick<GlobalTask, 'teamName' | 'teamDisplayName' | 'teamDeleted'>;
 
 /** TeamTask status → internal Task status. */
 export function toTaskStatus(status: string): TaskStatus {
@@ -58,7 +73,7 @@ function isManualInProgressExitBlocked(
 /** Internal Task → TeamTask shape consumed by the renderer. */
 export function toTeamTask(task: Task): TeamTaskResponse {
   const legacyTask = task as Task & { title?: string; subject?: string };
-  const statusMap: Record<string, string> = {
+  const statusMap: Record<TaskStatus, TeamTaskStatus> = {
     todo: 'pending',
     doing: 'in_progress',
     done: 'completed',
@@ -68,8 +83,25 @@ export function toTeamTask(task: Task): TeamTaskResponse {
     displayId: task.id.slice(0, 8),
     subject: legacyTask.title ?? legacyTask.subject ?? '',
     description: task.description ?? '',
+    descriptionTaskRefs: task.descriptionTaskRefs,
+    activeForm: task.activeForm,
+    prompt: task.prompt,
+    promptTaskRefs: task.promptTaskRefs,
     status: statusMap[task.status] ?? 'pending',
     owner: task.assignee ?? undefined,
+    createdBy: task.createdBy,
+    workIntervals: task.workIntervals,
+    historyEvents: task.historyEvents,
+    blocks: task.blocks,
+    blockedBy: task.blockedBy,
+    related: task.related,
+    comments: task.comments,
+    needsClarification: task.needsClarification,
+    deletedAt: task.deletedAt,
+    attachments: task.attachments,
+    reviewState: task.reviewState,
+    sourceMessageId: task.sourceMessageId,
+    sourceMessage: task.sourceMessage,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     result: task.result ?? undefined,
@@ -82,6 +114,65 @@ function isSoftDeletedTask(task: Pick<Task, 'result'>): boolean {
 
 export function activeTasks<T extends Pick<Task, 'result'>>(tasks: T[]): T[] {
   return tasks.filter((task) => !isSoftDeletedTask(task));
+}
+
+function normalizeTaskRefs(value: unknown): TaskRef[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const refs = value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const record = entry as Record<string, unknown>;
+    if (
+      typeof record.taskId !== 'string' ||
+      typeof record.displayId !== 'string' ||
+      typeof record.teamName !== 'string'
+    ) {
+      return [];
+    }
+    return [
+      {
+        taskId: record.taskId,
+        displayId: record.displayId,
+        teamName: record.teamName,
+      } satisfies TaskRef,
+    ];
+  });
+  return refs.length > 0 ? refs : undefined;
+}
+
+function toAttachmentMetadata(value: unknown, addedAt: string): TaskAttachmentMeta[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const attachments = value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const record = entry as Partial<CommentAttachmentPayload>;
+    if (
+      typeof record.id !== 'string' ||
+      typeof record.filename !== 'string' ||
+      typeof record.mimeType !== 'string' ||
+      typeof record.base64Data !== 'string'
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: record.id,
+        filename: record.filename,
+        mimeType: record.mimeType,
+        size: Buffer.byteLength(record.base64Data, 'base64'),
+        addedAt,
+        filePath: null,
+      } satisfies TaskAttachmentMeta,
+    ];
+  });
+  return attachments.length > 0 ? attachments : undefined;
+}
+
+function appendUnique(values: string[] | undefined, value: string): string[] {
+  return values?.includes(value) ? values : [...(values ?? []), value];
+}
+
+function removeValue(values: string[] | undefined, value: string): string[] | undefined {
+  const next = values?.filter((entry) => entry !== value);
+  return next && next.length > 0 ? next : undefined;
 }
 
 function registerCoreRoutes(app: FastifyInstance, dependencies: TeamTaskRouteDependencies): void {
@@ -206,12 +297,21 @@ function createRequestReviewHandler(dependencies: TeamTaskRouteDependencies): Re
 function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteDependencies): void {
   app.get('/api/teams/tasks', async () => {
     try {
-      const allTasks: TeamTaskResponse[] = [];
+      const allTasks: GlobalTaskResponse[] = [];
       const projects = await dependencies.listProjects();
       for (const project of projects) {
         try {
           const tasks = activeTasks(await dependencies.readTasks(project.name));
-          allTasks.push(...tasks.map(toTeamTask));
+          const manifest = await dependencies.readTeamManifest(project.name).catch(() => null);
+          for (const task of tasks) {
+            const teamName = manifest?.slug || task.teamSlug || project.name;
+            allTasks.push({
+              ...toTeamTask(task),
+              teamName,
+              teamDisplayName: manifest?.displayName || teamName,
+              teamDeleted: Boolean(manifest?.deletedAt),
+            });
+          }
         } catch {
           // Skip projects without a readable local task board.
         }
@@ -359,18 +459,68 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
 
   app.post<{
     Params: { name: string; id: string };
-    Body: { text?: string; taskRefs?: unknown[] };
-  }>('/api/teams/:name/tasks/:id/comments', async () => ({ ok: true }));
+    Body: { text?: string; taskRefs?: unknown[]; attachments?: unknown[] };
+  }>('/api/teams/:name/tasks/:id/comments', async (request, reply) => {
+    const text = request.body?.text?.trim();
+    if (!text) return reply.code(400).send({ error: 'text required' });
+    try {
+      const tasks = await dependencies.readTasks(request.params.name);
+      const existingTask = tasks.find((task) => task.id === request.params.id);
+      if (!existingTask) return reply.code(404).send({ error: 'not found' });
+      const createdAt = new Date().toISOString();
+      const comment: TaskComment = {
+        id: randomUUID(),
+        author: 'user',
+        text,
+        createdAt,
+        type: 'regular',
+        taskRefs: normalizeTaskRefs(request.body?.taskRefs),
+        attachments: toAttachmentMetadata(request.body?.attachments, createdAt),
+      };
+      await dependencies.patchTask(request.params.name, request.params.id, {
+        comments: [...(existingTask.comments ?? []), comment],
+      });
+      return comment;
+    } catch (error) {
+      return reply.code(500).send(dependencies.reply500(error));
+    }
+  });
 
-  app.post<{ Params: { name: string; id: string } }>(
-    '/api/teams/:name/tasks/:id/clarification',
-    async () => ({ ok: true })
-  );
+  app.post<{
+    Params: { name: string; id: string };
+    Body: { value?: 'lead' | 'user' | null };
+  }>('/api/teams/:name/tasks/:id/clarification', async (request, reply) => {
+    try {
+      await dependencies.patchTask(request.params.name, request.params.id, {
+        needsClarification: request.body?.value ?? undefined,
+      });
+      return { ok: true };
+    } catch (error) {
+      return reply.code(404).send(dependencies.reply500(error));
+    }
+  });
 
-  app.post<{ Params: { name: string; id: string } }>(
-    '/api/teams/:name/tasks/:id/relationships',
-    async () => ({ ok: true })
-  );
+  app.post<{
+    Params: { name: string; id: string };
+    Body: { targetId?: string; type?: 'blockedBy' | 'blocks' | 'related' };
+  }>('/api/teams/:name/tasks/:id/relationships', async (request, reply) => {
+    const targetId = request.body?.targetId?.trim();
+    const type = request.body?.type;
+    if (!targetId || !type) {
+      return reply.code(400).send({ error: 'targetId and type required' });
+    }
+    try {
+      const tasks = await dependencies.readTasks(request.params.name);
+      const existingTask = tasks.find((task) => task.id === request.params.id);
+      if (!existingTask) return reply.code(404).send({ error: 'not found' });
+      await dependencies.patchTask(request.params.name, request.params.id, {
+        [type]: appendUnique(existingTask[type], targetId),
+      });
+      return { ok: true };
+    } catch (error) {
+      return reply.code(404).send(dependencies.reply500(error));
+    }
+  });
 }
 
 function registerReviewAliasRoutes(
@@ -392,16 +542,45 @@ function registerReviewAliasRoutes(
   }));
 }
 
-function registerLateAliasRoutes(app: FastifyInstance): void {
-  app.post<{ Params: { name: string; taskId: string } }>(
-    '/api/teams/:name/task-clarification/:taskId',
-    async () => ({ ok: true })
-  );
+function registerLateAliasRoutes(
+  app: FastifyInstance,
+  dependencies: TeamTaskRouteDependencies
+): void {
+  app.post<{
+    Params: { name: string; taskId: string };
+    Body: { value?: 'lead' | 'user' | null };
+  }>('/api/teams/:name/task-clarification/:taskId', async (request, reply) => {
+    try {
+      await dependencies.patchTask(request.params.name, request.params.taskId, {
+        needsClarification: request.body?.value ?? undefined,
+      });
+      return { ok: true };
+    } catch (error) {
+      return reply.code(404).send(dependencies.reply500(error));
+    }
+  });
 
-  app.delete<{ Params: { name: string; id: string } }>(
-    '/api/teams/:name/tasks/:id/relationships',
-    async () => ({ ok: true })
-  );
+  app.delete<{
+    Params: { name: string; id: string };
+    Body: { targetId?: string; type?: 'blockedBy' | 'blocks' | 'related' };
+  }>('/api/teams/:name/tasks/:id/relationships', async (request, reply) => {
+    const targetId = request.body?.targetId?.trim();
+    const type = request.body?.type;
+    if (!targetId || !type) {
+      return reply.code(400).send({ error: 'targetId and type required' });
+    }
+    try {
+      const tasks = await dependencies.readTasks(request.params.name);
+      const existingTask = tasks.find((task) => task.id === request.params.id);
+      if (!existingTask) return reply.code(404).send({ error: 'not found' });
+      await dependencies.patchTask(request.params.name, request.params.id, {
+        [type]: removeValue(existingTask[type], targetId),
+      });
+      return { ok: true };
+    } catch (error) {
+      return reply.code(404).send(dependencies.reply500(error));
+    }
+  });
 }
 
 export function registerTeamTaskRoutes(
@@ -417,5 +596,5 @@ export function registerTeamTaskRoutes(
   if (routes.has('compatibility')) registerCompatibilityRoutes(app);
   if (routes.has('actions')) registerActionRoutes(app, dependencies);
   if (routes.has('review-aliases')) registerReviewAliasRoutes(app, dependencies);
-  if (routes.has('late-aliases')) registerLateAliasRoutes(app);
+  if (routes.has('late-aliases')) registerLateAliasRoutes(app, dependencies);
 }

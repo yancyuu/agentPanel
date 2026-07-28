@@ -73,6 +73,9 @@ describe('InboxTaskList', () => {
     expect(host.textContent).toContain('2 条未读评论');
     expect(host.querySelector('[aria-label="筛选团队"]')).not.toBeNull();
     expect(host.querySelector('[aria-label="筛选负责人"]')).not.toBeNull();
+    expect(host.querySelector('[role="tablist"]')).not.toBeNull();
+    expect(buttonByText(host, '收件箱').getAttribute('aria-selected')).toBe('true');
+    expect(buttonByText(host, '进行中').getAttribute('role')).toBe('tab');
 
     await act(async () => {
       buttonByText(host, '进行中').click();
