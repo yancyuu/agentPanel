@@ -147,6 +147,26 @@ describe('TabbedLayout', () => {
     });
   });
 
+  it('keeps Inbox active when the no-tab fallback is visible', async () => {
+    storeState.activeTabId = '';
+    storeState.paneLayout.panes[0] = {
+      id: 'pane-1',
+      widthFraction: 1,
+      activeTabId: '',
+      tabs: [],
+    };
+
+    const { host, root } = await renderLayout();
+
+    expect(host.querySelector('[aria-current="page"]')?.getAttribute('aria-label')).toBe('收件箱');
+    expect(actions.openTasksTab).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
   it('preserves the team-only WorkspaceBrowser sidebar behavior', async () => {
     storeState.activeTabId = 'team-tab';
     storeState.paneLayout.panes[0] = {

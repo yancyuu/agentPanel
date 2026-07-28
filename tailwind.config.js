@@ -17,18 +17,24 @@ module.exports = {
         foreground: 'var(--foreground)',
         'foreground-secondary': 'var(--foreground-secondary)',
         'muted-foreground': 'var(--muted-foreground)',
-        brand: 'var(--brand)',
+        brand: 'rgb(var(--brand-rgb) / <alpha-value>)',
         success: 'var(--success)',
         warning: 'var(--warning)',
-        destructive: 'var(--destructive)',
+        destructive: 'rgb(var(--destructive-rgb) / <alpha-value>)',
+        // Keep the established surface utilities stable for untouched pages.
         surface: {
+          DEFAULT: 'var(--color-surface)',
+          raised: 'var(--color-surface-raised)',
+          overlay: 'var(--color-surface-overlay)',
+          sidebar: 'var(--color-surface-sidebar)',
+          code: 'var(--code-bg)',
+        },
+        // New shell surfaces use distinct names so existing elevation remains unchanged.
+        'workbench-surface': {
           DEFAULT: 'var(--surface)',
           raised: 'var(--surface-raised)',
           hover: 'var(--surface-hover)',
           selected: 'var(--surface-selected)',
-          overlay: 'var(--color-surface-overlay)',
-          sidebar: 'var(--color-surface-sidebar)',
-          code: 'var(--code-bg)',
         },
         // Theme-aware border colors (use CSS variables)
         border: {

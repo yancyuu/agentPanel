@@ -88,7 +88,9 @@ export const TabbedLayout = (): React.JSX.Element => {
     }
     return null;
   }, [activeTabId, panes]);
-  const activeArea = getWorkbenchNavigationArea(currentTab);
+  const hasAnyTabs = panes.some((pane) => pane.tabs.length > 0);
+  const activeArea =
+    currentTab === null && !hasAnyTabs ? 'inbox' : getWorkbenchNavigationArea(currentTab);
   const showSidebar = currentTab?.type === 'team';
 
   const sensors = useSensors(

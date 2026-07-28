@@ -25,7 +25,8 @@ export type WorkbenchNavigationArea =
   | 'extensions'
   | 'notifications'
   | 'system-manager'
-  | 'settings';
+  | 'settings'
+  | 'community';
 
 type WorkbenchTabDescriptor = Pick<Tab, 'type' | 'teamName'>;
 
@@ -42,19 +43,15 @@ export function getWorkbenchNavigationArea(
   if (tab.type === 'extensions') return 'extensions';
   if (tab.type === 'notifications') return 'notifications';
   if (tab.type === 'settings') return 'settings';
-  if (
-    tab.type === 'dashboard' ||
-    tab.type === 'session' ||
-    tab.type === 'report' ||
-    tab.type === 'chat'
-  ) {
+  if (tab.type === 'chat') return 'community';
+  if (tab.type === 'dashboard' || tab.type === 'session' || tab.type === 'report') {
     return 'overview';
   }
   return null;
 }
 
 interface NavigationItem {
-  id: WorkbenchNavigationArea | 'search' | 'community';
+  id: WorkbenchNavigationArea | 'search';
   label: string;
   icon: ComponentType<{ className?: string }>;
   onClick: () => void;
@@ -96,14 +93,14 @@ function NavigationButton({
       className={cn(
         'group flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors',
         active
-          ? 'bg-surface-selected font-medium text-foreground hover:bg-surface-selected'
-          : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+          ? 'bg-workbench-surface-selected font-medium text-foreground hover:bg-workbench-surface-selected'
+          : 'text-muted-foreground hover:bg-workbench-surface-hover hover:text-foreground'
       )}
     >
       <Icon className="size-4 shrink-0" />
       <span className="hidden min-w-0 flex-1 truncate text-left xl:block">{item.label}</span>
       {badgeLabel ? (
-        <span className="bg-brand/10 hidden min-w-5 rounded-full px-1.5 text-center text-xs text-brand xl:inline-flex xl:justify-center">
+        <span className="hidden min-w-5 rounded-full bg-brand/10 px-1.5 text-center text-xs text-brand xl:inline-flex xl:justify-center">
           {badgeLabel}
         </span>
       ) : null}

@@ -56,6 +56,7 @@ describe('AppNavigationRail', () => {
     expect(getWorkbenchNavigationArea({ type: 'dashboard' })).toBe('overview');
     expect(getWorkbenchNavigationArea({ type: 'session' })).toBe('overview');
     expect(getWorkbenchNavigationArea({ type: 'report' })).toBe('overview');
+    expect(getWorkbenchNavigationArea({ type: 'chat' })).toBe('community');
     expect(getWorkbenchNavigationArea({ type: 'teams' })).toBe('agents');
     expect(getWorkbenchNavigationArea({ type: 'team', teamName: '研发团队' })).toBe('agents');
     expect(getWorkbenchNavigationArea({ type: 'team', teamName: 'system-manager' })).toBe(
@@ -67,6 +68,19 @@ describe('AppNavigationRail', () => {
     expect(getWorkbenchNavigationArea({ type: 'notifications' })).toBe('notifications');
     expect(getWorkbenchNavigationArea({ type: 'settings' })).toBe('settings');
     expect(getWorkbenchNavigationArea(null)).toBeNull();
+  });
+
+  it('shows the community entry as active for the existing chat tab area', async () => {
+    const { host, root } = await renderRail(createProps({ activeArea: 'community' }));
+
+    expect(host.querySelector('[aria-current="page"]')?.getAttribute('aria-label')).toBe(
+      '加入飞书群'
+    );
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
   });
 
   it('invokes existing navigation actions and exposes the active item', async () => {
