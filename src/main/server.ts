@@ -126,6 +126,7 @@ import { registerEditorRoutes } from './routes/editorRoutes';
 import { registerHeartbeatRoutes } from './routes/heartbeatRoutes';
 import { registerWorkbenchNotFoundHandler } from './routes/notFoundHandler';
 import { registerReviewCompatibilityRoutes } from './routes/reviewCompatibilityRoutes';
+import { registerRuntimeRoutes } from './routes/runtimeRoutes';
 import { registerSseRoutes } from './routes/sseRoutes';
 import { registerStaticRoutes } from './routes/staticRoutes';
 import { registerSystemManagerRoutes } from './routes/systemManagerRoutes';
@@ -1795,68 +1796,16 @@ app.post<{ Body: { content?: unknown } }>('/api/cc-config/raw', handleWriteHermi
 // Health / cc-connect status (alias)
 // ===========================================================================
 
-app.get('/api/status', async () => {
-  try {
-    const data = await cc.getStatus();
-    return { ok: true, data };
-  } catch (err) {
-    return reply500(err);
-  }
-});
-
-// ===========================================================================
-// Runtime readiness — cc-connect binary + sidecar health for the UI degraded banner
-// ===========================================================================
-
-app.get('/api/v1/system/readiness', async () => {
-  return { ok: true, data: getRuntimeReadiness() };
-});
-
-// ===========================================================================
-// cc-connect global settings proxy
-// ===========================================================================
-
-app.get('/api/cc-settings', async () => {
-  const data = await readEffectiveCcSettings();
-  return { ok: true, data };
-});
-
-app.patch<{ Body: Record<string, unknown> }>('/api/cc-settings', async (request, reply) => {
-  const patch = request.body ?? {};
-  try {
-    const localSettings = await hermitCcSettings.patch(patch);
-    let remoteSettings: Record<string, unknown> = {};
-    try {
-      remoteSettings = await cc.patchGlobalSettings(patch);
-    } catch (err) {
-      app.log.warn({ err }, 'cc-connect settings patch failed; saved Hermit settings locally');
-    }
-    return {
-      ok: true,
-      data: { ...DEFAULT_HERMIT_CC_SETTINGS, ...remoteSettings, ...localSettings },
-    };
-  } catch (err) {
-    return reply500(err);
-  }
-});
-
-// restart / reload cc-connect
-app.post('/api/cc-restart', async () => {
-  try {
-    await restartHermitBridgeAndReconnect();
-    return { ok: true };
-  } catch (err) {
-    return reply500(err);
-  }
-});
-
-app.post('/api/cc-reload', async () => {
-  try {
-    await cc.reload();
-    return { ok: true };
-  } catch (err) {
-    return reply500(err);
-  }
+registerRuntimeRoutes(app, {
+  getStatus: () => serverContext.services.bridgeClient.getStatus(),
+  getRuntimeReadiness,
+  readEffectiveSettings: readEffectiveCcSettings,
+  patchLocalSettings: (patch) => serverContext.services.ccSettings.patch(patch),
+  patchRemoteSettings: (patch) => serverContext.services.bridgeClient.patchGlobalSettings(patch),
+  defaultSettings: DEFAULT_HERMIT_CC_SETTINGS,
+  restartBridge: restartHermitBridgeAndReconnect,
+  reloadBridge: () => serverContext.services.bridgeClient.reload(),
+  logger: app.log,
 });
 
 // ===========================================================================

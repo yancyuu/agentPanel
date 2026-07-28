@@ -181,7 +181,7 @@ describe('server route manifest baseline', () => {
     };
 
     expect(SERVER_SOURCE.indexOf('registerBridgeProxyRoutes(app')).toBeLessThan(
-      SERVER_SOURCE.indexOf("app.get('/api/v1/system/readiness'")
+      SERVER_SOURCE.indexOf('registerRuntimeRoutes(app')
     );
     expectInlineOrder(
       'GET',
