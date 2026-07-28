@@ -119,6 +119,7 @@ import {
   type InMemoryScheduleRun,
 } from './serverContext';
 import { registerAppConfigRoutes } from './routes/appConfigRoutes';
+import { registerBridgeConfigRoutes } from './routes/bridgeConfigRoutes';
 import { registerBridgeProxyRoutes } from './routes/bridgeProxyRoutes';
 import { registerGraphRoutes } from './routes/graphRoutes';
 import { registerHarnessRoutes } from './routes/harnessRoutes';
@@ -392,6 +393,10 @@ function readHermitBridgeConfigTomlRaw(): { path: string; content: string } {
     path: configFile,
     content: readFileSync(configFile, 'utf-8'),
   };
+}
+
+async function writeHermitBridgeConfigTomlRaw(content: string): Promise<void> {
+  await atomicWriteAsync(ensureWritableHermitBridgeConfigFile(), content);
 }
 
 function readHermitBridgeTomlToken(section: 'bridge' | 'management'): string {
@@ -1475,264 +1480,10 @@ registerHermitConfigRoutes(app, {
 // hermit-bridge config (Hermit-managed: ~/.hermit/cc-connect/config.toml)
 // ===========================================================================
 
-function readHermitBridgeConfigRaw(): { path: string; content: string } {
-  return readHermitBridgeConfigTomlRaw();
-}
-
-/** Simple TOML parser for hermit-bridge config (handles only the fields we need). */
-function readHermitBridgeConfig(): Record<string, unknown> {
-  const { content: raw } = readHermitBridgeConfigTomlRaw();
-
-  const result: Record<string, unknown> = {};
-
-  // Top-level simple fields
-  const dataDirMatch = /^data_dir\s*=\s*"([^"]*)"/m.exec(raw);
-  if (dataDirMatch) result.data_dir = dataDirMatch[1];
-
-  const languageMatch = /^language\s*=\s*"([^"]*)"/m.exec(raw);
-  if (languageMatch) result.language = languageMatch[1];
-
-  const idleTimeoutMatch = /^idle_timeout_mins\s*=\s*(\d+)/m.exec(raw);
-  if (idleTimeoutMatch) result.idle_timeout_mins = Number(idleTimeoutMatch[1]);
-
-  const maxTurnTimeMatch = /^max_turn_time_mins\s*=\s*(\d+)/m.exec(raw);
-  if (maxTurnTimeMatch) result.max_turn_time_mins = Number(maxTurnTimeMatch[1]);
-
-  const wsIdleTimeoutMatch = /^workspace_idle_timeout_mins\s*=\s*(\d+)/m.exec(raw);
-  if (wsIdleTimeoutMatch) result.workspace_idle_timeout_mins = Number(wsIdleTimeoutMatch[1]);
-
-  // [management] section
-  const mgmtSection = /\[management\]([^\[]*)/s.exec(raw);
-  if (mgmtSection) {
-    const section = mgmtSection[1];
-    const enabledMatch = /enabled\s*=\s*(true|false)/.exec(section);
-    if (enabledMatch) result.management_enabled = enabledMatch[1] === 'true';
-    const portMatch = /port\s*=\s*(\d+)/.exec(section);
-    if (portMatch) result.management_port = Number(portMatch[1]);
-    const tokenMatch = /token\s*=\s*"([^"]*)"/.exec(section);
-    if (tokenMatch) result.management_token = tokenMatch[1];
-  }
-
-  // [bridge] section
-  const bridgeSection = /\[bridge\]([^\[]*)/s.exec(raw);
-  if (bridgeSection) {
-    const section = bridgeSection[1];
-    const enabledMatch = /enabled\s*=\s*(true|false)/.exec(section);
-    if (enabledMatch) result.bridge_enabled = enabledMatch[1] === 'true';
-    const portMatch = /port\s*=\s*(\d+)/.exec(section);
-    if (portMatch) result.bridge_port = Number(portMatch[1]);
-    const tokenMatch = /token\s*=\s*"([^"]*)"/.exec(section);
-    if (tokenMatch) result.bridge_token = tokenMatch[1];
-  }
-
-  // [log] section
-  const logSection = /\[log\]([^\[]*)/s.exec(raw);
-  if (logSection) {
-    const levelMatch = /level\s*=\s*"([^"]*)"/.exec(logSection[1]);
-    if (levelMatch) result.log_level = levelMatch[1];
-  }
-
-  // [display] section
-  const displaySection = /\[display\]([^\[]*)/s.exec(raw);
-  if (displaySection) {
-    const section = displaySection[1];
-    const thinkingMatch = /thinking_messages\s*=\s*(true|false)/.exec(section);
-    if (thinkingMatch) result.display_thinking = thinkingMatch[1] === 'true';
-    const toolMatch = /tool_messages\s*=\s*(true|false)/.exec(section);
-    if (toolMatch) result.display_tool = toolMatch[1] === 'true';
-  }
-
-  return result;
-}
-
-async function writeHermitBridgeConfig(updates: Record<string, unknown>): Promise<void> {
-  const configFile = ensureWritableHermitBridgeConfigFile();
-  let raw = readFileSync(configFile, 'utf-8');
-
-  // Update top-level fields
-  if (updates.language !== undefined) {
-    raw = raw.replace(/^(language\s*=\s*)"[^"]*"/m, `$1"${updates.language}"`);
-  }
-  if (updates.idle_timeout_mins !== undefined) {
-    raw = raw.replace(/^(idle_timeout_mins\s*=\s*)\d+/m, `$1${updates.idle_timeout_mins}`);
-  }
-  if (updates.max_turn_time_mins !== undefined) {
-    if (/^max_turn_time_mins\s*=/m.exec(raw)) {
-      raw = raw.replace(/^(max_turn_time_mins\s*=\s*)\d+/m, `$1${updates.max_turn_time_mins}`);
-    } else {
-      raw = raw.replace(
-        /^(idle_timeout_mins\s*=\s*\d+)/m,
-        `$1\nmax_turn_time_mins = ${updates.max_turn_time_mins}`
-      );
-    }
-  }
-  if (updates.workspace_idle_timeout_mins !== undefined) {
-    if (/^workspace_idle_timeout_mins\s*=/m.exec(raw)) {
-      raw = raw.replace(
-        /^(workspace_idle_timeout_mins\s*=\s*)\d+/m,
-        `$1${updates.workspace_idle_timeout_mins}`
-      );
-    } else {
-      raw = raw.replace(
-        /^(idle_timeout_mins\s*=\s*\d+)/m,
-        `$1\nworkspace_idle_timeout_mins = ${updates.workspace_idle_timeout_mins}`
-      );
-    }
-  }
-
-  // Update [management] section
-  if (updates.management_enabled !== undefined) {
-    const val = updates.management_enabled ? 'true' : 'false';
-    raw = raw.replace(
-      /(\[management\][^\n]*\n(?:[^\[]*))(enabled\s*=\s*)(true|false)/s,
-      (match, prefix, key) => `${prefix}${key}${val}`
-    );
-  }
-  if (updates.management_port !== undefined) {
-    raw = raw.replace(
-      /(\[management\][^\n]*\n(?:[^\[]*))(port\s*=\s*)\d+/s,
-      `$1$2${updates.management_port}`
-    );
-  }
-  if (updates.management_token !== undefined) {
-    raw = raw.replace(
-      /(\[management\][^\n]*\n(?:[^\[]*))(token\s*=\s*)"[^"]*"/s,
-      `$1$2"${updates.management_token}"`
-    );
-  }
-
-  // Update [bridge] section
-  if (updates.bridge_enabled !== undefined) {
-    const val = updates.bridge_enabled ? 'true' : 'false';
-    raw = raw.replace(/(\[bridge\][^\n]*\n(?:[^\[]*))(enabled\s*=\s*)(true|false)/s, `$1$2${val}`);
-  }
-  if (updates.bridge_port !== undefined) {
-    raw = raw.replace(
-      /(\[bridge\][^\n]*\n(?:[^\[]*))(port\s*=\s*)\d+/s,
-      `$1$2${updates.bridge_port}`
-    );
-  }
-  if (updates.bridge_token !== undefined) {
-    raw = raw.replace(
-      /(\[bridge\][^\n]*\n(?:[^\[]*))(token\s*=\s*)"[^"]*"/s,
-      `$1$2"${updates.bridge_token}"`
-    );
-  }
-
-  // Update [log] section
-  if (updates.log_level !== undefined) {
-    raw = raw.replace(
-      /(\[log\][^\n]*\n(?:[^\[]*))(level\s*=\s*)"[^"]*"/s,
-      `$1$2"${updates.log_level}"`
-    );
-  }
-
-  // Update [display] section
-  if (updates.display_thinking !== undefined) {
-    const val = updates.display_thinking ? 'true' : 'false';
-    raw = raw.replace(
-      /(\[display\][^\n]*\n(?:[^\[]*))(thinking_messages\s*=\s*)(true|false)/s,
-      `$1$2${val}`
-    );
-  }
-  if (updates.display_tool !== undefined) {
-    const val = updates.display_tool ? 'true' : 'false';
-    raw = raw.replace(
-      /(\[display\][^\n]*\n(?:[^\[]*))(tool_messages\s*=\s*)(true|false)/s,
-      `$1$2${val}`
-    );
-  }
-
-  await atomicWriteAsync(configFile, raw);
-}
-
-async function writeHermitBridgeConfigRaw(content: string): Promise<void> {
-  const configFile = ensureWritableHermitBridgeConfigFile();
-  await atomicWriteAsync(configFile, content);
-}
-
-async function handleReadHermitBridgeConfig() {
-  try {
-    const config = readHermitBridgeConfig();
-    // Mask tokens in the structured response — the UI only needs to know they
-    // are set (mirrors /api/hermit-config masking). Raw values remain available
-    // via the origin-guarded /raw route for the config editor.
-    const mgmtToken = config.management_token;
-    if (typeof mgmtToken === 'string' && mgmtToken) {
-      config.management_token = mgmtToken.slice(0, 4) + '****';
-    }
-    const bridgeToken = config.bridge_token;
-    if (typeof bridgeToken === 'string' && bridgeToken) {
-      config.bridge_token = bridgeToken.slice(0, 4) + '****';
-    }
-    return { ok: true, data: config };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-async function handleWriteHermitBridgeConfig(
-  request: import('fastify').FastifyRequest<{ Body: Record<string, unknown> }>
-) {
-  try {
-    const updates = request.body ?? {};
-    await writeHermitBridgeConfig(updates);
-
-    // If management port/token changed, notify user to restart hermit-bridge.
-    const needsRestart =
-      'management_port' in updates ||
-      'management_token' in updates ||
-      'bridge_port' in updates ||
-      'bridge_token' in updates;
-
-    return {
-      ok: true,
-      data: { needsRestart },
-    };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-async function handleReadHermitBridgeConfigRaw() {
-  try {
-    const data = readHermitBridgeConfigRaw();
-    return { ok: true, data };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-async function handleWriteHermitBridgeConfigRaw(
-  request: import('fastify').FastifyRequest<{ Body: { content?: unknown } }>
-) {
-  try {
-    const content = request.body?.content;
-    if (typeof content !== 'string') {
-      return { ok: false, error: 'content 必须是字符串' };
-    }
-    await writeHermitBridgeConfigRaw(content);
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-app.get('/api/hermit-bridge-config', handleReadHermitBridgeConfig);
-app.post<{ Body: Record<string, unknown> }>(
-  '/api/hermit-bridge-config',
-  handleWriteHermitBridgeConfig
-);
-app.get('/api/hermit-bridge-config/raw', handleReadHermitBridgeConfigRaw);
-app.post<{ Body: { content?: unknown } }>(
-  '/api/hermit-bridge-config/raw',
-  handleWriteHermitBridgeConfigRaw
-);
-
-app.get('/api/cc-config', handleReadHermitBridgeConfig);
-app.post<{ Body: Record<string, unknown> }>('/api/cc-config', handleWriteHermitBridgeConfig);
-app.get('/api/cc-config/raw', handleReadHermitBridgeConfigRaw);
-app.post<{ Body: { content?: unknown } }>('/api/cc-config/raw', handleWriteHermitBridgeConfigRaw);
+registerBridgeConfigRoutes(app, {
+  readRaw: readHermitBridgeConfigTomlRaw,
+  writeRaw: writeHermitBridgeConfigTomlRaw,
+});
 
 // ===========================================================================
 // Health / cc-connect status (alias)
@@ -4660,7 +4411,7 @@ async function applyTeamConfigUpdate(
           );
         }
         const updatedToml = tomlRaw.replace(projectPattern, section);
-        writeHermitBridgeConfigRaw(updatedToml);
+        writeHermitBridgeConfigTomlRaw(updatedToml);
         try {
           await cc.reload();
         } catch {
@@ -4708,7 +4459,7 @@ async function applyTeamConfigUpdate(
         }
       }
       if (updatedToml !== tomlRaw) {
-        writeHermitBridgeConfigRaw(updatedToml);
+        writeHermitBridgeConfigTomlRaw(updatedToml);
         try {
           await cc.reload();
         } catch {
