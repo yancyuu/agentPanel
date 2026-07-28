@@ -51,7 +51,6 @@ import {
   SYSTEM_MANAGER_DISPLAY_NAME,
   SYSTEM_MANAGER_TEAM_NAME,
 } from '@shared/types/team';
-import { DEFAULT_TOOL_APPROVAL_SETTINGS } from '@shared/types/team';
 import { discoverableTeamToWorker, type DiscoverableWorker } from '@shared/types/worker';
 import { Cron } from 'croner';
 import Fastify from 'fastify';
@@ -135,6 +134,7 @@ import { registerSseRoutes } from './routes/sseRoutes';
 import { registerStaticRoutes } from './routes/staticRoutes';
 import { registerSystemManagerRoutes } from './routes/systemManagerRoutes';
 import { registerTerminalRoutes } from './routes/terminalRoutes';
+import { registerToolApprovalRoutes } from './routes/toolApprovalRoutes';
 import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
 import { registerWorkbenchStatusRoutes } from './routes/workbenchStatusRoutes';
 import { registerWorkspaceRoutes } from './routes/workspaceRoutes';
@@ -192,7 +192,6 @@ import type {
   SystemManagerSummary,
   TeamLaunchRequest,
   TelemetryConfig,
-  ToolApprovalSettings,
 } from '@shared/types/team';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -518,8 +517,6 @@ const serverRuntimeState = createServerRuntimeState();
 const {
   sseClients,
   directCliRoutes,
-  toolApprovalSettingsByName,
-  permissionSessionByRequestId,
   bridgeSessionTeamCache,
   teamStatsCache,
   scheduleRunsById,
@@ -1233,12 +1230,6 @@ async function readEffectiveCcSettings(): Promise<Record<string, unknown>> {
   } catch {
     return { ...DEFAULT_HERMIT_CC_SETTINGS, ...localSettings };
   }
-}
-
-// Per-team tool-approval settings are held in ServerRuntimeState. Defaults deny
-// everything so the user is prompted, matching Claude Code's native flow.
-function readToolApprovalSettings(teamName: string): ToolApprovalSettings {
-  return toolApprovalSettingsByName.get(teamName) ?? DEFAULT_TOOL_APPROVAL_SETTINGS;
 }
 
 // Auto-allow rules (autoAllowAll / file edits / safe-but-not-dangerous bash) live in the
@@ -4448,82 +4439,12 @@ app.get<{ Params: { name: string; memberName: string } }>(
   }
 );
 
-// tool-approval: write the user's Allow/Deny choice back to the subprocess as a
-// control_response, unblocking the turn so it can emit `result` and persist the reply.
-app.post<{
-  Params: { name: string };
-  Body: { runId?: unknown; requestId?: unknown; allow?: unknown; message?: unknown };
-}>('/api/teams/:name/tool-approval/respond', async (request, reply) => {
-  const teamName = request.params.name;
-  const requestId = typeof request.body?.requestId === 'string' ? request.body.requestId : '';
-  const allow = request.body?.allow === true;
-  const message =
-    typeof request.body?.message === 'string' && request.body.message.trim()
-      ? request.body.message
-      : undefined;
-  if (!requestId) return reply.code(400).send({ ok: false, error: 'requestId required' });
-  const pending = permissionSessionByRequestId.get(requestId);
-  const sessionKey = pending?.sessionKey ?? `${teamName}:lead`;
-  // AskUserQuestion: pass the user's answers via updatedInput so the CLI delivers them
-  // without re-prompting (mirrors the multi-agent reference impl + --permission-prompt-tool spec).
-  let updatedInput: Record<string, unknown> | undefined;
-  if (allow && message && pending?.toolName === 'AskUserQuestion') {
-    const toolInput = pending.toolInput ?? {};
-    try {
-      updatedInput = { ...toolInput, answers: JSON.parse(message) as Record<string, string> };
-    } catch {
-      // If message isn't JSON, use it as the answer to the first question.
-      const questions = (toolInput.questions as { question?: string }[] | undefined) ?? [];
-      const answers: Record<string, string> = {};
-      if (questions[0]?.question) answers[questions[0].question] = message;
-      updatedInput = { ...toolInput, answers };
-    }
-  }
-  try {
-    directCliManager.respondPermission(sessionKey, requestId, allow, message, updatedInput);
-  } catch (err) {
-    app.log.warn({ err, sessionKey, requestId }, 'tool-approval respond failed');
-  }
-  permissionSessionByRequestId.delete(requestId);
-  return { ok: true };
+registerToolApprovalRoutes(app, {
+  state: serverContext.state,
+  respondPermission: (sessionKey, requestId, allow, message, updatedInput) =>
+    directCliManager.respondPermission(sessionKey, requestId, allow, message, updatedInput),
+  logger: app.log,
 });
-
-// tool-approval: persist auto-allow settings per team (in-memory; renderer re-syncs on startup).
-app.post<{ Params: { name: string }; Body: Partial<ToolApprovalSettings> }>(
-  '/api/teams/:name/tool-approval/settings',
-  async (request) => {
-    const teamName = request.params.name;
-    const incoming = request.body ?? {};
-    const prev = readToolApprovalSettings(teamName);
-    toolApprovalSettingsByName.set(teamName, {
-      autoAllowAll: incoming.autoAllowAll ?? prev.autoAllowAll,
-      autoAllowFileEdits: incoming.autoAllowFileEdits ?? prev.autoAllowFileEdits,
-      autoAllowSafeBash: incoming.autoAllowSafeBash ?? prev.autoAllowSafeBash,
-      timeoutAction: incoming.timeoutAction ?? prev.timeoutAction,
-      timeoutSeconds: incoming.timeoutSeconds ?? prev.timeoutSeconds,
-    });
-    return { ok: true };
-  }
-);
-
-// tool-approval: read a file for the Edit/Write diff preview. Local-first, best-effort —
-// errors return empty content so the approval sheet still renders without the diff.
-app.post<{ Body: { filePath?: unknown } }>(
-  '/api/teams/tool-approval/read-file',
-  async (request) => {
-    const filePath = typeof request.body?.filePath === 'string' ? request.body.filePath : '';
-    if (!filePath) return { content: '' };
-    try {
-      const content = await fs.readFile(filePath, 'utf-8');
-      return { content };
-    } catch {
-      return { content: '' };
-    }
-  }
-);
-
-// validate-cli-args
-app.post('/api/teams/validate-cli-args', async () => ({ valid: true, args: [], errors: [] }));
 
 // Digital Workers API
 async function listDiscoverableWorkers(): Promise<DiscoverableWorker[]> {
