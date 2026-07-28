@@ -23,10 +23,9 @@ import {
 } from '@renderer/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
-import { getTeamColorSet, getThemedBadge } from '@renderer/constants/teamColors';
+import { getTeamColorSet } from '@renderer/constants/teamColors';
 import { useTabIdOptional } from '@renderer/contexts/useTabUIContext';
 import { useBranchSync } from '@renderer/hooks/useBranchSync';
-import { useTheme } from '@renderer/hooks/useTheme';
 import { cn } from '@renderer/lib/utils';
 import { useStore } from '@renderer/store';
 import {
@@ -869,7 +868,6 @@ export const TeamDetailView = ({
   teamName,
   isPaneFocused = false,
 }: TeamDetailViewProps): React.JSX.Element => {
-  const { isLight } = useTheme();
   const [requestChangesTaskId, setRequestChangesTaskId] = useState<string | null>(null);
   const [selectedMember, setSelectedMember] = useState<ResolvedTeamMember | null>(null);
   const [pendingRepliesByMember, setPendingRepliesByMember] = useState<Record<string, number>>(() =>
@@ -1938,16 +1936,10 @@ export const TeamDetailView = ({
           <div className="relative min-h-0 min-w-0 flex-1">
             <div
               ref={contentRef}
-              className="size-full min-w-0 overflow-y-auto overflow-x-hidden p-4"
+              className="mx-auto size-full min-w-0 max-w-[1400px] overflow-y-auto overflow-x-hidden p-4 md:p-5"
               data-team-name={teamName}
             >
-              <div className="relative -mx-4 -mt-4 mb-3 overflow-hidden border-b border-[var(--color-border)] px-4 py-3">
-                {headerColorSet ? (
-                  <div
-                    className="pointer-events-none absolute inset-0 z-0"
-                    style={{ backgroundColor: getThemedBadge(headerColorSet, isLight) }}
-                  />
-                ) : null}
+              <div className="relative mb-5 border-b border-[var(--color-border)] pb-4">
                 <div
                   className={cn(
                     'flex items-start justify-between gap-2',
@@ -1966,9 +1958,16 @@ export const TeamDetailView = ({
                     />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <h2 className="text-base font-semibold text-[var(--color-text)]">
+                        <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text)]">
                           {displayTeamName}
-                        </h2>
+                        </h1>
+                        <span className="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)]">
+                          <span
+                            className={`size-1.5 rounded-full ${data.isAlive ? 'bg-emerald-400' : 'bg-[var(--color-text-muted)] opacity-50'}`}
+                            aria-hidden="true"
+                          />
+                          {data.isAlive ? '运行中' : '未运行'}
+                        </span>
                         {data.platforms
                           ?.filter((pl) => pl.type !== 'bridge')
                           .map((pl) => (
@@ -2018,6 +2017,7 @@ export const TeamDetailView = ({
                           variant="ghost"
                           size="sm"
                           className="size-7 px-0 text-[var(--color-text-muted)]"
+                          aria-label="更多团队操作"
                         >
                           <MoreHorizontal size={14} />
                         </Button>
@@ -2124,7 +2124,7 @@ export const TeamDetailView = ({
 
               <CollapsibleTeamSection
                 sectionId="team"
-                title="团队"
+                title="成员与 Agent"
                 icon={<Users size={14} />}
                 badge={activeTeammateCount === 0 ? '单人' : activeTeammateCount}
                 defaultOpen

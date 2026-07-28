@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { recordRecentProjectOpenPaths } from '@features/recent-projects/renderer';
 import { api } from '@renderer/api';
 import { confirm } from '@renderer/components/common/ConfirmDialog';
-import { Badge } from '@renderer/components/ui/badge';
 import { Button } from '@renderer/components/ui/button';
 import {
   Dialog,
@@ -19,9 +18,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@renderer/components/ui/tooltip';
-import { getTeamColorSet, getThemedBadge } from '@renderer/constants/teamColors';
+import { getTeamColorSet } from '@renderer/constants/teamColors';
 import { useBranchSync } from '@renderer/hooks/useBranchSync';
-import { useTheme } from '@renderer/hooks/useTheme';
 import { useStore } from '@renderer/store';
 import {
   getCurrentProvisioningProgressForTeam,
@@ -32,7 +30,7 @@ import {
   getWorktreeNavigationState,
 } from '@renderer/store/utils/stateResetHelpers';
 import { formatRelativeTime, formatTokensCompact } from '@renderer/utils/formatters';
-import { buildMemberColorMap, teamAvatarUrl } from '@renderer/utils/memberHelpers';
+import { teamAvatarUrl } from '@renderer/utils/memberHelpers';
 import {
   emitOpenHermitEvent,
   getCreateTeamFromProjectPath,
@@ -43,14 +41,15 @@ import { getBaseName } from '@renderer/utils/pathUtils';
 import { nameColorSet } from '@renderer/utils/projectColor';
 import { SYSTEM_MANAGER_TEAM_NAME } from '@shared/types/team';
 import {
-  CheckCircle,
-  Clock,
+  Bot,
   Copy,
   Download,
   FolderOpen,
   GitBranch,
+  LayoutTemplate,
   Loader2,
   Play,
+  Plus,
   RotateCcw,
   Search,
   Trash2,
@@ -76,7 +75,6 @@ import type {
   TeamLaunchRequest,
   TeamMemberSnapshot,
   TeamSummary,
-  TeamSummaryMember,
   TeamTemplateSource,
   TeamTemplateSummary,
 } from '@shared/types';
@@ -93,14 +91,6 @@ function generateUniqueName(sourceName: string, existingNames: string[]): string
 }
 
 type TeamStatus = 'active' | 'idle' | 'provisioning';
-
-function getRecentProjects(team: TeamSummary): string[] {
-  const history = team.projectPathHistory;
-  if (!history || history.length === 0) {
-    return team.projectPath ? [team.projectPath] : [];
-  }
-  return history.slice(-3).reverse();
-}
 
 function folderName(fullPath: string): string {
   return getBaseName(fullPath) || fullPath;
@@ -130,86 +120,6 @@ function formatTeamRoleLabel(role: string): string {
     designer: '设计',
   };
   return labels[normalized] ?? role;
-}
-
-function renderMemberChips(members: TeamSummaryMember[], isLight: boolean): React.JSX.Element {
-  const teamColorMap = buildMemberColorMap(members);
-  return (
-    <>
-      {members.map((m) => {
-        const resolvedColor = teamColorMap.get(m.name);
-        const memberColor = resolvedColor ? getTeamColorSet(resolvedColor) : null;
-        return (
-          <span key={m.name} className="inline-flex items-center gap-1">
-            <span
-              className="rounded px-1.5 py-0.5 text-[10px] font-medium tracking-wide"
-              style={
-                memberColor
-                  ? {
-                      backgroundColor: getThemedBadge(memberColor, isLight),
-                      color: memberColor.text,
-                      border: `1px solid ${memberColor.border}40`,
-                    }
-                  : undefined
-              }
-            >
-              {m.name}
-            </span>
-            {m.role ? (
-              <span className="text-[9px] text-[var(--color-text-muted)]">
-                {formatTeamRoleLabel(m.role)}
-              </span>
-            ) : null}
-          </span>
-        );
-      })}
-    </>
-  );
-}
-
-function renderTeamRecentPaths(
-  team: TeamSummary,
-  status: TeamStatus | null,
-  matchesCurrentProject: boolean,
-  isLight: boolean
-): React.JSX.Element | null {
-  const recentPaths = getRecentProjects(team);
-  if (recentPaths.length === 0) return null;
-  return (
-    <div className="mt-2 flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]">
-      {matchesCurrentProject ? (
-        <span
-          className={`inline-flex items-center gap-1 truncate rounded-full px-2 py-0.5 text-[12px] font-medium ${
-            isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-500/15 text-emerald-400'
-          }`}
-        >
-          <FolderOpen size={12} className="shrink-0" />
-          {recentPaths.map((p, i) => (
-            <span key={p} title={p}>
-              {folderName(p)}
-              {i < recentPaths.length - 1 ? ', ' : ''}
-            </span>
-          ))}
-        </span>
-      ) : (
-        <>
-          <FolderOpen size={10} className="shrink-0" />
-          <span className="truncate">
-            {recentPaths.map((p, i) => (
-              <span key={p} title={p}>
-                {i === 0 && (status === 'active' || status === 'idle') ? (
-                  <span className="text-emerald-400">{folderName(p)}</span>
-                ) : (
-                  folderName(p)
-                )}
-                {i < recentPaths.length - 1 ? ', ' : ''}
-              </span>
-            ))}
-          </span>
-        </>
-      )}
-    </div>
-  );
 }
 
 function resolveTeamStatus(
@@ -244,28 +154,37 @@ function formatDurationShort(ms: number): string {
   return `${days}d ${hours % 24}h`;
 }
 
-const StatusBadge = ({ status }: { status: TeamStatus | null }): React.JSX.Element | null => {
-  if (!status) return null;
+const StatusBadge = ({ status }: { status: TeamStatus | null }): React.JSX.Element => {
   switch (status) {
     case 'active':
       return (
-        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-          <span className="size-1.5 animate-pulse rounded-full bg-emerald-400" />
+        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium text-emerald-400">
+          <span className="size-1.5 animate-pulse rounded-full bg-emerald-400" aria-hidden="true" />
           活跃
         </span>
       );
     case 'idle':
       return (
-        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-          <span className="size-1.5 rounded-full bg-emerald-400" />
+        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-[var(--color-text-secondary)]">
+          <span className="size-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
           运行中
         </span>
       );
     case 'provisioning':
       return (
-        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400">
-          <span className="size-1.5 animate-pulse rounded-full bg-amber-400" />
-          启动中...
+        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium text-amber-400">
+          <span className="size-1.5 animate-pulse rounded-full bg-amber-400" aria-hidden="true" />
+          启动中
+        </span>
+      );
+    default:
+      return (
+        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-[var(--color-text-muted)]">
+          <span
+            className="size-1.5 rounded-full bg-[var(--color-text-muted)] opacity-50"
+            aria-hidden="true"
+          />
+          未运行
         </span>
       );
   }
@@ -278,34 +197,24 @@ const PendingDeleteBadge = (): React.JSX.Element => (
 );
 
 const TeamListSkeleton = (): React.JSX.Element => (
-  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-    {Array.from({ length: 9 }).map((_, index) => (
+  <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+    {Array.from({ length: 7 }).map((_, index) => (
       <div
         key={index}
-        className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+        className="flex min-h-16 items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 last:border-b-0"
       >
-        <div className="flex items-center gap-2.5">
-          <div className="skeleton-shimmer size-8 rounded-md bg-[var(--skeleton-base)]" />
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="skeleton-shimmer h-3 w-28 rounded bg-[var(--skeleton-base)]" />
-            <div className="skeleton-shimmer h-2.5 w-20 rounded bg-[var(--skeleton-base-dim)]" />
-          </div>
+        <div className="skeleton-shimmer size-9 rounded-lg bg-[var(--skeleton-base)]" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="skeleton-shimmer h-3 w-32 rounded bg-[var(--skeleton-base)]" />
+          <div className="skeleton-shimmer h-2.5 w-2/3 rounded bg-[var(--skeleton-base-dim)]" />
         </div>
-        <div className="mt-3 space-y-2 pl-[42px]">
-          <div className="skeleton-shimmer h-2.5 w-3/4 rounded bg-[var(--skeleton-base-dim)]" />
-          <div className="flex gap-2">
-            <div className="skeleton-shimmer h-2.5 w-16 rounded bg-[var(--skeleton-base)]" />
-            <div className="skeleton-shimmer h-2.5 w-14 rounded bg-[var(--skeleton-base-dim)]" />
-            <div className="skeleton-shimmer h-2.5 w-12 rounded bg-[var(--skeleton-base-dim)]" />
-          </div>
-        </div>
+        <div className="skeleton-shimmer hidden h-3 w-24 rounded bg-[var(--skeleton-base-dim)] md:block" />
       </div>
     ))}
   </div>
 );
 
 export const TeamListView = (): React.JSX.Element => {
-  const { isLight } = useTheme();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [templateLoading, setTemplateLoading] = useState(false);
@@ -771,7 +680,7 @@ export const TeamListView = (): React.JSX.Element => {
   }, [fetchTeams, fetchAllTasks]);
 
   useEffect(() => {
-    const refresh = () => {
+    const refresh = (): void => {
       void fetchTeams();
       void fetchAllTasks();
     };
@@ -965,10 +874,14 @@ export const TeamListView = (): React.JSX.Element => {
         <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-0 flex-1 space-y-1">
-              <label className="text-[11px] font-medium text-[var(--color-text-secondary)]">
+              <label
+                htmlFor="team-template-source-url"
+                className="text-[11px] font-medium text-[var(--color-text-secondary)]"
+              >
                 添加模板源
               </label>
               <Input
+                id="team-template-source-url"
                 className="h-8 text-xs"
                 value={newTemplateSourceUrl}
                 onChange={(event) => setNewTemplateSourceUrl(event.target.value)}
@@ -1073,7 +986,7 @@ export const TeamListView = (): React.JSX.Element => {
                 </div>
                 <Button
                   size="sm"
-                  className="h-7 shrink-0 text-xs"
+                  className="h-7 shrink-0 bg-[var(--color-accent)] text-xs text-white hover:bg-[var(--color-accent)] hover:opacity-90"
                   onClick={() => handleUseTemplate(template)}
                 >
                   使用模板
@@ -1092,76 +1005,96 @@ export const TeamListView = (): React.JSX.Element => {
   );
 
   const renderHeader = (): React.JSX.Element => (
-    <div className="mb-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-[var(--color-text)]">选择数字员工</h2>
-        <div className="flex items-center gap-2">
+    <header className="mb-5 space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Bot size={18} className="text-[var(--color-text-secondary)]" aria-hidden="true" />
+            <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text)]">
+              团队与 Agent
+            </h1>
+            <span className="rounded-md bg-[var(--color-surface-raised)] px-1.5 py-0.5 text-xs tabular-nums text-[var(--color-text-muted)]">
+              {teamListStats.teams}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            管理协作团队、Agent 成员与本地运行状态。
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="border-[var(--color-accent-border)] text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
+            className="h-8"
             onClick={() => void openSystemManager()}
           >
             Helm Loop
           </Button>
+          <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={openTemplateDialog}>
+            <LayoutTemplate size={13} aria-hidden="true" />
+            从模板创建
+          </Button>
           <Button
-            variant="outline"
             size="sm"
+            className="h-8 gap-1.5 bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent)] hover:opacity-90"
             disabled={!canCreate}
-            onClick={() => openCreateDialog()}
+            onClick={openCreateDialog}
           >
-            创建数字员工
+            <Plus size={13} aria-hidden="true" />
+            创建团队
           </Button>
         </div>
       </div>
 
       {teamsWithProvisioning.length > 0 ? (
-        <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-6">
-          {[
-            {
-              label: '数字员工',
-              value: String(teamListStats.teams),
-              tone: 'text-[var(--color-accent)]',
-            },
-            { label: '运行中', value: String(teamListStats.running), tone: 'text-emerald-400' },
-            { label: 'Sessions', value: String(teamListStats.sessions), tone: 'text-sky-400' },
-            { label: 'Messages', value: String(teamListStats.messages), tone: 'text-violet-400' },
-            {
-              label: 'Tokens',
-              value: formatTokensCompact(teamListStats.tokens),
-              tone: 'text-amber-400',
-            },
-            {
-              label: '耗时',
-              value: formatDurationShort(teamListStats.durationMs),
-              tone: 'text-orange-400',
-            },
-          ].map((item) => (
-            <div
-              key={item.label}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 duration-200 animate-in fade-in slide-in-from-bottom-1"
-            >
-              <div className={`text-sm font-semibold tabular-nums ${item.tone}`}>{item.value}</div>
-              <div className="mt-0.5 text-[10px] uppercase tracking-wide text-[var(--color-text-muted)]">
-                {item.label}
-              </div>
-            </div>
-          ))}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-y border-[var(--color-border)] py-2 text-xs text-[var(--color-text-muted)]">
+          <span>
+            <strong className="font-medium text-[var(--color-text)]">
+              {teamListStats.running}
+            </strong>{' '}
+            个运行中
+          </span>
+          <span>
+            <strong className="font-medium text-[var(--color-text)]">
+              {teamListStats.sessions}
+            </strong>{' '}
+            个会话
+          </span>
+          <span>
+            <strong className="font-medium text-[var(--color-text)]">
+              {teamListStats.messages}
+            </strong>{' '}
+            条消息
+          </span>
+          <span>
+            <strong className="font-medium text-[var(--color-text)]">
+              {formatTokensCompact(teamListStats.tokens)}
+            </strong>{' '}
+            tokens
+          </span>
+          <span>
+            <strong className="font-medium text-[var(--color-text)]">
+              {formatDurationShort(teamListStats.durationMs)}
+            </strong>{' '}
+            累计耗时
+          </span>
         </div>
       ) : null}
 
       {teamsWithProvisioning.length > 0 ? (
-        <div className="mt-3 flex items-center gap-2">
-          <div className="relative flex-1">
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
             <Search
               size={14}
               className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+              aria-hidden="true"
             />
             <Input
-              type="text"
-              placeholder="搜索数字员工..."
+              type="search"
+              aria-label="搜索团队与 Agent"
+              placeholder="搜索团队、Agent 或描述"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(event) => setSearchQuery(event.target.value)}
               className="h-8 pl-8 text-xs"
             />
           </div>
@@ -1175,28 +1108,19 @@ export const TeamListView = (): React.JSX.Element => {
           />
         </div>
       ) : null}
-    </div>
+    </header>
   );
 
   const renderContent = (): React.JSX.Element => {
-    if (teamsLoading) {
-      return <TeamListSkeleton />;
-    }
+    if (teamsLoading) return <TeamListSkeleton />;
 
     if (teamsError) {
       return (
-        <div className="flex size-full items-center justify-center p-6">
-          <div className="text-center">
-            <p className="text-sm font-medium text-red-400">数字员工加载失败</p>
+        <div className="flex min-h-64 items-center justify-center rounded-xl border border-[var(--color-border)] p-6">
+          <div className="text-center" role="alert">
+            <p className="text-sm font-medium text-red-400">团队加载失败</p>
             <p className="mt-2 text-xs text-[var(--color-text-muted)]">{teamsError}</p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-4"
-              onClick={() => {
-                void fetchTeams();
-              }}
-            >
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => void fetchTeams()}>
               重试
             </Button>
           </div>
@@ -1208,7 +1132,7 @@ export const TeamListView = (): React.JSX.Element => {
       return (
         <TeamEmptyState
           canCreate={canCreate}
-          onCreateTeam={() => openCreateDialog()}
+          onCreateTeam={openCreateDialog}
           onSelectHarness={() => openCreateDialog()}
         />
       );
@@ -1217,264 +1141,296 @@ export const TeamListView = (): React.JSX.Element => {
     const hasActiveFilters = filter.selectedStatuses.size > 0;
     if (filteredTeams.length === 0 && (searchQuery.trim() || hasActiveFilters)) {
       return (
-        <div className="flex items-center justify-center py-12 text-sm text-[var(--color-text-muted)]">
-          没有匹配当前筛选条件的数字员工
+        <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] text-sm text-[var(--color-text-muted)]">
+          没有匹配当前筛选条件的团队或 Agent
         </div>
       );
     }
 
-    const activeFiltered = filteredTeams.filter((t) => !t.deletedAt);
-    const deletedFiltered = filteredTeams.filter((t) => t.deletedAt);
+    const activeFiltered = filteredTeams.filter((team) => !team.deletedAt);
+    const deletedFiltered = filteredTeams.filter((team) => team.deletedAt);
+
+    const renderActiveRow = (team: TeamSummary): React.JSX.Element => {
+      const status = resolveTeamStatus(
+        team,
+        team.teamName,
+        aliveTeams,
+        getCurrentProvisioningProgressForTeam(provisioningState, team.teamName),
+        leadActivityByTeam
+      );
+      const teamColorSet = team.color
+        ? getTeamColorSet(team.color)
+        : nameColorSet(team.displayName);
+      const isDeleting = deletingTeamName === team.teamName;
+      const isSystemManager = team.teamName === SYSTEM_MANAGER_TEAM_NAME;
+      const taskCounts = taskCountsByTeam.get(team.teamName) ?? {
+        pending: 0,
+        inProgress: 0,
+        completed: 0,
+      };
+      const openTasks = taskCounts.pending + taskCounts.inProgress;
+      const branch = team.projectPath ? branchByPath[normalizePath(team.projectPath)] : null;
+      const members = team.members ?? [];
+      const visibleMembers = members.slice(0, 3);
+      const remainingMembers = Math.max(0, members.length - visibleMembers.length);
+      const canLaunch =
+        Boolean(team.projectPath) && !status && !team.pendingCreate && !isSystemManager;
+
+      return (
+        <div
+          key={team.teamName}
+          role="listitem"
+          className="group relative grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-[var(--color-border)] px-3 py-2.5 last:border-b-0 md:grid-cols-[minmax(260px,1.45fr)_minmax(120px,.65fr)_minmax(150px,.8fr)_minmax(130px,.7fr)_auto] md:px-4"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 rounded-none text-left outline-none transition-colors hover:bg-[var(--color-surface-raised)] focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)] disabled:cursor-wait"
+            aria-label={`打开团队 ${team.displayName}`}
+            disabled={isDeleting}
+            onClick={() => openTeamTab(team.teamName, team.projectPath)}
+          />
+
+          <div className="pointer-events-none relative z-[1] flex min-w-0 items-center gap-3">
+            <img
+              src={teamAvatarUrl(team.teamName, team.displayName)}
+              alt=""
+              className="size-9 shrink-0 rounded-lg border bg-[var(--color-surface-raised)]"
+              style={{ borderColor: `${teamColorSet.border}66` }}
+              draggable={false}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-sm font-medium text-[var(--color-text)]">
+                  {team.displayName}
+                </span>
+                {isSystemManager ? (
+                  <span className="rounded bg-[var(--color-accent-soft)] px-1 py-px text-[9px] font-medium text-[var(--color-accent)]">
+                    系统
+                  </span>
+                ) : null}
+                {team.pendingDelete || team.restartRequired ? <PendingDeleteBadge /> : null}
+              </div>
+              <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+                <span className="shrink-0 font-mono">@{team.teamName}</span>
+                <span aria-hidden="true">·</span>
+                <span className="truncate">{team.description || '暂无描述'}</span>
+              </div>
+              {visibleMembers.length > 0 ? (
+                <div
+                  className="mt-1 flex min-w-0 items-center gap-1 text-[10px] text-[var(--color-text-secondary)]"
+                  aria-label={`${members.length} 名 Agent 成员`}
+                >
+                  <Users
+                    size={10}
+                    className="shrink-0 text-[var(--color-text-muted)]"
+                    aria-hidden="true"
+                  />
+                  {visibleMembers.map((member) => (
+                    <span
+                      key={member.name}
+                      className="max-w-24 truncate rounded bg-[var(--color-surface-raised)] px-1 py-px"
+                    >
+                      {member.name}
+                      {member.role ? ` · ${formatTeamRoleLabel(member.role)}` : ''}
+                    </span>
+                  ))}
+                  {remainingMembers > 0 ? <span>+{remainingMembers}</span> : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="pointer-events-none relative z-[1] hidden min-w-0 md:block">
+            <StatusBadge status={status} />
+            <p className="mt-1 truncate text-[10px] text-[var(--color-text-muted)]">
+              {openTasks > 0 ? `${openTasks} 个待处理任务` : `${taskCounts.completed} 个已完成任务`}
+            </p>
+          </div>
+
+          <div className="pointer-events-none relative z-[1] hidden min-w-0 md:block">
+            <p className="flex min-w-0 items-center gap-1 text-xs text-[var(--color-text-secondary)]">
+              <FolderOpen
+                size={11}
+                className="shrink-0 text-[var(--color-text-muted)]"
+                aria-hidden="true"
+              />
+              <span className="truncate" title={team.projectPath}>
+                {team.projectPath ? folderName(team.projectPath) : '未绑定项目'}
+              </span>
+            </p>
+            {branch ? (
+              <p
+                className="mt-1 flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]"
+                title={branch}
+              >
+                <GitBranch size={10} aria-hidden="true" />
+                <span className="truncate">{branch}</span>
+              </p>
+            ) : null}
+          </div>
+
+          <div className="pointer-events-none relative z-[1] hidden min-w-0 text-xs text-[var(--color-text-muted)] md:block">
+            <p>{team.lastActivity ? formatRelativeTime(team.lastActivity) : '暂无活动'}</p>
+            <p className="mt-1 truncate text-[10px]">
+              {team.stats && (team.stats.sessions > 0 || team.stats.messages > 0)
+                ? `${team.stats.sessions} 会话 · ${team.stats.messages} 消息`
+                : '暂无使用记录'}
+            </p>
+          </div>
+
+          <div className="relative z-20 flex shrink-0 items-center justify-end gap-0.5">
+            <span className="mr-1 md:hidden">
+              <StatusBadge status={status} />
+            </span>
+            {isDeleting ? (
+              <Loader2
+                size={14}
+                className="animate-spin text-[var(--color-text-muted)]"
+                aria-label="删除中"
+              />
+            ) : null}
+            {canLaunch ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex size-8 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] disabled:opacity-50"
+                    aria-label={`启动团队 ${team.displayName}`}
+                    disabled={launchingTeamName === team.teamName}
+                    onClick={(event) =>
+                      void handleLaunchTeam(team.teamName, team.projectPath, event)
+                    }
+                  >
+                    {launchingTeamName === team.teamName ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Play size={14} />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">启动团队</TooltipContent>
+              </Tooltip>
+            ) : null}
+            {!team.pendingCreate && !isSystemManager ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex size-8 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+                    aria-label={`复制团队 ${team.displayName}`}
+                    onClick={(event) => handleCopyTeam(team.teamName, event)}
+                  >
+                    <Copy size={13} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">复制团队</TooltipContent>
+              </Tooltip>
+            ) : null}
+            {team.teamName !== 'default' && team.teamName !== 'my-project' && !isSystemManager ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex size-8 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                    aria-label={`删除团队 ${team.displayName}`}
+                    onClick={(event) =>
+                      handleDeleteTeam(team.teamName, !!team.pendingCreate, event)
+                    }
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">删除团队</TooltipContent>
+              </Tooltip>
+            ) : null}
+          </div>
+        </div>
+      );
+    };
 
     return (
-      <>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {activeFiltered.map((team) => {
-            const status = resolveTeamStatus(
-              team,
-              team.teamName,
-              aliveTeams,
-              getCurrentProvisioningProgressForTeam(provisioningState, team.teamName),
-              leadActivityByTeam
-            );
-            const teamColorSet = team.color
-              ? getTeamColorSet(team.color)
-              : nameColorSet(team.displayName);
-            const matchesCurrentProject = currentProjectPath
-              ? teamMatchesProjectSelection(team, currentProjectPath)
-              : false;
-            const isDeleting = deletingTeamName === team.teamName;
-            const isSystemManager = team.teamName === SYSTEM_MANAGER_TEAM_NAME;
-            return (
-              <div
-                key={team.teamName}
-                role="button"
-                tabIndex={0}
-                className="group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-all duration-200 animate-in fade-in slide-in-from-bottom-1 hover:-translate-y-0.5 hover:border-[var(--color-border-emphasis)] hover:bg-[var(--color-surface-raised)] hover:shadow-lg"
-                onClick={
-                  isDeleting ? undefined : () => openTeamTab(team.teamName, team.projectPath)
-                }
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    if (!isDeleting) openTeamTab(team.teamName, team.projectPath);
-                  }
-                }}
-              >
-                {isDeleting && (
-                  <div className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-black/60 text-sm text-white">
-                    <Loader2 size={16} className="animate-spin" />
-                    删除并重启中…
-                  </div>
-                )}
-                <div className="flex flex-1 flex-col">
-                  {/* Row 1: Avatar + Name + Status + Actions */}
-                  <div className="flex items-center gap-2.5">
-                    <img
-                      src={teamAvatarUrl(team.teamName, team.displayName)}
-                      alt={team.displayName}
-                      className="size-8 shrink-0 rounded-md border border-transparent"
-                      style={teamColorSet ? { borderColor: teamColorSet.border + '60' } : undefined}
-                      draggable={false}
-                    />
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <h3 className="min-w-0 truncate text-[13px] font-medium text-[var(--color-text)]">
-                        {team.displayName}
-                      </h3>
-                      {isSystemManager ? (
-                        <span className="shrink-0 rounded bg-[var(--color-accent-soft)] px-1.5 py-px text-[9px] font-medium text-[var(--color-accent)]">
-                          SYS
-                        </span>
-                      ) : null}
-                      <StatusBadge status={status} />
-                      {team.pendingDelete || team.restartRequired ? <PendingDeleteBadge /> : null}
-                      {team.projectPath &&
-                        (() => {
-                          const branch = branchByPath[normalizePath(team.projectPath)];
-                          if (!branch) return null;
-                          return (
-                            <span
-                              className="flex shrink-0 items-center gap-1 text-[10px] text-[var(--color-text-muted)] opacity-60"
-                              title={branch}
-                            >
-                              <GitBranch size={9} />
-                              <span className="max-w-20 truncate">{branch}</span>
-                            </span>
-                          );
-                        })()}
-                    </div>
-                    <div className="flex shrink-0 gap-0.5">
-                      {!team.pendingCreate && !isSystemManager && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="rounded p-1 text-[var(--color-text-muted)] opacity-0 transition-opacity hover:bg-[var(--color-surface-raised)] hover:!opacity-100 group-hover:opacity-60"
-                              onClick={(e) => handleCopyTeam(team.teamName, e)}
-                            >
-                              <Copy size={13} />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">复制数字员工</TooltipContent>
-                        </Tooltip>
-                      )}
-                      {team.teamName !== 'default' &&
-                        team.teamName !== 'my-project' &&
-                        !isSystemManager && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="rounded p-1 text-[var(--color-text-muted)] opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-400 hover:!opacity-100 group-hover:opacity-60"
-                                onClick={(e) =>
-                                  handleDeleteTeam(team.teamName, !!team.pendingCreate, e)
-                                }
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom">删除数字员工</TooltipContent>
-                          </Tooltip>
-                        )}
-                    </div>
-                  </div>
-
-                  {/* Row 2: Description */}
-                  <p className="mt-1.5 line-clamp-1 min-w-0 pl-[42px] text-[11px] leading-snug text-[var(--color-text-muted)]">
-                    {team.description || '暂无描述'}
-                  </p>
-
-                  {/* Row 3: Stats bar */}
-                  <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 pl-[42px] text-[10px] tabular-nums">
-                    {team.stats && (team.stats.sessions > 0 || team.stats.messages > 0) ? (
-                      <>
-                        <span className="text-[var(--color-accent)]">
-                          {team.stats.sessions} sessions
-                        </span>
-                        <span className="text-[var(--color-text-muted)] opacity-30">·</span>
-                        <span className="text-sky-400">{team.stats.messages} msgs</span>
-                        <span className="text-[var(--color-text-muted)] opacity-30">·</span>
-                        <span
-                          className="text-emerald-400"
-                          title={[
-                            team.stats.tokensIn !== undefined
-                              ? `输入 ${formatTokensCompact(team.stats.tokensIn)}`
-                              : null,
-                            team.stats.tokensOut !== undefined
-                              ? `输出 ${formatTokensCompact(team.stats.tokensOut)}`
-                              : null,
-                            team.stats.cacheRead !== undefined
-                              ? `缓存读 ${formatTokensCompact(team.stats.cacheRead)}`
-                              : null,
-                            team.stats.cacheCreation !== undefined
-                              ? `缓存写 ${formatTokensCompact(team.stats.cacheCreation)}`
-                              : null,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        >
-                          {formatTokensCompact(team.stats.tokens)} tokens
-                        </span>
-                        {team.stats.durationMs > 0 && (
-                          <>
-                            <span className="text-[var(--color-text-muted)] opacity-30">·</span>
-                            <span className="text-amber-400">
-                              {formatDurationShort(team.stats.durationMs)}
-                            </span>
-                          </>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-[var(--color-text-muted)] opacity-50">no activity</span>
-                    )}
-                    {team.lastActivity && (
-                      <>
-                        <span className="text-[var(--color-text-muted)] opacity-30">·</span>
-                        <span className="text-[var(--color-text-muted)]">
-                          {formatRelativeTime(team.lastActivity)}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {deletedFiltered.length > 0 && (
-          <>
-            <div className="my-6 flex items-center gap-3">
-              <div className="h-px flex-1 bg-[var(--color-border)]" />
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-muted)]">
-                Trash ({deletedFiltered.length})
-              </span>
-              <div className="h-px flex-1 bg-[var(--color-border)]" />
+      <div className="space-y-5">
+        {activeFiltered.length > 0 ? (
+          <section aria-label="团队与 Agent 列表">
+            <div className="hidden grid-cols-[minmax(260px,1.45fr)_minmax(120px,.65fr)_minmax(150px,.8fr)_minmax(130px,.7fr)_auto] gap-3 border-x border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] px-4 py-2 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)] md:grid">
+              <span>团队与 Agent</span>
+              <span>运行状态</span>
+              <span>项目</span>
+              <span>最近活动</span>
+              <span className="w-[104px] text-right">操作</span>
             </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div
+              role="list"
+              className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] md:rounded-t-none"
+            >
+              {activeFiltered.map(renderActiveRow)}
+            </div>
+          </section>
+        ) : null}
+
+        {deletedFiltered.length > 0 ? (
+          <section aria-labelledby="deleted-teams-heading">
+            <div className="mb-2 flex items-center justify-between">
+              <h2
+                id="deleted-teams-heading"
+                className="text-xs font-medium text-[var(--color-text-secondary)]"
+              >
+                已删除团队
+              </h2>
+              <span className="text-xs text-[var(--color-text-muted)]">
+                {deletedFiltered.length}
+              </span>
+            </div>
+            <div
+              role="list"
+              className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] opacity-75"
+            >
               {deletedFiltered.map((team) => (
                 <div
                   key={team.teamName}
-                  className="group relative cursor-default overflow-hidden rounded-lg border border-[var(--color-border)] bg-zinc-800/40 p-4 opacity-60"
+                  role="listitem"
+                  className="flex min-h-14 items-center gap-3 border-b border-[var(--color-border)] px-4 py-2.5 last:border-b-0"
                 >
-                  <Trash2
-                    size={64}
-                    className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-zinc-400 opacity-[0.06]"
+                  <img
+                    src={teamAvatarUrl(team.teamName, team.displayName)}
+                    alt=""
+                    className="size-8 rounded-lg grayscale"
+                    draggable={false}
                   />
-                  <div className="relative z-10">
-                    <div className="flex items-start justify-between">
-                      <div className="flex min-w-0 flex-1 items-center gap-2">
-                        <h3 className="truncate text-sm font-semibold text-[var(--color-text)]">
-                          {team.displayName}
-                        </h3>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-zinc-500/15 px-2 py-0.5 text-[10px] font-medium text-zinc-500">
-                          已删除
-                        </span>
-                      </div>
-                      <div className="flex shrink-0 gap-1">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="shrink-0 rounded p-1 text-[var(--color-text-muted)] opacity-0 transition-opacity hover:bg-emerald-500/10 hover:text-emerald-300 group-hover:opacity-100"
-                              onClick={(e) => handleRestoreTeam(team.teamName, e)}
-                              aria-label="恢复团队"
-                            >
-                              <RotateCcw size={14} />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">恢复</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="shrink-0 rounded p-1 text-[var(--color-text-muted)] opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
-                              onClick={(e) => handlePermanentlyDeleteTeam(team.teamName, e)}
-                              aria-label="永久删除"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">永久删除</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </div>
-                    <p className="mt-2 line-clamp-2 text-xs text-[var(--color-text-muted)]">
-                      {team.description || '暂无描述'}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-[var(--color-text)]">
+                      {team.displayName}
                     </p>
-                    {team.members && team.members.length > 0 && (
-                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                        {renderMemberChips(team.members, isLight)}
-                      </div>
-                    )}
+                    <p className="truncate text-xs text-[var(--color-text-muted)]">
+                      @{team.teamName} · 已删除
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1.5"
+                      onClick={(event) => handleRestoreTeam(team.teamName, event)}
+                      aria-label={`恢复团队 ${team.displayName}`}
+                    >
+                      <RotateCcw size={13} />
+                      恢复
+                    </Button>
+                    <button
+                      type="button"
+                      className="inline-flex size-8 items-center justify-center rounded-md text-[var(--color-text-muted)] hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                      onClick={(event) => handlePermanentlyDeleteTeam(team.teamName, event)}
+                      aria-label={`永久删除团队 ${team.displayName}`}
+                    >
+                      <Trash2 size={13} />
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
-          </>
-        )}
-      </>
+          </section>
+        ) : null}
+      </div>
     );
   };
 

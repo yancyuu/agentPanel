@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef } from 'react';
 
 import { buildMemberColorMap } from '@renderer/utils/memberHelpers';
 import { resolveMemberRuntimeSummary } from '@renderer/utils/memberRuntimeSummary';
@@ -276,25 +276,7 @@ export const MemberList = memo(function MemberList({
   onSkipMemberForLaunch,
 }: MemberListProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isWide, setIsWide] = useState(false);
-
-  const handleResize = useCallback((entries: ResizeObserverEntry[]) => {
-    const entry = entries[0];
-    if (entry) {
-      setIsWide(entry.contentRect.width > 1000);
-    }
-  }, []);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const observer = new ResizeObserver(handleResize);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [handleResize]);
-
-  const gridClass = isWide ? 'grid grid-cols-2 gap-1' : 'grid grid-cols-1 gap-1';
+  const gridClass = 'grid grid-cols-1';
   const activeMembers = useMemo(
     () =>
       members
@@ -320,14 +302,6 @@ export const MemberList = memo(function MemberList({
     [launchParams]
   );
 
-  if (members.length === 0) {
-    return (
-      <div className="rounded-md border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-muted)]">
-        Solo team — lead only
-      </div>
-    );
-  }
-
   // Pre-compute reviewer→task map to avoid O(n×m) scan per member
   const reviewTaskByMember = useMemo(() => {
     const result = new Map<string, TeamTaskWithKanban>();
@@ -339,6 +313,14 @@ export const MemberList = memo(function MemberList({
     }
     return result;
   }, [taskMap]);
+
+  if (members.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-[var(--color-border)] p-4 text-sm text-[var(--color-text-muted)]">
+        当前是单人团队，仅包含负责人。
+      </div>
+    );
+  }
 
   const renderCard = (member: ResolvedTeamMember, isRemoved: boolean): React.JSX.Element => {
     const currentTask =
@@ -388,15 +370,19 @@ export const MemberList = memo(function MemberList({
   };
 
   return (
-    <div ref={containerRef} className="flex flex-col gap-1">
-      <div className={gridClass}>{activeMembers.map((member) => renderCard(member, false))}</div>
+    <div ref={containerRef} className="flex flex-col gap-3">
+      <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+        <div className={gridClass}>{activeMembers.map((member) => renderCard(member, false))}</div>
+      </div>
       {removedMembers.length > 0 && (
         <>
-          <div className="mt-2 text-[10px] text-[var(--color-text-muted)]">
-            Removed ({removedMembers.length})
+          <div className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+            已移除成员（{removedMembers.length}）
           </div>
-          <div className={gridClass}>
-            {removedMembers.map((member) => renderCard(member, true))}
+          <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+            <div className={gridClass}>
+              {removedMembers.map((member) => renderCard(member, true))}
+            </div>
           </div>
         </>
       )}

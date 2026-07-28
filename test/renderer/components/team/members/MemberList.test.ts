@@ -1,6 +1,6 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { MemberSpawnStatusEntry, ResolvedTeamMember } from '@shared/types';
 
@@ -10,6 +10,9 @@ vi.mock('@renderer/components/team/members/MemberCard', () => ({
     spawnError,
     spawnStatus,
     spawnLaunchState,
+    onClick,
+    onSendMessage,
+    onAssignTask,
     onRestartMember,
     onSkipMemberForLaunch,
   }: {
@@ -17,6 +20,9 @@ vi.mock('@renderer/components/team/members/MemberCard', () => ({
     spawnError?: string;
     spawnStatus?: string;
     spawnLaunchState?: string;
+    onClick?: () => void;
+    onSendMessage?: () => void;
+    onAssignTask?: () => void;
     onRestartMember?: (memberName: string) => void;
     onSkipMemberForLaunch?: (memberName: string) => void;
   }) =>
@@ -24,6 +30,27 @@ vi.mock('@renderer/components/team/members/MemberCard', () => ({
       'div',
       { 'data-testid': `member-${member.name}` },
       spawnError ?? '',
+      onClick
+        ? React.createElement(
+            'button',
+            { 'data-testid': `open-${member.name}`, type: 'button', onClick },
+            'open'
+          )
+        : null,
+      onSendMessage
+        ? React.createElement(
+            'button',
+            { 'data-testid': `message-${member.name}`, type: 'button', onClick: onSendMessage },
+            'message'
+          )
+        : null,
+      onAssignTask
+        ? React.createElement(
+            'button',
+            { 'data-testid': `assign-${member.name}`, type: 'button', onClick: onAssignTask },
+            'assign'
+          )
+        : null,
       onRestartMember && (spawnStatus === 'error' || spawnLaunchState === 'failed_to_start')
         ? React.createElement(
             'button',
@@ -80,16 +107,6 @@ function failedSpawnStatus(reason: string): MemberSpawnStatusEntry {
 }
 
 describe('MemberList spawn-status memoization', () => {
-  beforeEach(() => {
-    vi.stubGlobal(
-      'ResizeObserver',
-      class ResizeObserver {
-        observe(): void {}
-        disconnect(): void {}
-      }
-    );
-  });
-
   afterEach(() => {
     vi.unstubAllGlobals();
     document.body.innerHTML = '';
@@ -156,7 +173,7 @@ describe('MemberList spawn-status memoization', () => {
       await Promise.resolve();
     });
 
-    const firstRetry = host.querySelector('[data-testid="retry-bob"]') as HTMLButtonElement;
+    const firstRetry = host.querySelector<HTMLButtonElement>('[data-testid="retry-bob"]')!;
     expect(firstRetry).not.toBeNull();
 
     await act(async () => {
@@ -178,7 +195,7 @@ describe('MemberList spawn-status memoization', () => {
       await Promise.resolve();
     });
 
-    const secondRetry = host.querySelector('[data-testid="retry-bob"]') as HTMLButtonElement;
+    const secondRetry = host.querySelector<HTMLButtonElement>('[data-testid="retry-bob"]')!;
     expect(secondRetry).not.toBeNull();
 
     await act(async () => {
@@ -188,6 +205,45 @@ describe('MemberList spawn-status memoization', () => {
 
     expect(secondRestart).toHaveBeenCalledWith('bob');
     expect(firstRestart).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('keeps member open, message, and task assignment callbacks wired', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onMemberClick = vi.fn();
+    const onSendMessage = vi.fn();
+    const onAssignTask = vi.fn();
+
+    await act(async () => {
+      root.render(
+        React.createElement(MemberList, {
+          members: [member],
+          isTeamAlive: true,
+          onMemberClick,
+          onSendMessage,
+          onAssignTask,
+        })
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="open-bob"]')!.click();
+      host.querySelector<HTMLButtonElement>('[data-testid="message-bob"]')!.click();
+      host.querySelector<HTMLButtonElement>('[data-testid="assign-bob"]')!.click();
+      await Promise.resolve();
+    });
+
+    expect(onMemberClick).toHaveBeenCalledWith(member);
+    expect(onSendMessage).toHaveBeenCalledWith(member);
+    expect(onAssignTask).toHaveBeenCalledWith(member);
 
     await act(async () => {
       root.unmount();
@@ -217,7 +273,7 @@ describe('MemberList spawn-status memoization', () => {
       await Promise.resolve();
     });
 
-    const firstButton = host.querySelector('[data-testid="skip-bob"]') as HTMLButtonElement;
+    const firstButton = host.querySelector<HTMLButtonElement>('[data-testid="skip-bob"]')!;
     expect(firstButton).not.toBeNull();
 
     await act(async () => {
@@ -239,7 +295,7 @@ describe('MemberList spawn-status memoization', () => {
       await Promise.resolve();
     });
 
-    const secondButton = host.querySelector('[data-testid="skip-bob"]') as HTMLButtonElement;
+    const secondButton = host.querySelector<HTMLButtonElement>('[data-testid="skip-bob"]')!;
     expect(secondButton).not.toBeNull();
 
     await act(async () => {

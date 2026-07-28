@@ -189,9 +189,9 @@ export const MemberCard = ({
     : 'Worktree isolation is configured, but the runtime path is not available yet';
   const activityTask = currentTask ?? reviewTask ?? null;
   const activityTitle = currentTask
-    ? `Current task: #${deriveTaskDisplayId(currentTask.id)}`
+    ? `当前任务：#${deriveTaskDisplayId(currentTask.id)}`
     : reviewTask
-      ? `Reviewing task: #${deriveTaskDisplayId(reviewTask.id)}`
+      ? `正在评审：#${deriveTaskDisplayId(reviewTask.id)}`
       : undefined;
   const showStartingSkeleton =
     !isRemoved &&
@@ -304,10 +304,10 @@ export const MemberCard = ({
 
   return (
     <div
-      className={`rounded transition-opacity duration-300 ${isRemoved ? 'opacity-50' : ''} ${spawnCardClass}`}
+      className={`border-b border-[var(--color-border)] transition-opacity duration-300 last:border-b-0 ${isRemoved ? 'opacity-50' : ''} ${spawnCardClass}`}
     >
       <div
-        className="group relative cursor-pointer rounded py-1.5"
+        className="group relative flex min-h-16 cursor-pointer items-center px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
         style={undefined}
         title={activityTitle}
         role="button"
@@ -320,8 +320,8 @@ export const MemberCard = ({
           }
         }}
       >
-        <div className="pointer-events-none absolute inset-0 rounded transition-colors group-hover:bg-white/5" />
-        <div className="flex items-center gap-2.5">
+        <div className="pointer-events-none absolute inset-0 transition-colors group-hover:bg-[var(--color-surface-raised)] group-focus-visible:bg-[var(--color-surface-raised)]" />
+        <div className="flex w-full min-w-0 items-center gap-2.5">
           <div className="relative shrink-0">
             <div
               className="rounded-full border-2 p-px"
@@ -362,7 +362,7 @@ export const MemberCard = ({
                 <CurrentTaskIndicator
                   task={currentTask}
                   borderColor={colors.border}
-                  activityLabel="working on"
+                  activityLabel="执行任务"
                   onOpenTask={onOpenTask}
                 />
               ) : null}
@@ -370,7 +370,7 @@ export const MemberCard = ({
                 <CurrentTaskIndicator
                   task={reviewTask}
                   borderColor={colors.border}
-                  activityLabel="reviewing"
+                  activityLabel="评审任务"
                   onOpenTask={onOpenReviewTask}
                 />
               ) : null}
@@ -392,9 +392,9 @@ export const MemberCard = ({
                           ? 'text-amber-300'
                           : 'text-[var(--color-text-muted)]'
                     }`}
-                    title={runtimeAdvisoryTitle ?? 'Message sent, awaiting reply'}
+                    title={runtimeAdvisoryTitle ?? '消息已发送，正在等待回复'}
                   >
-                    {runtimeAdvisoryLabel ?? 'awaiting reply'}
+                    {runtimeAdvisoryLabel ?? '等待回复'}
                   </span>
                 </>
               ) : null}
@@ -430,6 +430,48 @@ export const MemberCard = ({
               </div>
             ) : null}
           </div>
+          {!isRemoved && (onSendMessage || onAssignTask) ? (
+            <div className="relative z-10 flex shrink-0 items-center gap-0.5 opacity-60 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+              {onSendMessage ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex size-7 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+                      aria-label={`给 ${displayMemberName(member.name)} 发送消息`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onSendMessage();
+                      }}
+                    >
+                      <MessageSquare size={13} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">发送消息</TooltipContent>
+                </Tooltip>
+              ) : null}
+              {onAssignTask ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex size-7 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+                      aria-label={`给 ${displayMemberName(member.name)} 分配任务`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onAssignTask();
+                      }}
+                    >
+                      <Plus size={13} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">分配任务</TooltipContent>
+                </Tooltip>
+              ) : null}
+            </div>
+          ) : null}
           {showLaunchBadge ? (
             <span
               className="flex shrink-0 items-center gap-1"
@@ -606,7 +648,7 @@ export const MemberCard = ({
           ) : (
             <div
               className="shrink-0"
-              title={totalTasks > 0 ? `${completed}/${totalTasks} completed` : undefined}
+              title={totalTasks > 0 ? `已完成 ${completed}/${totalTasks}` : undefined}
             >
               {totalTasks > 0 && (
                 <>
