@@ -25,7 +25,7 @@
 - [ ] 覆盖 setup/digital-worker 创建入口
 - [x] 覆盖 editor 路径安全
 - [x] 覆盖 extensions 基本路由
-- [ ] 记录 telemetry 删除前的现有行为基线
+- [x] 记录 telemetry 删除前的现有行为基线
 
 ### Task 0.3: Create Server Context
 
@@ -62,7 +62,7 @@
 - [ ] 抽取 teams/tasks/messages routes
 - [ ] 抽取 review/member/config routes
 - [ ] 抽取 bridge/direct-cli routes和事件监听器
-- [ ] 抽取 telemetry routes，暂时保持行为以便后续明确删除
+- [x] 抽取 telemetry routes，暂时保持行为以便后续明确删除
 - [ ] 验证消息 ID、`isMeta`、TaskRef 和软删除语义不变
 
 ### Task 0.7: Create Server Factory And Thin Entry

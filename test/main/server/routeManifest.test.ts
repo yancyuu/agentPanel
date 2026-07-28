@@ -153,8 +153,12 @@ describe('server route manifest baseline', () => {
   it('keeps bridge startup behind event wiring with one on-demand retry call', () => {
     const eventHandlerRegistration = SERVER_SOURCE.indexOf('registerServerEventHandlers({');
     const standaloneStartup = SERVER_SOURCE.indexOf('startStandaloneServerRuntime({');
-    const serverStarts = SERVER_SOURCE.match(/^\s*bridge\.start\(\);$/gm) ?? [];
-    const standaloneStarts = STARTUP_SOURCE.match(/^\s*bridge\.start\(\);$/gm) ?? [];
+    const serverStarts = SERVER_SOURCE.split('\n').filter(
+      (line) => line.trim() === 'bridge.start();'
+    );
+    const standaloneStarts = STARTUP_SOURCE.split('\n').filter(
+      (line) => line.trim() === 'bridge.start();'
+    );
 
     expect(eventHandlerRegistration).toBeLessThan(standaloneStartup);
     expect(serverStarts).toHaveLength(1);
@@ -165,7 +169,7 @@ describe('server route manifest baseline', () => {
     const routeOf = (method: string, path: string): RouteRegistration => {
       const route = routes.find((candidate) => routeKey(candidate) === `${method} ${path}`);
       expect(route, `${method} ${path} must exist`).toBeDefined();
-      return route as RouteRegistration;
+      return route!;
     };
     const expectSameFileOrder = (
       leftMethod: string,
@@ -187,6 +191,12 @@ describe('server route manifest baseline', () => {
       '/api/telemetry/conversations/export',
       'GET',
       '/api/telemetry/conversations/:sessionId'
+    );
+    expect(SERVER_SOURCE.indexOf('registerUsageTelemetryRoutes(app')).toBeLessThan(
+      SERVER_SOURCE.indexOf('registerConversationTelemetryRoutes(app')
+    );
+    expect(SERVER_SOURCE.indexOf('registerConversationTelemetryRoutes(app')).toBeLessThan(
+      SERVER_SOURCE.indexOf('registerUsageTelemetryStatusRoutes(app')
     );
     expect(SERVER_SOURCE.indexOf('registerSseRoutes(app')).toBeLessThan(
       SERVER_SOURCE.indexOf('registerExtensionPluginRoutes(app')

@@ -84,6 +84,12 @@ import { registerSystemManagerRoutes } from './routes/systemManagerRoutes';
 import { registerTaskBusSettingsRoutes } from './routes/taskBusSettingsRoutes';
 import { registerTerminalRoutes } from './routes/terminalRoutes';
 import { registerToolApprovalRoutes } from './routes/toolApprovalRoutes';
+import { createUsageTelemetryPresenter } from './routes/usageTelemetryPresenter';
+import {
+  readTaskBusSettingsFromFile,
+  registerUsageTelemetryRoutes,
+  registerUsageTelemetryStatusRoutes,
+} from './routes/usageTelemetryRoutes';
 import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
 import { registerWorkbenchStatusRoutes } from './routes/workbenchStatusRoutes';
 import { registerWorkerRoutes } from './routes/workerRoutes';
@@ -163,27 +169,8 @@ import type {
   HermitBridgeSessionDetail,
   HermitBridgeSessionListItem,
 } from '../shared/types/hermitBridge';
-import type {
-  UsageTelemetryStatus,
-  UsageUnresolvedSummary,
-  UserUsageTelemetryRow,
-} from './services/session-intelligence/usageTypes';
 import type { TeamManifest } from './services/team-management/TeamWorkspaceService';
 import type { CcSessionDetail } from '@shared/types/api';
-import type {
-  CapabilityCommandPromptRequest,
-  CapabilityPackExportRequest,
-  CapabilityPackImportRequest,
-  CapabilityTelemetrySummary,
-  McpCustomInstallRequest,
-  McpLibraryImportRequest,
-  McpLibraryUpsertRequest,
-  PluginInstallRequest,
-  SkillDeleteRequest,
-  SkillImportRequest,
-  SkillUpsertRequest,
-  TeamCapabilityTelemetrySnapshot,
-} from '@shared/types/extensions';
 import type {
   AttachmentFileData,
   AttachmentMeta,
@@ -3916,475 +3903,31 @@ registerTaskBusSettingsRoutes(app, {
   stopTelemetry,
 });
 
-interface TelemetryProjectRow {
-  cwd: string;
-  displayName?: string;
-  teamSlug?: string;
-  bindProject?: string;
-  deletedAt?: string;
-  sessions: number;
-  messages: number;
-  tokensIn: number;
-  tokensOut: number;
-  tokensTotal: number;
-}
-
-interface TelemetryStatusShape {
-  ok?: boolean;
-  connected: boolean;
-  scan?: ReturnType<typeof getTelemetryRuntimeStatus>;
-  worker?: {
-    running: boolean;
-    state?: string;
-    pid?: number | null;
-    telemetryEnabled?: boolean;
-    lastScan?: string | null;
-    updatedAt?: string | null;
-    lastError?: string | null;
-  };
-  lastScan: string | null;
-  sessions: number;
-  messages: number;
-  tokensIn: number;
-  tokensOut: number;
-  cacheRead: number;
-  cacheCreation: number;
-  totalTokens: number;
-  recentMessages?: number;
-  recentTokensTotal?: number;
-  recentByProvider?: UsageTelemetryStatus['recentByProvider'];
-  byProvider?: UsageTelemetryStatus['byProvider'];
-  activeDays: number;
-  hourly: number[];
-  projects: TelemetryProjectRow[];
-  workSecondsByDay: Record<string, number>;
-  daily?: UsageTelemetryStatus['daily'];
-  localUsers?: UserUsageTelemetryRow[];
-  teamCapabilitySnapshots?: TeamCapabilityTelemetrySnapshot[];
-  capabilitySummary?: CapabilityTelemetrySummary;
-  unresolvedUsage?: UsageUnresolvedSummary;
-}
-
-async function readTaskBusSettings(): Promise<TelemetryConfig> {
-  const configPath = HERMIT_SETTINGS_FILE;
-  let settings: Record<string, unknown> = {};
-  try {
-    const raw = await fs.readFile(configPath, 'utf-8');
-    settings = JSON.parse(raw);
-  } catch {
-    // no settings
-  }
-  return (settings.taskBus ?? {}) as TelemetryConfig;
-}
-
-const CAPABILITY_REPORT_TTL_MS = 10 * 60 * 1000;
-let capabilityReportCache: {
-  expiresAt: number;
-  promise?: Promise<TeamCapabilityTelemetrySnapshot[]>;
-  value: TeamCapabilityTelemetrySnapshot[];
-} | null = null;
-
-function summarizeCapabilities(
-  snapshots: TeamCapabilityTelemetrySnapshot[]
-): CapabilityTelemetrySummary {
-  const summary: CapabilityTelemetrySummary = {
-    teams: 0,
-    commands: 0,
-    skills: 0,
-    workflows: 0,
-    cron: 0,
-    mcpServers: 0,
-  };
-  for (const snapshot of snapshots) {
-    summary.teams += 1;
-    summary.commands += snapshot.counts.commands;
-    summary.skills += snapshot.counts.skills;
-    summary.workflows += snapshot.counts.workflows;
-    summary.cron += snapshot.counts.cron;
-    summary.mcpServers += snapshot.counts.mcpServers;
-    if (!summary.lastReportedAt || summary.lastReportedAt < snapshot.reportedAt) {
-      summary.lastReportedAt = snapshot.reportedAt;
-    }
-  }
-  return summary;
-}
-
-async function getCapabilityTelemetrySnapshots(): Promise<TeamCapabilityTelemetrySnapshot[]> {
-  const now = Date.now();
-  if (capabilityReportCache?.value && capabilityReportCache.expiresAt > now) {
-    return capabilityReportCache.value;
-  }
-  if (capabilityReportCache?.promise) return capabilityReportCache.promise;
-
-  const previousValue = capabilityReportCache?.value ?? [];
-  const promise = (async () => {
-    try {
-      const listResult = await getCapabilityPacks().list();
-      const snapshots = buildTeamCapabilityTelemetrySnapshots(listResult.packs);
-      capabilityReportCache = {
-        expiresAt: Date.now() + CAPABILITY_REPORT_TTL_MS,
-        value: snapshots,
-      };
-      return snapshots;
-    } catch (err) {
-      capabilityReportCache = previousValue.length ? { expiresAt: 0, value: previousValue } : null;
-      throw err;
-    }
-  })();
-
-  capabilityReportCache = { expiresAt: 0, promise, value: previousValue };
-  return promise;
-}
-
-async function enrichTelemetryProjectNames<T extends { projects: TelemetryProjectRow[] }>(
-  status: T
-): Promise<T> {
-  const teams = await svc.listTeams().catch(() => []);
-  const activeTeams = teams.filter(
-    (team) =>
-      !team.deletedAt &&
-      !isExternalPlatformSessionKey(team.slug) &&
-      !isExternalPlatformSessionKey(team.bindProject || '')
-  );
-  const byWorkDir = new Map<string, TeamManifest>();
-  const byBindProject = new Map<string, TeamManifest>();
-  for (const team of activeTeams) {
-    const workDir = (team.workDir || '').trim();
-    if (workDir) byWorkDir.set(path.resolve(workDir), team);
-    if (team.bindProject) byBindProject.set(team.bindProject, team);
-    byBindProject.set(team.slug, team);
-  }
-
-  const seenTeamSlugs = new Set<string>();
-  const projects = status.projects.flatMap((project) => {
-    const cwd = (project.cwd || '').trim();
-    const team =
-      (cwd ? byWorkDir.get(path.resolve(cwd)) : undefined) ??
-      byBindProject.get(cwd) ??
-      byBindProject.get(path.basename(cwd));
-    if (team?.deletedAt) return [];
-    // Team Bus usage should only surface active Hermit teams. Raw Claude project
-    // folders, deleted team leftovers, and external-platform session keys remain
-    // in ~/.claude/projects history but should not reappear as team rows.
-    if (!team) return [];
-    seenTeamSlugs.add(team.slug);
-    return [
-      {
-        ...project,
-        displayName: team.displayName || team.slug,
-        teamSlug: team.slug,
-        bindProject: team.bindProject,
-      },
-    ];
-  });
-
-  for (const team of activeTeams) {
-    if (seenTeamSlugs.has(team.slug)) continue;
-    projects.push({
-      cwd: team.workDir || team.bindProject || team.slug,
-      displayName: team.displayName || team.slug,
-      teamSlug: team.slug,
-      bindProject: team.bindProject,
-      sessions: 0,
-      messages: 0,
-      tokensIn: 0,
-      tokensOut: 0,
-      tokensTotal: 0,
-    });
-  }
-
-  return {
-    ...status,
-    projects,
-  };
-}
-
-async function enrichTelemetryStatus(status: TelemetryStatusShape): Promise<TelemetryStatusShape> {
-  const enriched = await enrichTelemetryProjectNames(status);
-  const capabilities = await getCapabilityTelemetrySnapshots().catch((err) => {
-    app.log.warn({ err }, 'capability telemetry snapshot build failed');
-    return [] as TeamCapabilityTelemetrySnapshot[];
-  });
-  return {
-    ...enriched,
-    teamCapabilitySnapshots: capabilities,
-    capabilitySummary: summarizeCapabilities(capabilities),
-  };
-}
-
-function telemetryEmptyStatus(): TelemetryStatusShape {
-  return {
-    connected: false,
-    scan: getTelemetryRuntimeStatus(),
-    worker: { running: false },
-    lastScan: null,
-    sessions: 0,
-    messages: 0,
-    tokensIn: 0,
-    tokensOut: 0,
-    cacheRead: 0,
-    cacheCreation: 0,
-    totalTokens: 0,
-    recentMessages: 0,
-    recentTokensTotal: 0,
-    recentByProvider: {
-      claudecode: {
-        sessions: 0,
-        messages: 0,
-        tokensIn: 0,
-        tokensOut: 0,
-        cacheRead: 0,
-        cacheCreation: 0,
-        tokensTotal: 0,
-      },
-      codex: {
-        sessions: 0,
-        messages: 0,
-        tokensIn: 0,
-        tokensOut: 0,
-        cacheRead: 0,
-        cacheCreation: 0,
-        tokensTotal: 0,
-      },
-    },
-    byProvider: {
-      claudecode: {
-        sessions: 0,
-        messages: 0,
-        tokensIn: 0,
-        tokensOut: 0,
-        cacheRead: 0,
-        cacheCreation: 0,
-        tokensTotal: 0,
-      },
-      codex: {
-        sessions: 0,
-        messages: 0,
-        tokensIn: 0,
-        tokensOut: 0,
-        cacheRead: 0,
-        cacheCreation: 0,
-        tokensTotal: 0,
-      },
-    },
-    activeDays: 0,
-    hourly: [],
-    projects: [],
-    workSecondsByDay: {},
-    daily: {},
-    localUsers: [],
-    teamCapabilitySnapshots: [],
-    capabilitySummary: { teams: 0, commands: 0, skills: 0, workflows: 0, cron: 0, mcpServers: 0 },
-    unresolvedUsage: { sessions: 0, messages: 0, tokensTotal: 0 },
-  };
-}
-
-function telemetryWorkerSummary(
-  workerStatus: Awaited<ReturnType<typeof readUsageTelemetryWorkerStatus>>
-): TelemetryStatusShape['worker'] {
-  const status = workerStatus.status;
-  return {
-    running: Boolean(status?.running),
-    state: status?.state,
-    pid: status?.pid ?? null,
-    telemetryEnabled: Boolean(status?.telemetryEnabled),
-    lastScan: status?.lastScan ?? null,
-    updatedAt: status?.updatedAt ?? null,
-    lastError: status?.lastError ?? null,
-  };
-}
-
-function csvCell(value: unknown): string {
-  const text = String(value ?? '');
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-function buildUsageTelemetryExport(status: TelemetryStatusShape, format: 'csv' | 'json') {
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  if (format === 'json') {
-    return {
-      filename: `hermit-loop-usage-${stamp}.json`,
-      mimeType: 'application/json;charset=utf-8',
-      content: JSON.stringify(status, null, 2),
-    };
-  }
-
-  const rows = [
-    [
-      'section',
-      'name',
-      'sessions',
-      'messages',
-      'tokensIn',
-      'tokensOut',
-      'cacheRead',
-      'cacheCreation',
-      'totalTokens',
-      'activeDays',
-      'durationSeconds',
-      'cwd',
-      'teamSlug',
-      'teamName',
-      'teamDisplayName',
-      'projectName',
-      'bindProject',
-      'sourceKind',
-      'assetKind',
-      'description',
-    ],
-    [
-      'summary',
-      '累计 Loop 数据',
-      status.sessions,
-      status.messages,
-      status.tokensIn,
-      status.tokensOut,
-      status.cacheRead,
-      status.cacheCreation,
-      status.totalTokens,
-      status.activeDays,
-      '',
-      '',
-    ],
-    ...Object.entries(status.workSecondsByDay)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([day, seconds]) => ['day', day, '', '', '', '', '', '', '', '', seconds, '']),
-    ...status.projects.map((project) => [
-      'project',
-      project.displayName || path.basename(project.cwd) || project.cwd,
-      project.sessions,
-      project.messages,
-      project.tokensIn,
-      project.tokensOut,
-      '',
-      '',
-      project.tokensTotal,
-      '',
-      '',
-      project.cwd,
-    ]),
-    ...(status.localUsers ?? []).map((user) => [
-      'local-user',
-      user.identity.displayName,
-      user.sessions,
-      user.messages,
-      user.tokensIn,
-      user.tokensOut,
-      user.cacheRead,
-      user.cacheCreation,
-      user.tokensTotal,
-      '',
-      '',
-      user.projectName ?? user.teamName ?? '',
-    ]),
-    ...(status.teamCapabilitySnapshots ?? []).flatMap((snapshot) =>
-      snapshot.assets.map((asset) => [
-        `capability-${asset.kind}`,
-        asset.name,
-        '',
-        '',
-        '',
-        '',
-        '',
-        '',
-        '',
-        '',
-        '',
-        asset.scope ?? '',
-        snapshot.teamSlug ?? '',
-        snapshot.teamName,
-        snapshot.teamDisplayName ?? '',
-        snapshot.projectName ?? '',
-        snapshot.bindProject ?? '',
-        asset.source ?? '',
-        asset.kind,
-        asset.description ?? '',
-      ])
-    ),
-    [
-      'unresolved-usage',
-      '未映射会话',
-      status.unresolvedUsage?.sessions ?? 0,
-      status.unresolvedUsage?.messages ?? 0,
-      '',
-      '',
-      '',
-      '',
-      status.unresolvedUsage?.tokensTotal ?? 0,
-      '',
-      '',
-      '',
-    ],
-  ];
-
-  return {
-    filename: `hermit-loop-usage-${stamp}.csv`,
-    mimeType: 'text/csv;charset=utf-8',
-    content: rows.map((row) => row.map(csvCell).join(',')).join('\n'),
-  };
-}
-
-// POST /api/telemetry/scan → trigger manual scan
-app.post('/api/telemetry/scan', async (request, reply) => {
-  try {
-    const taskBus = await readTaskBusSettings();
-    if (!taskBus.telemetry?.enabled) {
-      return reply.code(400).send({ error: 'Telemetry is not enabled' });
-    }
-    const result = await triggerScan(taskBus);
-    if (!result) {
-      return reply.code(503).send({ error: 'Telemetry scan failed' });
-    }
-    const workerStatus = await readUsageTelemetryWorkerStatus(HERMIT_HOME);
-    return await enrichTelemetryStatus({
-      ...result,
-      ok: true,
-      scan: getTelemetryRuntimeStatus(),
-      worker: telemetryWorkerSummary(workerStatus),
-    });
-  } catch (err) {
-    return reply.code(500).send({ error: String(err) });
-  }
+const usageTelemetryPresenter = createUsageTelemetryPresenter({
+  listTeams: () => svc.listTeams(),
+  loadCapabilitySnapshots: async () => {
+    const listResult = await getCapabilityPacks().list();
+    return buildTeamCapabilityTelemetrySnapshots(listResult.packs);
+  },
+  getRuntimeStatus: getTelemetryRuntimeStatus,
+  warn: (error, message) => app.log.warn({ err: error }, message),
 });
 
-// GET /api/telemetry/export → export Loop usage telemetry summary/projects
-app.get<{ Querystring: { format?: 'csv' | 'json' | string } }>(
-  '/api/telemetry/export',
-  async (request, reply) => {
-    try {
-      const format = request.query.format === 'json' ? 'json' : 'csv';
-      const status = await enrichTelemetryStatus(
-        (await getTelemetryStatus()) ?? telemetryEmptyStatus()
-      );
-      return buildUsageTelemetryExport(status, format);
-    } catch (err) {
-      return reply.code(500).send({ error: String(err) });
-    }
-  }
-);
+const usageTelemetryRouteDependencies = {
+  presenter: usageTelemetryPresenter,
+  readTaskBusSettings: () => readTaskBusSettingsFromFile(HERMIT_SETTINGS_FILE),
+  triggerScan,
+  getTelemetryStatus,
+  readWorkerStatus: () => readUsageTelemetryWorkerStatus(HERMIT_HOME),
+};
+
+registerUsageTelemetryRoutes(app, usageTelemetryRouteDependencies);
 
 registerConversationTelemetryRoutes(app, {
   conversationTelemetry: serverContext.services.conversationTelemetry,
 });
 
-// GET /api/telemetry/status → current telemetry status (full stats)
-app.get('/api/telemetry/status', async (request, reply) => {
-  try {
-    const workerStatus = await readUsageTelemetryWorkerStatus(HERMIT_HOME);
-    const status = await enrichTelemetryStatus(
-      workerStatus.status?.telemetry ?? (await getTelemetryStatus()) ?? telemetryEmptyStatus()
-    );
-    // `connected` drives the Redis status badge in the UI. The local scan never
-    // knows about Redis, so reflect the live team-bus connection instead of
-    // leaving the hardcoded `false` — otherwise a healthy bus always shows red.
-    status.connected = true;
-    status.scan = getTelemetryRuntimeStatus();
-    status.worker = telemetryWorkerSummary(workerStatus);
-    return status;
-  } catch {
-    return telemetryEmptyStatus();
-  }
-});
+registerUsageTelemetryStatusRoutes(app, usageTelemetryRouteDependencies);
 
 registerReviewCompatibilityRoutes(app);
 
