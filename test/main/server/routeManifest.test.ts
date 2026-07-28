@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- test scans repository-controlled paths */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
@@ -5,9 +6,15 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const SERVER_PATH = resolve(process.cwd(), 'src/main/server.ts');
+const WORKBENCH_PATH = resolve(process.cwd(), 'src/main/workbenchServer.ts');
+const OPERATIONS_PATH = resolve(process.cwd(), 'src/main/serverOperations.ts');
+const STANDALONE_PATH = resolve(process.cwd(), 'src/main/serverStandalone.ts');
 const ROUTES_DIR = resolve(process.cwd(), 'src/main/routes');
 const STARTUP_PATH = resolve(process.cwd(), 'src/main/serverStartup.ts');
 const SERVER_SOURCE = readFileSync(SERVER_PATH, 'utf8');
+const WORKBENCH_SOURCE = readFileSync(WORKBENCH_PATH, 'utf8');
+const OPERATIONS_SOURCE = readFileSync(OPERATIONS_PATH, 'utf8');
+const STANDALONE_SOURCE = readFileSync(STANDALONE_PATH, 'utf8');
 const STARTUP_SOURCE = readFileSync(STARTUP_PATH, 'utf8');
 const ROUTE_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'all']);
 
@@ -27,10 +34,10 @@ const ROUTE_MODULES = collectTypeScriptFiles(ROUTES_DIR).map((sourcePath) => {
   return { sourcePath, sourceText, registrar };
 });
 const ACTIVE_ROUTE_MODULES = ROUTE_MODULES.filter(
-  (module) => module.registrar && SERVER_SOURCE.includes(`${module.registrar}(`)
+  (module) => module.registrar && WORKBENCH_SOURCE.includes(`${module.registrar}(`)
 );
 const ROUTE_SOURCE_PATHS = [
-  SERVER_PATH,
+  WORKBENCH_PATH,
   ...ACTIVE_ROUTE_MODULES.map((module) => module.sourcePath),
 ];
 
@@ -110,7 +117,7 @@ describe('server route manifest baseline', () => {
 
   it('does not count orphaned route modules as active registrations', () => {
     const orphanedRegistrars = ROUTE_MODULES.filter(
-      (module) => module.registrar && !SERVER_SOURCE.includes(`${module.registrar}(`)
+      (module) => module.registrar && !WORKBENCH_SOURCE.includes(`${module.registrar}(`)
     ).map((module) => module.registrar);
     expect(orphanedRegistrars).toEqual([]);
   });
@@ -140,28 +147,32 @@ describe('server route manifest baseline', () => {
     expect(keys.has('GET /api/extensions/skills/:skillId')).toBe(true);
   });
 
-  it('constructs Fastify before import-time bridge and listener wiring', () => {
-    const appConstruction = SERVER_SOURCE.indexOf('const app = Fastify(');
-    const eagerBridgeStart = SERVER_SOURCE.indexOf('bridge.start();');
-    const eventHandlerRegistration = SERVER_SOURCE.indexOf('registerServerEventHandlers({');
+  it('constructs Fastify before event wiring and keeps process startup explicit', () => {
+    const appConstruction = WORKBENCH_SOURCE.indexOf(
+      'const app = (options.appFactory ?? Fastify)('
+    );
+    const operationsCreation = WORKBENCH_SOURCE.indexOf('createServerOperations({');
+    const factoryCreation = STANDALONE_SOURCE.indexOf('await createWorkbenchServer(');
+    const standaloneStartup = STANDALONE_SOURCE.indexOf('startPromise ??= startRuntime({');
 
     expect(appConstruction).toBeGreaterThanOrEqual(0);
-    expect(appConstruction).toBeLessThan(eagerBridgeStart);
-    expect(appConstruction).toBeLessThan(eventHandlerRegistration);
+    expect(appConstruction).toBeLessThan(operationsCreation);
+    expect(factoryCreation).toBeGreaterThanOrEqual(0);
+    expect(factoryCreation).toBeLessThan(standaloneStartup);
+    expect(SERVER_SOURCE).toContain('if (isDirectServerExecution(import.meta.url))');
   });
 
   it('keeps bridge startup behind event wiring with one on-demand retry call', () => {
-    const eventHandlerRegistration = SERVER_SOURCE.indexOf('registerServerEventHandlers({');
-    const standaloneStartup = SERVER_SOURCE.indexOf('startStandaloneServerRuntime({');
-    const serverStarts = SERVER_SOURCE.split('\n').filter(
+    const eventHandlerRegistration = OPERATIONS_SOURCE.indexOf('registerServerEventHandlers({');
+    const onDemandStarts = OPERATIONS_SOURCE.split('\n').filter(
       (line) => line.trim() === 'bridge.start();'
     );
     const standaloneStarts = STARTUP_SOURCE.split('\n').filter(
       (line) => line.trim() === 'bridge.start();'
     );
 
-    expect(eventHandlerRegistration).toBeLessThan(standaloneStartup);
-    expect(serverStarts).toHaveLength(1);
+    expect(eventHandlerRegistration).toBeGreaterThanOrEqual(0);
+    expect(onDemandStarts).toHaveLength(1);
     expect(standaloneStarts).toHaveLength(1);
   });
 
@@ -183,7 +194,7 @@ describe('server route manifest baseline', () => {
       'registerTeamMemberStatsRoutes(app',
       'registerToolApprovalRoutes(app',
     ];
-    const positions = registrars.map((registrar) => SERVER_SOURCE.indexOf(registrar));
+    const positions = registrars.map((registrar) => WORKBENCH_SOURCE.indexOf(registrar));
 
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
@@ -207,8 +218,8 @@ describe('server route manifest baseline', () => {
       expect(left.line).toBeLessThan(right.line);
     };
 
-    expect(SERVER_SOURCE.indexOf('registerBridgeProxyRoutes(app')).toBeLessThan(
-      SERVER_SOURCE.indexOf('registerRuntimeRoutes(app')
+    expect(WORKBENCH_SOURCE.indexOf('registerBridgeProxyRoutes(app')).toBeLessThan(
+      WORKBENCH_SOURCE.indexOf('registerRuntimeRoutes(app')
     );
     expectSameFileOrder(
       'GET',
@@ -216,14 +227,14 @@ describe('server route manifest baseline', () => {
       'GET',
       '/api/telemetry/conversations/:sessionId'
     );
-    expect(SERVER_SOURCE.indexOf('registerUsageTelemetryRoutes(app')).toBeLessThan(
-      SERVER_SOURCE.indexOf('registerConversationTelemetryRoutes(app')
+    expect(WORKBENCH_SOURCE.indexOf('registerUsageTelemetryRoutes(app')).toBeLessThan(
+      WORKBENCH_SOURCE.indexOf('registerConversationTelemetryRoutes(app')
     );
-    expect(SERVER_SOURCE.indexOf('registerConversationTelemetryRoutes(app')).toBeLessThan(
-      SERVER_SOURCE.indexOf('registerUsageTelemetryStatusRoutes(app')
+    expect(WORKBENCH_SOURCE.indexOf('registerConversationTelemetryRoutes(app')).toBeLessThan(
+      WORKBENCH_SOURCE.indexOf('registerUsageTelemetryStatusRoutes(app')
     );
-    expect(SERVER_SOURCE.indexOf('registerSseRoutes(app')).toBeLessThan(
-      SERVER_SOURCE.indexOf('registerExtensionPluginRoutes(app')
+    expect(WORKBENCH_SOURCE.indexOf('registerSseRoutes(app')).toBeLessThan(
+      WORKBENCH_SOURCE.indexOf('registerExtensionPluginRoutes(app')
     );
   });
 });

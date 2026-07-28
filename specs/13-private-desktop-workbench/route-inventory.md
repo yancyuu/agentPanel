@@ -369,6 +369,13 @@ wc -l /tmp/routes.tsv
 | ---- | ---- | -------------: |
 | GET  | `/`  |           7677 |
 
+## Phase 0 最终对照（2026-07-28）
+
+- `src/main/server.ts` 已收缩为 33 行的受保护进程入口；所有路由装配移至 `src/main/workbenchServer.ts`。
+- `test/main/server/routeManifest.test.ts` 从最终 composition root 与已启用 route modules 重新提取路由，仍为 235 条：GET 97、POST 108、PUT 5、PATCH 13、DELETE 9、ALL 3。
+- 最终清单不存在重复 method/path，也不存在已抽取但未由 composition root 调用的孤立 registrar。
+- `createWorkbenchServer(context, options)` 只构建 Fastify、注册安全 hook/route/static 和 listener，不调用 `listen()`；standalone 监听仅由显式 `startStandaloneServer()` 触发。
+
 ## 拆分验收约束
 
 - route module 只能通过显式 `ServerContext` 获取有状态依赖；不得重复创建 bridge、direct-cli manager、watcher、service、SSE set 或 runtime map。

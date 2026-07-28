@@ -203,6 +203,14 @@ interface ServerContext {
 - listeners 与 signal handlers 不移除时，第二个 context 会重复处理消息和 shutdown；
 - extensions watcher/emitter 必须在 composition root 创建一次，不能每个 route plugin 创建。
 
+## Phase 0 最终所有权状态（2026-07-28）
+
+- `createStandaloneServerComposition()` 每次只创建一套 `ServerContext` services/state；它不启动 bridge、watcher、HTTP listener 或 process handlers。
+- `createWorkbenchServer(context, options)` 以 `WeakMap` 对同一 context 复用同一个 Fastify app，并只注册一套 bridge/direct-cli listeners；失败的 factory 创建会移除本轮新增 listeners。
+- `startStandaloneServer()` 通过 `context.lifecycle.startPromise` 复用同一 context 的启动流程，防止重复调用 bridge/watcher/listen。
+- shutdown 通过 `disposePromise` 保持幂等，顺序由 `serverProcessLifecycle.ts` 统一管理：listeners → IM watcher → telemetry → SSE → direct CLI → launcher → bridge → Fastify。
+- import `server.ts` 或 `workbenchServer.ts` 不创建 stateful services，也不会监听端口；只有直接执行 `server.ts` 时才显式调用 standalone start。
+
 ## Task 0.1 退出条件
 
 - 235 routes 全量 inventory 与源码逐项匹配；

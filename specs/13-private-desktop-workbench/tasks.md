@@ -19,10 +19,10 @@
 ### Task 0.2: Add Baseline Tests
 
 - [x] 检查每个 route domain 的现有测试
-- [ ] 为缺失的关键 route 注册和响应契约补测试
-- [ ] 覆盖 teams/tasks/message ID 和状态映射
+- [x] 为缺失的关键 route 注册和响应契约补测试
+- [x] 覆盖 teams/tasks/message ID 和状态映射
 - [x] 覆盖 direct-cli/bridge 路由和事件写入
-- [ ] 覆盖 setup/digital-worker 创建入口
+- [x] 覆盖 setup/digital-worker 创建入口
 - [x] 覆盖 editor 路径安全
 - [x] 覆盖 extensions 基本路由
 - [x] 记录 telemetry 删除前的现有行为基线
@@ -36,7 +36,7 @@
 - [x] 收拢 direct-cli、IM watcher 和 cc settings services
 - [x] 收拢 update service、SSE clients 和 runtime maps
 - [x] 为 context 增加明确的 shutdown/dispose contract
-- [ ] 测试同一进程不会重复创建 stateful instances
+- [x] 测试同一进程不会重复创建 stateful instances
 
 ### Task 0.4: Extract Small Route Domains
 
@@ -63,26 +63,26 @@
 - [x] 抽取 review/member/config routes
 - [x] 抽取 bridge/direct-cli routes和事件监听器
 - [x] 抽取 telemetry routes，暂时保持行为以便后续明确删除
-- [ ] 验证消息 ID、`isMeta`、TaskRef 和软删除语义不变
+- [x] 验证消息 ID、`isMeta`、TaskRef 和软删除语义不变
 
 ### Task 0.7: Create Server Factory And Thin Entry
 
-- [ ] 新建 `createWorkbenchServer(context, options)`
-- [ ] route modules 只通过显式 context 获取依赖
-- [ ] 独立 `startStandaloneServer()` 与 import side effects
-- [ ] 统一 shutdown 顺序
-- [ ] 将 `server.ts` 收缩到约 400 行以内
-- [ ] 生成 route inventory 最终对照表
+- [x] 新建 `createWorkbenchServer(context, options)`
+- [x] route modules 只通过显式 context 获取依赖
+- [x] 独立 `startStandaloneServer()` 与 import side effects
+- [x] 统一 shutdown 顺序
+- [x] 将 `server.ts` 收缩到约 400 行以内
+- [x] 生成 route inventory 最终对照表
 
 ### Task 0.8: Phase 0 Verification Gate
 
-- [ ] `pnpm typecheck` 通过
-- [ ] `pnpm build:server` 通过
-- [ ] 关键 route/domain 聚焦测试通过
-- [ ] 确认无计划外 HTTP contract 变化
-- [ ] 确认无重复 watcher/bridge/service 实例
-- [ ] 确认启动和关闭无回归
-- [ ] 只有以上全部完成后才解锁 Phase 1
+- [x] `pnpm typecheck` 通过
+- [x] `pnpm build:server` 通过
+- [x] 关键 route/domain 聚焦测试通过
+- [x] 确认无计划外 HTTP contract 变化
+- [x] 确认无重复 watcher/bridge/service 实例
+- [x] 确认启动和关闭无回归
+- [x] 只有以上全部完成后才解锁 Phase 1
 
 ## Phase 1: Create Independent Desktop App
 
