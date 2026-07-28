@@ -127,6 +127,7 @@ import { isSseFallbackRequest, openSseFallbackStream, registerSseRoutes } from '
 import { registerSystemManagerRoutes } from './routes/systemManagerRoutes';
 import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
 import { registerWorkbenchStatusRoutes } from './routes/workbenchStatusRoutes';
+import { registerWorkspaceRoutes } from './routes/workspaceRoutes';
 import { registerServerEventHandlers } from './serverEventHandlers';
 import {
   createServerShutdown,
@@ -4203,58 +4204,7 @@ app.get<{ Params: { id: string; runId: string } }>(
   }
 );
 
-// Browse directories — returns subdirectories at the given path
-app.post<{ Body: { path?: string; limit?: number } }>(
-  '/api/config/browse-folders',
-  async (request) => {
-    const { path: dirPath, limit = 200 } = request.body ?? {};
-    const target = dirPath?.trim() ? dirPath.trim() : os.homedir();
-
-    try {
-      const entries = readdirSync(target, { withFileTypes: true });
-      const dirs = entries
-        .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
-        .slice(0, limit)
-        .map((e) => path.join(target, e.name));
-      return {
-        success: true,
-        data: { path: target, dirs, hasParent: target !== path.dirname(target) },
-      };
-    } catch {
-      return { success: false, error: `无法访问目录: ${target}` };
-    }
-  }
-);
-
-// POST /api/workspace/list — 文件目录浏览
-app.post<{ Body: { dirPath?: string } }>('/api/workspace/list', async (request) => {
-  const { dirPath } = request.body ?? {};
-  const target = dirPath?.trim() ? dirPath.trim() : os.homedir();
-
-  try {
-    const entries = readdirSync(target, { withFileTypes: true });
-    const files = entries.slice(0, 500).map((e) => {
-      const fullPath = path.join(target, e.name);
-      const isDirectory = e.isDirectory();
-      let size = 0;
-      try {
-        const stat = statSync(fullPath);
-        size = stat.size;
-      } catch {
-        /* ignore */
-      }
-      return {
-        name: e.name,
-        isDirectory,
-        size,
-        ext: isDirectory ? '' : path.extname(e.name).slice(1).toLowerCase(),
-      };
-    });
-    return { path: target, files, hasParent: target !== path.dirname(target) };
-  } catch {
-    return { path: target, files: [], hasParent: false, error: `无法访问目录: ${target}` };
-  }
-});
+registerWorkspaceRoutes(app);
 
 // ===========================================================================
 // Project Editor API (web mode)
