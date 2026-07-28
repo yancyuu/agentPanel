@@ -69,10 +69,7 @@ import {
   needsWorkDirReconcile,
 } from './services/hermitBridge/workDirReconcile';
 import { LoopAssetsScannerService } from './services/loop-assets/LoopAssetsScannerService';
-import {
-  ConversationTelemetryService,
-  shouldIncludeContent,
-} from './services/session-intelligence/ConversationTelemetryService';
+import { ConversationTelemetryService } from './services/session-intelligence/ConversationTelemetryService';
 import { defaultImSessionsDir, ImLiveWatcher } from './services/session-intelligence/ImLiveWatcher';
 import { LocalSessionScanner } from './services/session-intelligence/LocalSessionScanner';
 import {
@@ -113,6 +110,7 @@ import { createServerContext, createServerRuntimeState } from './serverContext';
 import { registerAppConfigRoutes } from './routes/appConfigRoutes';
 import { registerBridgeConfigRoutes } from './routes/bridgeConfigRoutes';
 import { registerBridgeProxyRoutes } from './routes/bridgeProxyRoutes';
+import { registerConversationTelemetryRoutes } from './routes/conversationTelemetryRoutes';
 import { registerGraphRoutes } from './routes/graphRoutes';
 import { registerHarnessRoutes } from './routes/harnessRoutes';
 import { registerHermitConfigRoutes } from './routes/hermitConfigRoutes';
@@ -4467,98 +4465,8 @@ app.get<{ Querystring: { format?: 'csv' | 'json' | string } }>(
   }
 );
 
-// GET /api/telemetry/conversations → local Feishu/Lark conversation telemetry
-app.get<{
-  Querystring: {
-    teamName?: string;
-    platform?: string;
-    from?: string;
-    to?: string;
-    identityType?: 'person' | 'group' | 'unknown';
-    identityId?: string;
-    includeContent?: 'none' | 'summary' | 'full' | string;
-    includeToolResults?: string;
-    includeSystemMessages?: string;
-    limit?: string;
-    offset?: string;
-  };
-}>('/api/telemetry/conversations', async (request, reply) => {
-  try {
-    const result = await conversationTelemetry.getConversations({
-      teamName: request.query.teamName,
-      platform: request.query.platform,
-      from: request.query.from,
-      to: request.query.to,
-      identityType: request.query.identityType,
-      identityId: request.query.identityId,
-      includeContent: shouldIncludeContent(request.query.includeContent),
-      includeToolResults: request.query.includeToolResults !== 'false',
-      includeSystemMessages: request.query.includeSystemMessages !== 'false',
-      limit: request.query.limit ? Number(request.query.limit) : undefined,
-      offset: request.query.offset ? Number(request.query.offset) : undefined,
-    });
-    return result;
-  } catch (err) {
-    return reply.code(500).send({ error: String(err) });
-  }
-});
-
-// GET /api/telemetry/conversations/export → export local conversation telemetry
-app.get<{
-  Querystring: {
-    format?: 'csv' | 'json' | 'markdown' | 'plaintext' | string;
-    teamName?: string;
-    platform?: string;
-    from?: string;
-    to?: string;
-    identityType?: 'person' | 'group' | 'unknown';
-    identityId?: string;
-    includeContent?: 'none' | 'summary' | 'full' | string;
-    includeToolResults?: string;
-    includeSystemMessages?: string;
-  };
-}>('/api/telemetry/conversations/export', async (request, reply) => {
-  try {
-    const requestedFormat = request.query.format;
-    const format =
-      requestedFormat === 'json' ||
-      requestedFormat === 'markdown' ||
-      requestedFormat === 'plaintext' ||
-      requestedFormat === 'csv'
-        ? requestedFormat
-        : 'csv';
-    const result = await conversationTelemetry.exportConversations(format, {
-      teamName: request.query.teamName,
-      platform: request.query.platform,
-      from: request.query.from,
-      to: request.query.to,
-      identityType: request.query.identityType,
-      identityId: request.query.identityId,
-      includeContent: shouldIncludeContent(request.query.includeContent),
-      includeToolResults: request.query.includeToolResults !== 'false',
-      includeSystemMessages: request.query.includeSystemMessages !== 'false',
-    });
-    return result;
-  } catch (err) {
-    return reply.code(500).send({ error: String(err) });
-  }
-});
-
-// GET /api/telemetry/conversations/:sessionId → local conversation telemetry detail
-app.get<{
-  Params: { sessionId: string };
-  Querystring: { teamName?: string; platform?: string };
-}>('/api/telemetry/conversations/:sessionId', async (request, reply) => {
-  try {
-    const result = await conversationTelemetry.getConversationDetail(request.params.sessionId, {
-      ...request.query,
-      includeContent: 'full',
-    });
-    if (!result) return reply.code(404).send({ error: 'Conversation not found' });
-    return result;
-  } catch (err) {
-    return reply.code(500).send({ error: String(err) });
-  }
+registerConversationTelemetryRoutes(app, {
+  conversationTelemetry: serverContext.services.conversationTelemetry,
 });
 
 // GET /api/telemetry/status → current telemetry status (full stats)
