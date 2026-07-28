@@ -5,6 +5,9 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const SERVER_PATH = resolve(process.cwd(), 'src/main/server.ts');
+const STARTUP_PATH = resolve(process.cwd(), 'src/main/serverStartup.ts');
+const SERVER_SOURCE = readFileSync(SERVER_PATH, 'utf8');
+const STARTUP_SOURCE = readFileSync(STARTUP_PATH, 'utf8');
 const ROUTE_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'all']);
 
 interface RouteRegistration {
@@ -14,10 +17,9 @@ interface RouteRegistration {
 }
 
 function collectRouteRegistrations(): RouteRegistration[] {
-  const sourceText = readFileSync(SERVER_PATH, 'utf8');
   const sourceFile = ts.createSourceFile(
     SERVER_PATH,
-    sourceText,
+    SERVER_SOURCE,
     ts.ScriptTarget.Latest,
     true,
     ts.ScriptKind.TS
@@ -100,6 +102,25 @@ describe('server route manifest baseline', () => {
     expect(keys.has('GET /api/telemetry/conversations/:sessionId')).toBe(true);
     expect(keys.has('GET /api/events')).toBe(true);
     expect(keys.has('GET /api/extensions/skills/:skillId')).toBe(true);
+  });
+
+  it('constructs Fastify before import-time bridge and listener wiring', () => {
+    const appConstruction = SERVER_SOURCE.indexOf('const app = Fastify(');
+    const eagerBridgeStart = SERVER_SOURCE.indexOf('bridge.start();');
+    const directCliListener = SERVER_SOURCE.indexOf("directCliManager.on('event'");
+    const bridgeReplyListener = SERVER_SOURCE.indexOf("bridge.on('reply'");
+
+    expect(appConstruction).toBeGreaterThanOrEqual(0);
+    expect(appConstruction).toBeLessThan(eagerBridgeStart);
+    expect(appConstruction).toBeLessThan(directCliListener);
+    expect(appConstruction).toBeLessThan(bridgeReplyListener);
+  });
+
+  it('pins bridge startup and on-demand retry behavior until ownership is explicit', () => {
+    const serverStarts = SERVER_SOURCE.match(/^\s*bridge\.start\(\);$/gm) ?? [];
+    const standaloneStarts = STARTUP_SOURCE.match(/^\s*bridge\.start\(\);$/gm) ?? [];
+    expect(serverStarts).toHaveLength(2);
+    expect(standaloneStarts).toHaveLength(1);
   });
 
   it('records the current source ordering that extraction must preserve semantically', () => {

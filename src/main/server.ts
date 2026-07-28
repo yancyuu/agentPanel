@@ -117,6 +117,7 @@ import { WorkflowPromptService } from './services/system-manager/WorkflowPromptS
 import { ClaudeBinaryResolver } from './services/team/ClaudeBinaryResolver';
 import { TeamProvisioningService } from './services/team-management';
 import { createServerShutdown, installServerProcessHandlers } from './serverProcessLifecycle';
+import { startStandaloneServerRuntime } from './serverStartup';
 import { HERMIT_OPS_GUIDE_URL } from './services/team-management/OpsRunbookContext';
 import { UpdateService } from './services/UpdateService';
 import {
@@ -478,6 +479,14 @@ function writeHermitConfigRaw(content: string): HermitConfig {
   writeFileSync(HERMIT_CONFIG_FILE, normalized, 'utf-8');
   return loadConfig();
 }
+
+// Construct the Fastify instance before any background bridge work or event
+// listener registration. Several legacy callbacks close over app.log, so this
+// ordering prevents them from observing an uninitialized app during startup.
+const app = Fastify({
+  logger: { level: process.env.HERMIT_LOG_LEVEL ?? 'warn' },
+  disableRequestLogging: true,
+});
 
 // Mutable runtime config — updated via /api/hermit-config POST
 let runtimeConfig = loadConfig();
@@ -1493,11 +1502,6 @@ function parseHermitTeamFromSessionKey(sessionKey: string): string | null {
   if (bridgeMatch) return bridgeMatch[1];
   return null;
 }
-
-const app = Fastify({
-  logger: { level: process.env.HERMIT_LOG_LEVEL ?? 'warn' },
-  disableRequestLogging: true,
-});
 
 const dashboardRecentProjectsLoader = createDashboardRecentProjectsLoader({
   extraRoots: [REPO_ROOT, adminWorkDir()],
@@ -7696,82 +7700,32 @@ function reply500(err: unknown) {
 // Start
 // ===========================================================================
 
-bridgeLauncher
-  .ensureBinaryReady({
-    configPath: HERMIT_BRIDGE_CONFIG_FILE,
-    extraArgs: ['--force'],
-  })
-  .then((cmd) => {
-    markBridgeBinaryCheck({ status: 'ok', cmd: cmd.cmd });
-  })
-  .catch((err) => {
-    markBridgeBinaryCheck({
-      status: 'degraded',
-      reason: err instanceof Error ? err.message : String(err),
-      remediation: [
-        '在终端运行: npm install -g cc-connect',
-        '或设置环境变量 CC_CONNECT_MIRROR 指向可用的 GitHub release 代理（如 https://gh-proxy.com/）',
-        '安装完成后重启 AgentCli 工作台',
-      ],
-    });
-  });
-
-// Ensure hermit-bridge is running for Hermit to connect to. A no-op when the
-// management API already responds (an externally-managed hermit-bridge is left
-// untouched); otherwise launches the bundled sidecar. Fire-and-forget: a slow or
-// failed launch must NEVER block app.listen() — otherwise a missing sidecar
-// stalls /api/version for up to HERMIT_BRIDGE_AUTO_LAUNCH_TIMEOUT_MS (180s
-// default) and the workbench reports "启动失败" on cold boot. The bridge connects
-// in the background via its own retry loop (bridge.start() below).
-//
-// NOTE on fail-fast: the cc-connect BINARY being ready is a hard prerequisite —
-// without it every team-config save surfaces as a cryptic "fetch failed". We
-// guarantee the binary (via the self-heal downloader in HermitBridgeLauncher's
-// ensureRunning) BEFORE app.listen(), so a missing binary is surfaced as a
-// clear startup error instead of a silently broken workbench.
-bridgeLauncher
-  .ensureRunning({
-    client: cc,
-    configPath: HERMIT_BRIDGE_CONFIG_FILE,
-    extraArgs: ['--force'],
-    logFile: path.join(HERMIT_HOME, 'cc-connect', 'cc-connect.log'),
-    timeoutMs: HERMIT_BRIDGE_AUTO_LAUNCH_TIMEOUT_MS,
-  })
-  .then((r) => {
-    if (r.launched) {
-      app.log.info({ pid: r.pid }, 'launched hermit-bridge sidecar');
-      markBridgeLaunch({ status: 'running', pid: r.pid });
-    } else {
-      app.log.info('hermit-bridge already running — skipping auto-launch');
-      markBridgeLaunch({ status: 'running' });
-    }
-  })
-  .catch((err) => {
-    app.log.warn({ err }, 'hermit-bridge auto-launch skipped');
-    markBridgeLaunch({
-      status: 'offline',
-      reason: err instanceof Error ? err.message : String(err),
-    });
-  });
-// 启动 hermit-bridge WebSocket 连接(注册 platform=hermit adapter)
-bridge.start();
-imLiveWatcher.start();
-await initializeTelemetryFromSettings();
-await ensureGlobalWorkflows();
-
-try {
-  await app.listen({ host: HOST, port: PORT });
-  app.log.info(
-    `hermit-bridge:        ${process.env.HERMIT_BRIDGE_BASE_URL ?? process.env.CC_CONNECT_BASE_URL ?? 'http://127.0.0.1:9820'}`
-  );
-  app.log.info(
-    `bridge:               ${process.env.HERMIT_BRIDGE_WS_URL ?? process.env.CC_CONNECT_BRIDGE_URL ?? 'ws://127.0.0.1:9810/bridge/ws'}`
-  );
-  app.log.info(`static:               ${STATIC_DIR}`);
-} catch (err) {
-  app.log.error(err);
-  process.exit(1);
-}
+await startStandaloneServerRuntime({
+  app,
+  bridgeLauncher,
+  bridgeClient: cc,
+  bridge,
+  imLiveWatcher,
+  initializeTelemetryFromSettings,
+  ensureGlobalWorkflows,
+  markBridgeBinaryCheck,
+  markBridgeLaunch,
+  processTarget: process,
+  bridgeConfigPath: HERMIT_BRIDGE_CONFIG_FILE,
+  bridgeLogFile: path.join(HERMIT_HOME, 'cc-connect', 'cc-connect.log'),
+  bridgeAutoLaunchTimeoutMs: HERMIT_BRIDGE_AUTO_LAUNCH_TIMEOUT_MS,
+  host: HOST,
+  port: PORT,
+  staticDir: STATIC_DIR,
+  bridgeBaseUrl:
+    process.env.HERMIT_BRIDGE_BASE_URL ??
+    process.env.CC_CONNECT_BASE_URL ??
+    'http://127.0.0.1:9820',
+  bridgeWsUrl:
+    process.env.HERMIT_BRIDGE_WS_URL ??
+    process.env.CC_CONNECT_BRIDGE_URL ??
+    'ws://127.0.0.1:9810/bridge/ws',
+});
 
 const shutdown = createServerShutdown({
   app,
