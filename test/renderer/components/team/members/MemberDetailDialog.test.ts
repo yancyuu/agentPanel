@@ -131,7 +131,7 @@ vi.mock('@renderer/components/team/members/MemberLogsTab', () => ({
 
 import { MemberDetailDialog } from '@renderer/components/team/members/MemberDetailDialog';
 
-describe('MemberDetailDialog activity count', () => {
+describe('MemberDetailDialog workbench profile', () => {
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     useStore.setState({
@@ -157,7 +157,7 @@ describe('MemberDetailDialog activity count', () => {
     vi.unstubAllGlobals();
   });
 
-  it('counts task comments in the Activity badge even when messageCount is zero', async () => {
+  it('keeps work actions and current tasks while omitting session and activity statistics', async () => {
     const member: ResolvedTeamMember = {
       name: 'jack',
       status: 'active',
@@ -198,6 +198,9 @@ describe('MemberDetailDialog activity count', () => {
       } as TeamTaskWithKanban,
     ];
 
+    const onSendMessage = vi.fn();
+    const onAssignTask = vi.fn();
+    const onTaskClick = vi.fn();
     const host = document.createElement('div');
     document.body.appendChild(host);
     const root = createRoot(host);
@@ -211,17 +214,39 @@ describe('MemberDetailDialog activity count', () => {
           members,
           tasks,
           onClose: () => undefined,
-          onSendMessage: () => undefined,
-          onAssignTask: () => undefined,
-          onTaskClick: () => undefined,
+          onSendMessage,
+          onAssignTask,
+          onTaskClick,
         })
       );
       await Promise.resolve();
     });
 
-    expect(host.textContent).toContain('activity-count:1');
-    expect(host.textContent).toContain('Activity1');
+    expect(host.textContent).toContain('新建任务');
+    expect(host.textContent).toContain('发消息');
+    expect(host.textContent).toContain('进入收件箱');
+    expect(host.textContent).toContain('当前任务');
+    expect(host.textContent).toContain('Review patch');
     expect(host.textContent).toContain('capabilities-summary');
+    expect(host.textContent).not.toContain('activity-count');
+    expect(host.textContent).not.toContain('Activity1');
+
+    await act(async () => {
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('新建任务'))
+        ?.click();
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('发消息'))
+        ?.click();
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('Review patch'))
+        ?.click();
+      await Promise.resolve();
+    });
+
+    expect(onAssignTask).toHaveBeenCalledTimes(1);
+    expect(onSendMessage).toHaveBeenCalledTimes(1);
+    expect(onTaskClick).toHaveBeenCalledWith(tasks[0]);
 
     await act(async () => {
       root.unmount();

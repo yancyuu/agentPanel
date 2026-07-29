@@ -232,15 +232,32 @@ vi.mock('@renderer/components/team/members/MemberDetailDialog', () => ({
   MemberDetailDialog: ({
     open,
     member,
+    tasks,
     onClose,
+    onSendMessage,
+    onAssignTask,
+    onTaskClick,
   }: {
     open: boolean;
     member: ResolvedTeamMember | null;
+    tasks: TeamTaskWithKanban[];
     onClose: () => void;
+    onSendMessage: () => void;
+    onAssignTask?: () => void;
+    onTaskClick?: (task: TeamTaskWithKanban) => void;
   }) =>
     open ? (
       <div role="dialog" aria-label="成员详情">
         <span>{member?.name}</span>
+        <button type="button" onClick={onSendMessage}>
+          详情发消息
+        </button>
+        <button type="button" onClick={onAssignTask}>
+          详情新建任务
+        </button>
+        <button type="button" onClick={() => tasks[0] && onTaskClick?.(tasks[0])}>
+          详情打开任务
+        </button>
         <button type="button" onClick={onClose}>
           关闭成员详情
         </button>
@@ -312,7 +329,12 @@ vi.mock('@renderer/components/team/dialogs/RuntimeConfigDialog', () => ({
   RuntimeConfigDialog: () => null,
 }));
 vi.mock('@renderer/components/team/dialogs/SendMessageDialog', () => ({
-  SendMessageDialog: () => null,
+  SendMessageDialog: ({ open, defaultRecipient }: { open: boolean; defaultRecipient?: string }) =>
+    open ? (
+      <div role="dialog" aria-label="收件箱新消息">
+        {defaultRecipient}
+      </div>
+    ) : null,
 }));
 vi.mock('@renderer/components/team/review/ChangeReviewDialog', () => ({
   ChangeReviewDialog: ({ open, taskId }: { open: boolean; taskId?: string }) =>
@@ -375,6 +397,59 @@ describe('TeamDetailView member roster interactions', () => {
     });
 
     expect(host.querySelector('[aria-label="成员详情"]')).toBeNull();
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('routes member-detail work actions to the inbox and task surfaces', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const { host, root } = await renderView();
+
+    const openMember = async (): Promise<void> => {
+      await act(async () => {
+        Array.from(host.querySelectorAll('button'))
+          .find((button) => button.textContent === '打开成员')
+          ?.click();
+        await Promise.resolve();
+      });
+    };
+
+    await openMember();
+    await act(async () => {
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent === '详情发消息')
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(host.querySelector('[aria-label="成员详情"]')).toBeNull();
+    expect(host.querySelector('[aria-label="收件箱新消息"]')?.textContent).toContain('bob');
+
+    await openMember();
+    await act(async () => {
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent === '详情新建任务')
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(host.querySelector('[data-testid="default-owner"]')?.textContent).toBe('bob');
+
+    await act(async () => {
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent === '取消创建')
+        ?.click();
+      await Promise.resolve();
+    });
+    await openMember();
+    await act(async () => {
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent === '详情打开任务')
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(host.querySelector('[data-testid="task-review"]')?.textContent).toBe('task-1');
 
     await act(async () => {
       root.unmount();

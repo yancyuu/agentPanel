@@ -63,12 +63,10 @@ import {
   History,
   Link,
   Loader2,
-  MessageSquare,
   MoreHorizontal,
   Network,
   Pencil,
   Play,
-  SquareTerminal,
   Terminal,
   Trash2,
   Users,
@@ -93,7 +91,6 @@ const ProjectEditorOverlay = lazy(() =>
 );
 import { SYSTEM_MANAGER_TEAM_NAME } from '@shared/types/team';
 
-import { LoopConsolePanel } from './loop-console/LoopConsolePanel';
 import { MemberList } from './members/MemberList';
 import { MessagesPanel } from './messages/MessagesPanel';
 import { ChangeReviewDialog } from './review/ChangeReviewDialog';
@@ -1159,8 +1156,6 @@ export const TeamDetailView = ({
     teams,
     teamSummaryDisplayName,
     fetchTeams,
-    leadActivity,
-    leadContextUpdatedAt,
   } = useStore(
     useShallow((s) => ({
       projects: s.projects,
@@ -1207,8 +1202,6 @@ export const TeamDetailView = ({
       teams: s.teams,
       teamSummaryDisplayName: teamName ? s.teamByName[teamName]?.displayName : undefined,
       fetchTeams: s.fetchTeams,
-      leadActivity: teamName ? s.leadActivityByTeam[teamName] : undefined,
-      leadContextUpdatedAt: teamName ? s.leadContextByTeam[teamName]?.updatedAt : undefined,
     }))
   );
 
@@ -2189,93 +2182,74 @@ export const TeamDetailView = ({
               </CollapsibleTeamSection>
 
               <CollapsibleTeamSection
-                sectionId="team-sessions"
-                title="会话"
-                icon={<MessageSquare size={14} />}
-                badge={ccSessions.length}
+                sectionId="advanced-diagnostics"
+                title="高级诊断"
+                icon={<Terminal size={14} />}
                 defaultOpen={false}
-                action={
-                  ccSessions.length > 0 ? (
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleExportAllCcSessions();
-                      }}
-                      disabled={ccExporting}
-                      title="导出所有会话为 CSV 表格"
-                    >
-                      {ccExporting ? (
-                        <Loader2 size={12} className="animate-spin" />
-                      ) : (
-                        <Download size={12} />
-                      )}
-                      导出
-                    </button>
-                  ) : undefined
-                }
               >
-                <CcSessionsSection
-                  teamName={teamName}
-                  sessions={ccSessions}
-                  loading={ccSessionsLoading}
-                  error={ccSessionsError}
-                />
-              </CollapsibleTeamSection>
+                <div className="space-y-4">
+                  {(data.processes?.length ?? 0) > 0 ? (
+                    <section aria-labelledby="team-runtime-processes-heading">
+                      <div className="mb-2 flex items-center gap-2">
+                        <h3
+                          id="team-runtime-processes-heading"
+                          className="text-xs font-medium text-[var(--color-text-secondary)]"
+                        >
+                          运行进程
+                        </h3>
+                        {data.processes.some((process) => !process.stoppedAt) ? (
+                          <span className="relative inline-flex size-2 shrink-0" title="活跃中">
+                            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-50" />
+                            <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
+                          </span>
+                        ) : null}
+                      </div>
+                      <ProcessesSection
+                        teamName={teamName}
+                        members={membersWithLiveBranches}
+                        processes={data.processes}
+                      />
+                    </section>
+                  ) : null}
 
-              {(data.processes?.length ?? 0) > 0 && (
-                <CollapsibleTeamSection
-                  sectionId="processes"
-                  title="CLI 进程"
-                  icon={<Terminal size={14} />}
-                  badge={data.processes.filter((p) => !p.stoppedAt).length}
-                  headerExtra={
-                    data.processes.some((p) => !p.stoppedAt) ? (
-                      <span
-                        className="pointer-events-none relative inline-flex size-2 shrink-0"
-                        title="活跃中"
-                      >
-                        <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-50" />
-                        <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
-                      </span>
-                    ) : null
-                  }
-                  defaultOpen
-                >
-                  <ProcessesSection
-                    teamName={teamName}
-                    members={membersWithLiveBranches}
-                    processes={data.processes}
-                  />
-                </CollapsibleTeamSection>
-              )}
-
-              <CollapsibleTeamSection
-                sectionId="loop-console"
-                title="指令台"
-                icon={<SquareTerminal size={14} />}
-                badge={data.isAlive ? 'online' : 'offline'}
-                defaultOpen
-              >
-                <LoopConsolePanel
-                  teamName={teamName}
-                  members={activeMembers}
-                  tasks={data.tasks}
-                  isTeamAlive={data.isAlive}
-                  isProvisioning={isTeamProvisioning}
-                  leadActivity={leadActivity}
-                  leadContextUpdatedAt={leadContextUpdatedAt}
-                  currentLeadSessionId={data.config.leadSessionId}
-                  leadProjectPath={data.config.projectPath}
-                  sessions={ccSessions}
-                  pendingRepliesByMember={pendingRepliesByMember}
-                  onPendingReplyChange={setPendingRepliesByMember}
-                  onMemberClick={handleSelectMember}
-                  onReplyToMessage={handleReplyToMessage}
-                  onRestartTeam={handleRestartTeam}
-                  onTaskIdClick={handleTaskIdClick}
-                />
+                  <section aria-labelledby="team-runtime-records-heading">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div>
+                        <h3
+                          id="team-runtime-records-heading"
+                          className="text-xs font-medium text-[var(--color-text-secondary)]"
+                        >
+                          运行记录
+                        </h3>
+                        <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">
+                          仅用于运行时排查；日常交流请前往收件箱。
+                        </p>
+                      </div>
+                      {ccSessions.length > 0 ? (
+                        <button
+                          type="button"
+                          className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={() => void handleExportAllCcSessions()}
+                          disabled={ccExporting}
+                          title="导出运行诊断记录"
+                        >
+                          {ccExporting ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Download size={12} />
+                          )}
+                          导出诊断
+                        </button>
+                      ) : null}
+                    </div>
+                    <CcSessionsSection
+                      teamName={teamName}
+                      sessions={ccSessions}
+                      loading={ccSessionsLoading}
+                      error={ccSessionsError}
+                    />
+                  </section>
+                </div>
               </CollapsibleTeamSection>
 
               <ReviewDialog
@@ -2338,6 +2312,16 @@ export const TeamDetailView = ({
                   setSendDialogDefaultChip(undefined);
                   setReplyQuote(undefined);
                   setSendDialogOpen(true);
+                }}
+                onAssignTask={() => {
+                  if (!selectedMember) return;
+                  const member = selectedMember;
+                  closeSelectedMemberDialog();
+                  handleAssignTask(member);
+                }}
+                onTaskClick={(task) => {
+                  closeSelectedMemberDialog();
+                  handleTaskIdClick(task.id);
                 }}
                 onRestartMember={handleRestartMember}
                 onUpdateRole={async (memberName, role) => {
