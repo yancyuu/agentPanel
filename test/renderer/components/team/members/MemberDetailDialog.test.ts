@@ -27,8 +27,23 @@ vi.mock('@renderer/components/ui/button', () => ({
 }));
 
 vi.mock('@renderer/components/ui/dialog', () => ({
-  Dialog: ({ children }: { children: React.ReactNode }) =>
-    React.createElement('div', null, children),
+  Dialog: ({
+    children,
+    onOpenChange,
+  }: {
+    children: React.ReactNode;
+    onOpenChange?: (open: boolean) => void;
+  }) =>
+    React.createElement(
+      'div',
+      null,
+      children,
+      React.createElement(
+        'button',
+        { type: 'button', onClick: () => onOpenChange?.(false) },
+        '关闭详情'
+      )
+    ),
   DialogContent: ({ children }: { children: React.ReactNode }) =>
     React.createElement('div', null, children),
   DialogFooter: ({ children }: { children: React.ReactNode }) =>
@@ -80,6 +95,10 @@ vi.mock('@renderer/components/ui/tabs', () => {
       currentValue === value ? React.createElement('div', null, children) : null,
   };
 });
+
+vi.mock('@renderer/components/team/members/MemberCapabilitiesSummary', () => ({
+  MemberCapabilitiesSummary: () => React.createElement('div', null, 'capabilities-summary'),
+}));
 
 vi.mock('@renderer/components/team/members/MemberDetailHeader', () => ({
   MemberDetailHeader: () => React.createElement('div', null, 'header'),
@@ -202,6 +221,50 @@ describe('MemberDetailDialog activity count', () => {
 
     expect(host.textContent).toContain('activity-count:1');
     expect(host.textContent).toContain('Activity1');
+    expect(host.textContent).toContain('capabilities-summary');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('preserves the dialog close callback', async () => {
+    const onClose = vi.fn();
+    const member: ResolvedTeamMember = {
+      name: 'jack',
+      status: 'active',
+      currentTaskId: null,
+      taskCount: 0,
+      lastActiveAt: null,
+      messageCount: 0,
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(
+        React.createElement(MemberDetailDialog, {
+          open: true,
+          member,
+          teamName: 'demo-team',
+          members: [member],
+          tasks: [],
+          onClose,
+          onSendMessage: () => undefined,
+        })
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent === '关闭详情')
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       root.unmount();

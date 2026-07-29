@@ -14,6 +14,7 @@ import {
 } from '@renderer/utils/memberRuntimeSummary';
 import { isLeadMember } from '@shared/utils/leadDetection';
 
+import { MemberCapabilitiesSummary } from './MemberCapabilitiesSummary';
 import { MemberDetailHeader } from './MemberDetailHeader';
 import { MemberDetailStats } from './MemberDetailStats';
 import { MemberLaunchDiagnosticsButton } from './MemberLaunchDiagnosticsButton';
@@ -139,7 +140,7 @@ export const MemberDetailDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="min-w-0 sm:max-w-4xl">
+      <DialogContent className="max-h-[85vh] min-w-0 overflow-y-auto sm:max-w-4xl">
         <div className="flex items-start gap-4">
           <DialogHeader className="shrink-0">
             <MemberDetailHeader
@@ -169,6 +170,8 @@ export const MemberDetailDialog = ({
           />
           <span className="sr-only">Activity{memberActivityCount}</span>
         </div>
+
+        <MemberCapabilitiesSummary open={open} member={member} teamName={teamName} />
 
         <DialogFooter>
           {restartError ? (
