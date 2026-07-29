@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { provisionAgentCliShim } from './services/agentcli/AgentCliShimProvisioner';
 import { markBridgeBinaryCheck, markBridgeLaunch } from './services/system/RuntimeReadiness';
 import { getOrCreateStandaloneServerComposition } from './serverComposition';
 import { createHermitConfigStore, createServerEnvironment } from './serverConfig';
@@ -55,6 +56,12 @@ export async function startStandaloneServer(
     imLiveWatcher: composition.context.services.imLiveWatcher,
     initializeTelemetryFromSettings: server.initializeTelemetryFromSettings,
     ensureGlobalWorkflows: server.ensureGlobalWorkflows,
+    ensureAgentCliShim: () =>
+      provisionAgentCliShim({
+        hermitHome: environment.hermitHome,
+        packageRoot: environment.repoRoot,
+        version: environment.version,
+      }),
     markBridgeBinaryCheck,
     markBridgeLaunch,
     processTarget,

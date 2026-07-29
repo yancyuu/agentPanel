@@ -19,6 +19,8 @@ export function buildMergedCliPath(binaryPath?: string | null): string {
   const pathForBin = process.platform === 'win32' ? pathWin32 : pathPosix;
   const currentPath = process.env.PATH || '';
   const extraDirs: string[] = [];
+  const hermitHome = process.env.HERMIT_HOME?.trim() || pathForBin.join(home, '.hermit');
+  const hermitBinDir = pathForBin.join(hermitHome, 'bin');
   const vendorBinDir = pathForBin.join(getClaudeBasePath(), 'local', 'node_modules', '.bin');
 
   if (binaryPath) {
@@ -33,6 +35,10 @@ export function buildMergedCliPath(binaryPath?: string | null): string {
       /* symlink resolution failed — ignore */
     }
   }
+
+  // Workbench-managed commands must win over stale global npm installations,
+  // but only inside child processes launched by Hermit.
+  extraDirs.push(hermitBinDir);
 
   const cachedEnv = getCachedShellEnv();
   if (cachedEnv?.PATH) {

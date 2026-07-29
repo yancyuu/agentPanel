@@ -70,6 +70,10 @@ function createDependencies() {
       calls.push('workflows.ensure');
       return Promise.resolve();
     }),
+    ensureAgentCliShim: vi.fn(() => {
+      calls.push('agentcli.ensure');
+      return Promise.resolve();
+    }),
     markBridgeBinaryCheck: vi.fn(),
     markBridgeLaunch: vi.fn(),
     processTarget,
@@ -94,6 +98,7 @@ describe('standalone server startup', () => {
     await startStandaloneServerRuntime(dependencies);
 
     expect(calls).toEqual([
+      'agentcli.ensure',
       'bridge.start',
       'watcher.start',
       'telemetry.initialize',
@@ -111,6 +116,10 @@ describe('standalone server startup', () => {
       extraArgs: ['--force'],
       logFile: '/tmp/cc-connect.log',
       timeoutMs: 180_000,
+      env: expect.objectContaining({
+        HERMIT_WORKBENCH_URL: 'http://127.0.0.1:5680',
+        PATH: expect.any(String),
+      }),
       signal: expect.any(AbortSignal),
     });
     expect(dependencies.app.listen).toHaveBeenCalledWith({

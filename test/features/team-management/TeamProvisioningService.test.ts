@@ -147,6 +147,39 @@ describe('createTeam', () => {
     expect(claudeMd).not.toContain('cc-connect Bridge / Management API');
   });
 
+  it('backfills existing teams and removes only the legacy Hermit task MCP entry', async () => {
+    const workDir = path.join(tmpDir, 'backfill-work');
+    fs.mkdirSync(path.join(workDir, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'CLAUDE.md'), '# User instructions\n');
+    fs.writeFileSync(
+      path.join(workDir, '.claude', 'settings.json'),
+      JSON.stringify({
+        mcpServers: {
+          'hermit-tasks': { type: 'sse', url: 'http://127.0.0.1:5680/mcp' },
+          custom: { command: 'custom-mcp' },
+        },
+      })
+    );
+    await svc.createTeam({
+      displayName: 'backfill-team',
+      bindProject: 'backfill-project',
+      harness: 'claudecode',
+      workDir,
+      createCcProject: false,
+      injectInstructions: false,
+    });
+
+    await expect(svc.backfillTeamInstructions()).resolves.toEqual({ updated: 1, failed: 0 });
+
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(workDir, '.claude', 'settings.json'), 'utf8')
+    );
+    expect(settings.mcpServers).toEqual({ custom: { command: 'custom-mcp' } });
+    const claudeMd = fs.readFileSync(path.join(workDir, 'CLAUDE.md'), 'utf8');
+    expect(claudeMd).toContain('# User instructions');
+    expect(claudeMd).toContain('tasks claim --team backfill-project');
+  });
+
   it('injects the same CLI task-bus contract into AGENTS.md for codex', async () => {
     const workDir = path.join(tmpDir, 'codex-work');
     fs.mkdirSync(workDir, { recursive: true });
@@ -197,6 +230,7 @@ describe('dispatchTask — 协同开关', () => {
     expect(call.project).toBe('target-cc');
     expect(call.content).toContain(task.id);
     expect(call.content).toContain('cross task');
+    expect(call.content).toContain(path.join(tmpDir, 'bin', 'agentcli'));
     expect(call.content).toContain(`tasks claim --team ${targetSlug} --id ${task.id}`);
     expect(call.content).toContain(`tasks complete --team ${targetSlug} --id ${task.id}`);
     expect(call.content).toContain('不要使用 MCP、Skills');

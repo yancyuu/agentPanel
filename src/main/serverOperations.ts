@@ -10,6 +10,10 @@ import {
 
 import { normalizePlatformAllowFrom } from './routes/teamRouteUtils';
 import { createTeamRuntimeOperations } from './routes/teamRuntimeRoutes';
+import {
+  buildWorkbenchRuntimeEnv,
+  resolveLoopbackWorkbenchUrl,
+} from './services/agentcli/workbenchRuntimeEnv';
 import { httpsGetFollowRedirects } from './services/extensions/catalog/PluginCatalogService';
 import {
   type ProjectUsageStats,
@@ -400,7 +404,9 @@ export function createServerOperations({
       const tryRelaunch = async (): Promise<boolean> => {
         try {
           const tokens = await readCcConnectConfigTokens();
-          const launchEnv: NodeJS.ProcessEnv = { ...process.env };
+          const launchEnv = buildWorkbenchRuntimeEnv({
+            workbenchUrl: resolveLoopbackWorkbenchUrl(environment.host, environment.port),
+          });
           if (tokens.managementToken) {
             launchEnv.HERMIT_BRIDGE_TOKEN = tokens.managementToken;
             launchEnv.HERMIT_BRIDGE_MANAGEMENT_TOKEN = tokens.managementToken;
@@ -461,6 +467,7 @@ export function createServerOperations({
   };
   setRestartBridge(restartBridge);
 
+  const workbenchUrl = resolveLoopbackWorkbenchUrl(environment.host, environment.port);
   const teamRuntimeOperations = createTeamRuntimeOperations({
     teamProvisioning: svc,
     bridgeClient: cc,
@@ -468,6 +475,7 @@ export function createServerOperations({
     directCliRoutes: state.directCliRoutes,
     ensureSystemManager,
     restartBridge,
+    workbenchUrl,
     logger,
   });
 

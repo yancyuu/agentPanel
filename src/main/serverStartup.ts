@@ -1,3 +1,8 @@
+import {
+  buildWorkbenchRuntimeEnv,
+  resolveLoopbackWorkbenchUrl,
+} from './services/agentcli/workbenchRuntimeEnv';
+
 import type { ServerLifecycleState } from './serverContext';
 import type { BridgeBinaryState, BridgeLaunchState } from '@shared/types/runtimeReadiness';
 import type { FastifyBaseLogger } from 'fastify';
@@ -38,6 +43,7 @@ interface StandaloneServerStartupDependencies<TBridgeClient> {
       extraArgs: string[];
       logFile: string;
       timeoutMs: number;
+      env?: NodeJS.ProcessEnv;
       signal?: AbortSignal;
     }): Promise<BridgeLaunchResult>;
   };
@@ -46,6 +52,7 @@ interface StandaloneServerStartupDependencies<TBridgeClient> {
   imLiveWatcher: { start(): void };
   initializeTelemetryFromSettings(): Promise<unknown>;
   ensureGlobalWorkflows(): Promise<unknown>;
+  ensureAgentCliShim(): Promise<unknown>;
   markBridgeBinaryCheck(state: BridgeBinaryState): void;
   markBridgeLaunch(state: BridgeLaunchState): void;
   processTarget: Pick<NodeJS.Process, 'exit'>;
@@ -68,6 +75,7 @@ export async function startStandaloneServerRuntime<TBridgeClient>({
   imLiveWatcher,
   initializeTelemetryFromSettings,
   ensureGlobalWorkflows,
+  ensureAgentCliShim,
   markBridgeBinaryCheck,
   markBridgeLaunch,
   processTarget,
@@ -81,6 +89,11 @@ export async function startStandaloneServerRuntime<TBridgeClient>({
   bridgeWsUrl,
   lifecycle,
 }: StandaloneServerStartupDependencies<TBridgeClient>): Promise<void> {
+  try {
+    await ensureAgentCliShim();
+  } catch (error) {
+    app.log.warn({ err: error }, 'AgentCli Workbench shim provisioning failed');
+  }
   // Binary diagnostics and sidecar readiness remain non-blocking for HTTP
   // startup, but share one abort signal and are both lifecycle-owned. The
   // launcher deduplicates their binary preparation so boot never starts two
@@ -122,6 +135,7 @@ export async function startStandaloneServerRuntime<TBridgeClient>({
       extraArgs: ['--force'],
       logFile: bridgeLogFile,
       timeoutMs: bridgeAutoLaunchTimeoutMs,
+      env: buildWorkbenchRuntimeEnv({ workbenchUrl: resolveLoopbackWorkbenchUrl(host, port) }),
       signal: startupAbortController.signal,
     })
     .then((result) => {

@@ -186,6 +186,38 @@ describe('DirectCliSessionManager', () => {
     expect(spawnArgs).toContain('--verbose');
   });
 
+  it('injects the canonical team and Workbench endpoint into the spawned runtime', async () => {
+    let spawnOpts: SpawnOptions = {};
+    const child = createFakeChild();
+    const manager = new DirectCliSessionManager({
+      spawnFn: (_bin, _args, opts) => {
+        spawnOpts = opts;
+        return child as unknown as import('child_process').ChildProcess;
+      },
+      envResolver: async () => ({
+        env: { PATH: '/managed/bin', PROVIDER_KEY: 'secret' },
+        providerArgs: [],
+      }),
+      binaryResolver: { resolve: async () => '/fake/claude' } as never,
+      store: new Map<string, string>() as never,
+    });
+
+    await manager.send('team-a:lead', {
+      text: '开始任务',
+      messageId: 'message-1',
+      workDir: '/proj',
+      teamSlug: 'team-a',
+      workbenchUrl: 'http://127.0.0.1:5681',
+    });
+
+    expect(spawnOpts.env).toEqual({
+      PATH: '/managed/bin',
+      PROVIDER_KEY: 'secret',
+      HERMIT_TEAM_SLUG: 'team-a',
+      HERMIT_WORKBENCH_URL: 'http://127.0.0.1:5681',
+    });
+  });
+
   it('does not spawn twice for the same session key (dedupes concurrent ensureSession)', async () => {
     let spawnCount = 0;
     const child = createFakeChild();

@@ -9,6 +9,7 @@
 
 import { createLogger } from '@shared/utils/logger';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 import { buildHermitOpsRunbookContext } from './OpsRunbookContext';
@@ -44,6 +45,30 @@ function removeManagedTeamInstructions(content: string): string {
   next = removeSectionByHeading(next, 'Agent Collaboration (Hermit)');
   next = removeSectionByHeading(next, 'Cross-Team Task Dispatch (Hermit)');
   return next.replace(/\n{3,}/g, '\n\n').trimEnd();
+}
+
+async function removeLegacyHermitTasksMcpConfig(workDir: string): Promise<void> {
+  const settingsPath = path.join(workDir, '.claude', 'settings.json');
+  let settings: Record<string, unknown>;
+  try {
+    settings = JSON.parse(await fs.promises.readFile(settingsPath, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    logger.warn(
+      `Legacy Hermit task MCP cleanup skipped (${settingsPath}): ${error instanceof Error ? error.message : String(error)}`
+    );
+    return;
+  }
+  if (!settings.mcpServers || typeof settings.mcpServers !== 'object') return;
+  const mcpServers = { ...(settings.mcpServers as Record<string, unknown>) };
+  if (!Object.hasOwn(mcpServers, 'hermit-tasks')) return;
+  delete mcpServers['hermit-tasks'];
+  if (Object.keys(mcpServers).length > 0) settings.mcpServers = mcpServers;
+  else delete settings.mcpServers;
+  await fs.promises.writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
 }
 
 function instructionPathForHarness(workDir: string, harness: string): string {
@@ -88,6 +113,9 @@ export class TeamProvisioningService {
     const { slug, manifest } = await this.workspace.createTeam(workspaceInput);
 
     if (injectInstructions) {
+      if (manifest.harness === 'claudecode') {
+        await removeLegacyHermitTasksMcpConfig(manifest.workDir);
+      }
       await this.injectTeamInstructions(manifest.workDir, manifest.slug, manifest.harness);
     }
 
@@ -216,7 +244,13 @@ export class TeamProvisioningService {
 
     // session key for bridge dispatch — cc-connect will apply share_session_in_channel natively
     const sessionKey = groupSessionKey(targetSlug);
-    const cli = `agentcli --port ${process.env.PORT ?? '5680'} tasks`;
+    const hermitHome = process.env.HERMIT_HOME ?? path.join(os.homedir(), '.hermit');
+    const cliEntry = path.join(
+      hermitHome,
+      'bin',
+      process.platform === 'win32' ? 'agentcli.cmd' : 'agentcli'
+    );
+    const cli = `${JSON.stringify(cliEntry)} --port ${process.env.PORT ?? '5680'} tasks`;
     const message = [
       `[任务分配] 来自团队 ${sourceTeamSlug}`,
       `任务 ID: ${task.id}`,
@@ -372,6 +406,28 @@ ${TEAM_INSTRUCTIONS_END}
         `Team instructions injection failed: ${err instanceof Error ? err.message : String(err)}`
       );
     }
+  }
+
+  async backfillTeamInstructions(): Promise<{ updated: number; failed: number }> {
+    const teams = await this.workspace.listTeams();
+    let updated = 0;
+    let failed = 0;
+    for (const team of teams) {
+      if (team.deletedAt || team.pendingDelete) continue;
+      try {
+        if (team.harness === 'claudecode') {
+          await removeLegacyHermitTasksMcpConfig(team.workDir);
+        }
+        await this.injectTeamInstructions(team.workDir, team.slug, team.harness);
+        updated += 1;
+      } catch (error) {
+        failed += 1;
+        logger.warn(
+          `Team instruction backfill failed (${team.slug}): ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+    return { updated, failed };
   }
 
   async removeTeamInstructions(workDir: string): Promise<void> {

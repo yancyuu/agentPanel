@@ -130,6 +130,8 @@ export interface DirectCliSpawnParams {
   model?: string | null;
   providerId?: string;
   providerBackendId?: string | null;
+  teamSlug?: string;
+  workbenchUrl?: string;
   verbose?: boolean;
 }
 
@@ -140,6 +142,8 @@ export interface DirectCliSendParams {
   messageId: string;
   /** cwd used to (lazily) spawn the subprocess if the session doesn't exist yet. */
   workDir: string;
+  teamSlug?: string;
+  workbenchUrl?: string;
 }
 
 export type DirectCliEvent =
@@ -310,6 +314,11 @@ export class DirectCliSessionManager extends EventEmitter {
       model: params.model ?? null,
       projectPath: workDir,
     });
+    const runtimeEnv: NodeJS.ProcessEnv = {
+      ...env,
+      ...(params.teamSlug ? { HERMIT_TEAM_SLUG: params.teamSlug } : {}),
+      ...(params.workbenchUrl ? { HERMIT_WORKBENCH_URL: params.workbenchUrl } : {}),
+    };
     this.assertAcceptingWork();
 
     const args = buildClaudeStreamArgs({
@@ -322,7 +331,7 @@ export class DirectCliSessionManager extends EventEmitter {
     this.assertAcceptingWork();
     const child = this.spawnFn(binaryPath, args, {
       cwd: workDir,
-      env,
+      env: runtimeEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -490,7 +499,12 @@ export class DirectCliSessionManager extends EventEmitter {
    */
   async send(sessionKey: string, params: DirectCliSendParams): Promise<void> {
     const key = sessionKey.trim();
-    await this.ensureSession({ sessionKey: key, workDir: params.workDir });
+    await this.ensureSession({
+      sessionKey: key,
+      workDir: params.workDir,
+      teamSlug: params.teamSlug,
+      workbenchUrl: params.workbenchUrl,
+    });
     this.assertAcceptingWork();
     const handle = this.sessions.get(key);
     if (!handle) {

@@ -61,6 +61,23 @@ afterEach(async () => {
 });
 
 describe('Hermit CLI task bus', () => {
+  it('uses the injected Workbench URL when no explicit port is provided', async () => {
+    const { port, task } = await startTaskBusServer();
+    const response = await execFileAsync(
+      process.execPath,
+      [cliPath, 'tasks', 'list', '--team', 'team-b', '--json'],
+      {
+        cwd: repoRoot,
+        env: { ...process.env, HERMIT_WORKBENCH_URL: `http://127.0.0.1:${port}` },
+      }
+    );
+
+    expect(JSON.parse(response.stdout)).toMatchObject({
+      source: 'task-bus',
+      tasks: [expect.objectContaining({ id: task.id })],
+    });
+  });
+
   it('lists, claims, comments, clarifies, and completes tasks through the Workbench API', async () => {
     const { port, requests, task } = await startTaskBusServer();
 

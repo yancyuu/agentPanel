@@ -33,6 +33,7 @@ interface TeamRuntimeOperationDependencies {
   directCliRoutes: Map<string, { teamName: string; from: string; to: string }>;
   ensureSystemManager(): Promise<unknown>;
   restartBridge(): Promise<void>;
+  workbenchUrl: string;
   logger: Pick<FastifyBaseLogger, 'warn'>;
 }
 
@@ -149,11 +150,20 @@ export function createTeamRuntimeOperations(
       from: params.from,
       to: params.to,
     });
+    let teamSlug = params.teamName;
+    try {
+      const manifest = await svc.readTeamManifestByProject(params.teamName);
+      teamSlug = manifest.slug;
+    } catch {
+      // Route identity can already be the canonical local team slug.
+    }
     await dependencies.directCliManager.send(params.sessionKey, {
       text: params.text,
       attachments: params.attachments,
       messageId: params.messageId,
       workDir: params.workDir,
+      teamSlug,
+      workbenchUrl: dependencies.workbenchUrl,
     });
   }
 

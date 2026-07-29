@@ -66,6 +66,7 @@ function createHarness() {
     directCliRoutes,
     restartBridge,
     ensureSystemManager,
+    workbenchUrl: 'http://127.0.0.1:5681',
     logger: app.log,
   } as unknown as OperationDependencies;
   const operations = createTeamRuntimeOperations(operationDependencies);
@@ -214,7 +215,12 @@ describe('team runtime operations and routes', () => {
     expect(session.json()).toEqual(expect.objectContaining({ reused: true, messageSent: true }));
     expect(harness.directCliManager.send).toHaveBeenCalledWith(
       'team-a:lead',
-      expect.objectContaining({ text: '继续处理', workDir: '/manifest/work' })
+      expect.objectContaining({
+        text: '继续处理',
+        workDir: '/manifest/work',
+        teamSlug: 'team-a',
+        workbenchUrl: 'http://127.0.0.1:5681',
+      })
     );
     expect(harness.directCliRoutes.get('team-a:lead')).toEqual({
       teamName: 'team-a',

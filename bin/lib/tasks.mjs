@@ -2,7 +2,7 @@
 // All mutations go through the running Workbench API so the task board remains
 // the single source of truth. Skills and MCP are intentionally not involved.
 
-import { commandArgs, findOptionValue, jsonRequested, port } from './env.mjs';
+import { args, commandArgs, findOptionValue, jsonRequested, port } from './env.mjs';
 import { printJson } from './terminal.mjs';
 import { collectTasks } from './teams.mjs';
 
@@ -19,10 +19,15 @@ function unwrapApiResponse(payload) {
   return payload;
 }
 
+function taskBusBaseUrl() {
+  if (args.includes('--port')) return `http://127.0.0.1:${port}`;
+  return String(process.env.HERMIT_WORKBENCH_URL || `http://127.0.0.1:${port}`).replace(/\/$/u, '');
+}
+
 async function requestTaskBus(pathname, { method = 'GET', body } = {}) {
   let response;
   try {
-    response = await fetch(`http://127.0.0.1:${port}${pathname}`, {
+    response = await fetch(`${taskBusBaseUrl()}${pathname}`, {
       method,
       headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -30,7 +35,7 @@ async function requestTaskBus(pathname, { method = 'GET', body } = {}) {
     });
   } catch (error) {
     throw new Error(
-      `Hermit 工作台未启动或不可达（127.0.0.1:${port}）：${error instanceof Error ? error.message : String(error)}`
+      `Hermit 工作台未启动或不可达（${taskBusBaseUrl()}）：${error instanceof Error ? error.message : String(error)}`
     );
   }
 
