@@ -583,7 +583,7 @@ export const TeamListView = (): React.JSX.Element => {
           teams.find((team) => team.teamName === teamName)?.displayName || teamName;
         const confirmed = await confirm({
           title: '永久删除',
-          message: `确定永久删除团队“${teamDisplayName}”吗？所有数据都将丢失。`,
+          message: `确定永久删除 Agent“${teamDisplayName}”吗？所有数据都将丢失。`,
           confirmLabel: '永久删除',
           cancelLabel: '取消',
           variant: 'danger',
@@ -721,7 +721,7 @@ export const TeamListView = (): React.JSX.Element => {
       setTemplateSources(snapshot.sources);
       setTeamTemplates(snapshot.templates);
     } catch (error) {
-      setTemplateError(error instanceof Error ? error.message : '读取团队模板失败');
+      setTemplateError(error instanceof Error ? error.message : '读取数字员工模板失败');
     } finally {
       setTemplateLoading(false);
     }
@@ -866,7 +866,7 @@ export const TeamListView = (): React.JSX.Element => {
         <DialogHeader>
           <DialogTitle className="text-sm">从模板创建数字员工</DialogTitle>
           <DialogDescription className="text-xs">
-            从团队模板仓库读取可复用团队。默认源为 Hermit 官方团队模板
+            从数字员工模板仓库读取可复用配置。默认源为 Hermit 官方模板
             https://github.com/yancyuu/HermitTeams.git，仓库根目录下含有 hermit-team.json
             的一级目录会被识别为模板。
           </DialogDescription>
@@ -1010,15 +1010,13 @@ export const TeamListView = (): React.JSX.Element => {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Bot size={18} className="text-[var(--color-text-secondary)]" aria-hidden="true" />
-            <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text)]">
-              团队与 Agent
-            </h1>
+            <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text)]">Agent</h1>
             <span className="rounded-md bg-[var(--color-surface-raised)] px-1.5 py-0.5 text-xs tabular-nums text-[var(--color-text-muted)]">
               {teamListStats.teams}
             </span>
           </div>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            管理协作团队、Agent 成员与本地运行状态。
+            管理数字员工、运行时与本地工作空间。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1041,7 +1039,7 @@ export const TeamListView = (): React.JSX.Element => {
             onClick={openCreateDialog}
           >
             <Plus size={13} aria-hidden="true" />
-            创建团队
+            创建数字员工
           </Button>
         </div>
       </div>
@@ -1091,8 +1089,8 @@ export const TeamListView = (): React.JSX.Element => {
             />
             <Input
               type="search"
-              aria-label="搜索团队与 Agent"
-              placeholder="搜索团队、Agent 或描述"
+              aria-label="搜索 Agent"
+              placeholder="搜索数字员工或描述"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               className="h-8 pl-8 text-xs"
@@ -1118,7 +1116,7 @@ export const TeamListView = (): React.JSX.Element => {
       return (
         <div className="flex min-h-64 items-center justify-center rounded-xl border border-[var(--color-border)] p-6">
           <div className="text-center" role="alert">
-            <p className="text-sm font-medium text-red-400">团队加载失败</p>
+            <p className="text-sm font-medium text-red-400">Agent 加载失败</p>
             <p className="mt-2 text-xs text-[var(--color-text-muted)]">{teamsError}</p>
             <Button variant="outline" size="sm" className="mt-4" onClick={() => void fetchTeams()}>
               重试
@@ -1142,7 +1140,7 @@ export const TeamListView = (): React.JSX.Element => {
     if (filteredTeams.length === 0 && (searchQuery.trim() || hasActiveFilters)) {
       return (
         <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] text-sm text-[var(--color-text-muted)]">
-          没有匹配当前筛选条件的团队或 Agent
+          没有匹配当前筛选条件的 Agent
         </div>
       );
     }
@@ -1185,7 +1183,7 @@ export const TeamListView = (): React.JSX.Element => {
           <button
             type="button"
             className="absolute inset-0 rounded-none text-left outline-none transition-colors hover:bg-[var(--color-surface-raised)] focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)] disabled:cursor-wait"
-            aria-label={`打开团队 ${team.displayName}`}
+            aria-label={`打开 Agent ${team.displayName}`}
             disabled={isDeleting}
             onClick={() => openTeamTab(team.teamName, team.projectPath)}
           />
@@ -1295,7 +1293,7 @@ export const TeamListView = (): React.JSX.Element => {
                   <button
                     type="button"
                     className="inline-flex size-8 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] disabled:opacity-50"
-                    aria-label={`启动团队 ${team.displayName}`}
+                    aria-label={`启动 Agent ${team.displayName}`}
                     disabled={launchingTeamName === team.teamName}
                     onClick={(event) =>
                       void handleLaunchTeam(team.teamName, team.projectPath, event)
@@ -1308,7 +1306,7 @@ export const TeamListView = (): React.JSX.Element => {
                     )}
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">启动团队</TooltipContent>
+                <TooltipContent side="bottom">启动 Agent</TooltipContent>
               </Tooltip>
             ) : null}
             {!team.pendingCreate && !isSystemManager ? (
@@ -1317,13 +1315,13 @@ export const TeamListView = (): React.JSX.Element => {
                   <button
                     type="button"
                     className="inline-flex size-8 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
-                    aria-label={`复制团队 ${team.displayName}`}
+                    aria-label={`复制 Agent ${team.displayName}`}
                     onClick={(event) => handleCopyTeam(team.teamName, event)}
                   >
                     <Copy size={13} />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">复制团队</TooltipContent>
+                <TooltipContent side="bottom">复制 Agent</TooltipContent>
               </Tooltip>
             ) : null}
             {team.teamName !== 'default' && team.teamName !== 'my-project' && !isSystemManager ? (
@@ -1332,7 +1330,7 @@ export const TeamListView = (): React.JSX.Element => {
                   <button
                     type="button"
                     className="inline-flex size-8 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
-                    aria-label={`删除团队 ${team.displayName}`}
+                    aria-label={`删除 Agent ${team.displayName}`}
                     onClick={(event) =>
                       handleDeleteTeam(team.teamName, !!team.pendingCreate, event)
                     }
@@ -1340,7 +1338,7 @@ export const TeamListView = (): React.JSX.Element => {
                     <Trash2 size={13} />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">删除团队</TooltipContent>
+                <TooltipContent side="bottom">删除 Agent</TooltipContent>
               </Tooltip>
             ) : null}
           </div>
@@ -1351,9 +1349,9 @@ export const TeamListView = (): React.JSX.Element => {
     return (
       <div className="space-y-5">
         {activeFiltered.length > 0 ? (
-          <section aria-label="团队与 Agent 列表">
+          <section aria-label="Agent 列表">
             <div className="hidden grid-cols-[minmax(260px,1.45fr)_minmax(120px,.65fr)_minmax(150px,.8fr)_minmax(130px,.7fr)_auto] gap-3 border-x border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] px-4 py-2 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)] md:grid">
-              <span>团队与 Agent</span>
+              <span>Agent</span>
               <span>运行状态</span>
               <span>项目</span>
               <span>最近活动</span>
@@ -1375,7 +1373,7 @@ export const TeamListView = (): React.JSX.Element => {
                 id="deleted-teams-heading"
                 className="text-xs font-medium text-[var(--color-text-secondary)]"
               >
-                已删除团队
+                已删除 Agent
               </h2>
               <span className="text-xs text-[var(--color-text-muted)]">
                 {deletedFiltered.length}
@@ -1411,7 +1409,7 @@ export const TeamListView = (): React.JSX.Element => {
                       size="sm"
                       className="h-8 gap-1.5"
                       onClick={(event) => handleRestoreTeam(team.teamName, event)}
-                      aria-label={`恢复团队 ${team.displayName}`}
+                      aria-label={`恢复 Agent ${team.displayName}`}
                     >
                       <RotateCcw size={13} />
                       恢复
@@ -1420,7 +1418,7 @@ export const TeamListView = (): React.JSX.Element => {
                       type="button"
                       className="inline-flex size-8 items-center justify-center rounded-md text-[var(--color-text-muted)] hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                       onClick={(event) => handlePermanentlyDeleteTeam(team.teamName, event)}
-                      aria-label={`永久删除团队 ${team.displayName}`}
+                      aria-label={`永久删除 Agent ${team.displayName}`}
                     >
                       <Trash2 size={13} />
                     </button>

@@ -61,6 +61,7 @@ import {
   MoreHorizontal,
   Pencil,
   Play,
+  Sparkles,
   Trash2,
   Users,
 } from 'lucide-react';
@@ -72,6 +73,7 @@ import { LaunchTeamDialog, type TeamLaunchDialogMode } from './dialogs/LaunchTea
 import { ReviewDialog } from './dialogs/ReviewDialog';
 import { RuntimeConfigDialog } from './dialogs/RuntimeConfigDialog';
 import { executeTeamRelaunch } from './dialogs/teamRelaunchFlow';
+import { MemberCapabilitiesSummary } from './members/MemberCapabilitiesSummary';
 import { MemberDetailDialog } from './members/MemberDetailDialog';
 
 import type { ComponentProps } from 'react';
@@ -1288,6 +1290,13 @@ export const TeamDetailView = ({
     });
   }, [data, leadBranch, members, trackedBranches]);
   const activeMembers = useStableActiveMembers(membersWithLiveBranches);
+  const capabilityMember = useMemo(
+    () =>
+      membersWithLiveBranches.find((member) => isLeadMember(member)) ??
+      membersWithLiveBranches[0] ??
+      null,
+    [membersWithLiveBranches]
+  );
 
   const activeTeammateCount = useMemo(
     () => activeMembers.filter((m) => !isLeadMember(m)).length,
@@ -1584,7 +1593,7 @@ export const TeamDetailView = ({
       return (
         <div className="flex size-full items-center justify-center p-6">
           <div className="text-center">
-            <p className="text-sm font-medium text-red-400">团队加载失败</p>
+            <p className="text-sm font-medium text-red-400">Agent 加载失败</p>
             <p className="mt-2 text-xs text-[var(--color-text-muted)]">{error}</p>
             <div className="mt-4">
               <Button
@@ -1607,7 +1616,7 @@ export const TeamDetailView = ({
             <TeamProvisioningBanner teamName={teamName} />
           </div>
           <div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--color-text-muted)]">
-            编排完成后，这里将显示团队数据
+            创建完成后，这里将显示 Agent 数据
           </div>
         </div>
       );
@@ -1729,7 +1738,7 @@ export const TeamDetailView = ({
                           variant="ghost"
                           size="sm"
                           className="size-7 px-0 text-[var(--color-text-muted)]"
-                          aria-label="更多团队操作"
+                          aria-label="更多 Agent 操作"
                         >
                           <MoreHorizontal size={14} />
                         </Button>
@@ -1836,7 +1845,7 @@ export const TeamDetailView = ({
 
               <CollapsibleTeamSection
                 sectionId="team"
-                title="成员与 Agent"
+                title="Agent"
                 icon={<Users size={14} />}
                 badge={activeTeammateCount === 0 ? '单人' : activeTeammateCount}
                 defaultOpen
@@ -1858,6 +1867,18 @@ export const TeamDetailView = ({
                   onSkipMemberForLaunch={handleSkipMemberForLaunch}
                 />
               </CollapsibleTeamSection>
+
+              {capabilityMember ? (
+                <CollapsibleTeamSection
+                  sectionId="capabilities"
+                  title="Skills 与 MCP"
+                  icon={<Sparkles size={14} />}
+                  badge={capabilityMember.name}
+                  defaultOpen
+                >
+                  <MemberCapabilitiesSummary open member={capabilityMember} teamName={teamName} />
+                </CollapsibleTeamSection>
+              ) : null}
 
               <ReviewDialog
                 open={requestChangesTaskId !== null}
@@ -2007,10 +2028,10 @@ export const TeamDetailView = ({
               >
                 <DialogContent className="max-w-sm">
                   <DialogHeader>
-                    <DialogTitle>删除团队</DialogTitle>
+                    <DialogTitle>删除 Agent</DialogTitle>
                     <DialogDescription>
-                      确认删除团队 &ldquo;{displayTeamName}
-                      &rdquo;？此操作不可恢复，所有团队数据与任务都将被删除。
+                      确认删除 Agent &ldquo;{displayTeamName}
+                      &rdquo;？此操作不可恢复，相关配置与任务数据都将被删除。
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter>

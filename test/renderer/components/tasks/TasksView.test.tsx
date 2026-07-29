@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@features/collaborative-workbench/renderer', () => ({
   CollaborativeInboxView: () => React.createElement('div', null, '协作收件箱内容'),
-  WorkbenchPageHeader: ({ title }: { title: string }) => React.createElement('h1', null, title),
 }));
 
 vi.mock('@renderer/store', () => ({
@@ -29,21 +28,13 @@ vi.mock('@renderer/components/team/kanban/KanbanColumn', () => ({
 
 import { TasksView } from '@renderer/components/tasks/TasksView';
 
-function buttonByText(host: HTMLElement, label: string): HTMLButtonElement {
-  const button = [...host.querySelectorAll('button')].find((candidate) =>
-    candidate.textContent?.includes(label)
-  );
-  if (!button) throw new Error(`Button not found: ${label}`);
-  return button;
-}
-
 afterEach(() => {
   document.body.innerHTML = '';
   vi.unstubAllGlobals();
 });
 
 describe('TasksView presentation controls', () => {
-  it('defaults to Inbox and keeps Kanban and scheduled work accessible', async () => {
+  it('renders the inbox directly without a redundant workspace tab row', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     const host = document.createElement('div');
     document.body.appendChild(host);
@@ -55,22 +46,9 @@ describe('TasksView presentation controls', () => {
     });
 
     expect(host.textContent).toContain('协作收件箱内容');
-    expect(host.querySelector('[role="tablist"]')).not.toBeNull();
-    expect(buttonByText(host, '收件箱').getAttribute('aria-selected')).toBe('true');
-    expect(buttonByText(host, '看板').getAttribute('role')).toBe('tab');
-    expect(buttonByText(host, '定时任务')).toBeTruthy();
-
-    await act(async () => {
-      buttonByText(host, '看板').click();
-      await Promise.resolve();
-    });
-    expect(host.textContent).toContain('暂无 Loop 任务');
-
-    await act(async () => {
-      buttonByText(host, '定时任务').click();
-      await Promise.resolve();
-    });
-    expect(host.textContent).toContain('定时任务内容');
+    expect(host.querySelector('[role="tablist"]')).toBeNull();
+    expect(host.textContent).not.toContain('看板');
+    expect(host.textContent).not.toContain('定时任务');
 
     act(() => root.unmount());
   });

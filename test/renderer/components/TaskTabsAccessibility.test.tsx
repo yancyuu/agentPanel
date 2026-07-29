@@ -4,14 +4,8 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { InboxTaskList } from '../../../src/features/collaborative-workbench/renderer/ui/InboxTaskList';
-import { TasksView } from '../../../src/renderer/components/tasks/TasksView';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-vi.mock('@features/collaborative-workbench/renderer', () => ({
-  CollaborativeInboxView: () => React.createElement('div', null, 'Inbox content'),
-  WorkbenchPageHeader: () => React.createElement('header', null, 'Header'),
-}));
 
 vi.mock('@renderer/store', () => {
   const state = {
@@ -60,38 +54,6 @@ afterEach(() => {
     act(() => root.unmount());
     container.remove();
   }
-});
-
-describe('task workspace tabs', () => {
-  it('links tabs to panels and supports roving keyboard selection', () => {
-    const container = render(<TasksView />);
-    const inbox = container.querySelector<HTMLElement>('#tasks-tab-inbox');
-    const overview = container.querySelector<HTMLElement>('#tasks-tab-overview');
-
-    expect(inbox?.getAttribute('aria-controls')).toBe('tasks-tabpanel-inbox');
-    expect(inbox?.tabIndex).toBe(0);
-    expect(overview?.tabIndex).toBe(-1);
-    expect(
-      container.querySelector('[role="tabpanel"]:not([hidden])')?.getAttribute('aria-labelledby')
-    ).toBe('tasks-tab-inbox');
-
-    press(inbox!, 'ArrowRight');
-    expect(overview?.getAttribute('aria-selected')).toBe('true');
-    expect(overview?.tabIndex).toBe(0);
-    expect(document.activeElement).toBe(overview);
-    expect(container.querySelector('[role="tabpanel"]:not([hidden])')?.id).toBe(
-      'tasks-tabpanel-overview'
-    );
-
-    press(overview!, 'End');
-    const schedules = container.querySelector<HTMLElement>('#tasks-tab-schedules');
-    expect(schedules?.getAttribute('aria-selected')).toBe('true');
-    expect(document.activeElement).toBe(schedules);
-
-    press(schedules!, 'Home');
-    expect(inbox?.getAttribute('aria-selected')).toBe('true');
-    expect(document.activeElement).toBe(inbox);
-  });
 });
 
 describe('inbox segment tabs', () => {

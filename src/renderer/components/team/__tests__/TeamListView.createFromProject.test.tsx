@@ -201,7 +201,7 @@ describe('TeamListView collaboration roster entry points', () => {
     expect(host.textContent).toContain('从模板创建数字员工');
 
     const launchButton = host.querySelector<HTMLButtonElement>(
-      '[aria-label="启动团队 Alpha 团队"]'
+      '[aria-label="启动 Agent Alpha 团队"]'
     );
     expect(launchButton).toBeTruthy();
     await act(async () => {
@@ -213,7 +213,9 @@ describe('TeamListView collaboration roster entry points', () => {
       'alpha-team'
     );
 
-    const openButton = host.querySelector<HTMLButtonElement>('[aria-label="打开团队 Alpha 团队"]');
+    const openButton = host.querySelector<HTMLButtonElement>(
+      '[aria-label="打开 Agent Alpha 团队"]'
+    );
     await act(async () => openButton?.click());
     expect(storeState.openTeamTab).toHaveBeenCalledWith('alpha-team', '/Users/test/code/alpha');
 

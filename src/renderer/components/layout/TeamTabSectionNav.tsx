@@ -12,7 +12,7 @@ interface TeamTabSectionNavProps {
 }
 
 const SECTIONS: readonly { id: string; label: string; icon: LucideIcon }[] = [
-  { id: 'team', label: '团队', icon: Users },
+  { id: 'team', label: 'Agent', icon: Users },
   { id: 'sessions', label: '会话', icon: History },
   { id: 'kanban', label: '看板', icon: Columns3 },
   { id: 'claude-logs', label: '运行日志', icon: Terminal },

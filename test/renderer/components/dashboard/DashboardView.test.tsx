@@ -66,7 +66,7 @@ describe('DashboardView workbench shell', () => {
 
     await act(async () => {
       clickButton(host, '打开收件箱');
-      clickButton(host, '团队与 Agent');
+      clickButton(host, 'Agent');
       clickButton(host, 'Helm Loop');
       clickButton(host, '飞书协作');
       clickButton(host, '配置 Harness');

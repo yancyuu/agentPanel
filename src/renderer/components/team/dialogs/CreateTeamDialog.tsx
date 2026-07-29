@@ -730,6 +730,7 @@ export const CreateTeamDialog = ({
                 </Button>
                 <Button
                   size="sm"
+                  className="border border-indigo-500 bg-indigo-600 text-white shadow-sm hover:bg-indigo-500 disabled:bg-indigo-600 disabled:text-white disabled:opacity-80"
                   disabled={
                     !teamName.trim() ||
                     !normalizedBindProject ||

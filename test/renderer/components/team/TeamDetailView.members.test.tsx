@@ -242,6 +242,22 @@ vi.mock('@renderer/components/team/members/MemberList', () => ({
   ),
 }));
 
+vi.mock('@renderer/components/team/members/MemberCapabilitiesSummary', () => ({
+  MemberCapabilitiesSummary: ({
+    open,
+    member,
+    teamName,
+  }: {
+    open: boolean;
+    member: ResolvedTeamMember;
+    teamName: string;
+  }) => (
+    <div data-testid="team-capabilities">
+      {teamName}:{member.name}:{open ? 'open' : 'closed'}
+    </div>
+  ),
+}));
+
 vi.mock('@renderer/components/team/members/MemberDetailDialog', () => ({
   MemberDetailDialog: ({
     open,
@@ -389,6 +405,21 @@ describe('TeamDetailView member roster interactions', () => {
   afterEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = '';
+  });
+
+  it('shows the current employee Skills and MCP directly on the team page', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const { host, root } = await renderView();
+
+    expect(host.querySelector('[data-testid="team-capabilities"]')?.textContent).toBe(
+      'team-alpha:bob:open'
+    );
+    expect(host.querySelector('[aria-label="成员详情"]')).toBeNull();
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
   });
 
   it('opens and closes member detail from the production roster', async () => {

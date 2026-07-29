@@ -1,7 +1,10 @@
+import { useState } from 'react';
+
 import { cn } from '@renderer/lib/utils';
 import { agentAvatarUrl } from '@renderer/utils/memberHelpers';
-import { Mail, RefreshCw, Search } from 'lucide-react';
+import { Mail, Plus, RefreshCw, Search } from 'lucide-react';
 
+import type { InboxRecipientOption } from '../hooks/useInboxThreads';
 import type { InboxThreadProjection } from '../utils/inboxThreadProjection';
 
 interface InboxThreadListProps {
@@ -12,6 +15,8 @@ interface InboxThreadListProps {
   teamFilter: string;
   onTeamFilterChange(teamName: string): void;
   teamOptions: [string, string][];
+  recipientOptions: InboxRecipientOption[];
+  onCreateThread(teamName: string, memberName: string): void;
   onSelect(key: string): void;
   onRefresh(): void;
   loading: boolean;
@@ -35,29 +40,87 @@ export function InboxThreadList({
   teamFilter,
   onTeamFilterChange,
   teamOptions,
+  recipientOptions,
+  onCreateThread,
   onSelect,
   onRefresh,
   loading,
 }: Readonly<InboxThreadListProps>): React.JSX.Element {
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [recipientKey, setRecipientKey] = useState('');
+  const selectedRecipient = recipientOptions.find(
+    (option) => `${option.teamName}\u0000${option.memberName}` === recipientKey
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-surface)]">
       <div className="space-y-2 border-b border-[var(--surface-border-subtle)] p-3">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <div className="text-sm font-medium text-[var(--color-text)]">对话邮件</div>
-            <div className="text-[11px] text-[var(--color-text-muted)]">
-              每封邮件都是一个可持续回复的对话
-            </div>
-          </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setComposeOpen((current) => !current)}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3 text-xs font-medium text-white shadow-sm transition-opacity hover:opacity-90"
+          >
+            <Plus size={14} />
+            新建对话
+          </button>
+          <select
+            value={teamFilter}
+            onChange={(event) => onTeamFilterChange(event.target.value)}
+            aria-label="按团队筛选对话"
+            className="h-8 min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-2 text-xs text-[var(--color-text-secondary)] outline-none"
+          >
+            <option value="all">全部团队</option>
+            {teamOptions.map(([teamName, displayName]) => (
+              <option key={teamName} value={teamName}>
+                {displayName}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             aria-label="刷新对话"
             onClick={onRefresh}
-            className="rounded-md p-1.5 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
+            className="shrink-0 rounded-md p-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : undefined} />
           </button>
         </div>
+
+        {composeOpen ? (
+          <div className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-2">
+            <select
+              value={recipientKey}
+              onChange={(event) => setRecipientKey(event.target.value)}
+              aria-label="选择数字员工"
+              className="h-8 min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs text-[var(--color-text)] outline-none"
+            >
+              <option value="">选择数字员工</option>
+              {recipientOptions.map((option) => {
+                const value = `${option.teamName}\u0000${option.memberName}`;
+                return (
+                  <option key={value} value={value}>
+                    {option.teamDisplayName} · {option.memberName}
+                  </option>
+                );
+              })}
+            </select>
+            <button
+              type="button"
+              disabled={!selectedRecipient}
+              onClick={() => {
+                if (!selectedRecipient) return;
+                onCreateThread(selectedRecipient.teamName, selectedRecipient.memberName);
+                setComposeOpen(false);
+                setRecipientKey('');
+              }}
+              className="h-8 shrink-0 rounded-md bg-[var(--color-text)] px-3 text-xs font-medium text-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              开始对话
+            </button>
+          </div>
+        ) : null}
+
         <div className="relative">
           <Search
             size={13}
@@ -71,19 +134,6 @@ export function InboxThreadList({
             className="h-8 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] pl-8 pr-2 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-border-emphasis)]"
           />
         </div>
-        <select
-          value={teamFilter}
-          onChange={(event) => onTeamFilterChange(event.target.value)}
-          aria-label="按团队筛选对话"
-          className="h-8 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-2 text-xs text-[var(--color-text-secondary)] outline-none"
-        >
-          <option value="all">全部团队</option>
-          {teamOptions.map(([teamName, displayName]) => (
-            <option key={teamName} value={teamName}>
-              {displayName}
-            </option>
-          ))}
-        </select>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto" role="listbox" aria-label="对话邮件列表">
@@ -91,7 +141,7 @@ export function InboxThreadList({
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-[var(--color-text-muted)]">
             <Mail size={30} className="opacity-30" />
             <p className="text-sm">收件箱还是空的</p>
-            <p className="text-xs opacity-70">从数字员工详情点击“发消息”即可新建一封对话邮件。</p>
+            <p className="text-xs opacity-70">点击上方“新建对话”，选择数字员工开始沟通。</p>
           </div>
         ) : (
           threads.map((thread) => (

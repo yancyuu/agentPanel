@@ -2793,7 +2793,7 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
 
     state.openTab({
       type: 'teams',
-      label: '团队',
+      label: 'Agent',
     });
   },
 

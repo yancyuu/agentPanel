@@ -75,6 +75,8 @@ vi.mock('@features/collaborative-workbench/renderer/hooks/useInboxThreads', () =
     teamFilter: 'all',
     setTeamFilter: vi.fn(),
     teamOptions: [],
+    recipientOptions: [],
+    createThread: vi.fn(),
     selectThread,
     refresh: vi.fn(),
     loading: false,

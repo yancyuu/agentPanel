@@ -99,6 +99,8 @@ export function CollaborativeInboxView(): React.JSX.Element {
                 teamFilter={threadInbox.teamFilter}
                 onTeamFilterChange={threadInbox.setTeamFilter}
                 teamOptions={threadInbox.teamOptions}
+                recipientOptions={threadInbox.recipientOptions}
+                onCreateThread={threadInbox.createThread}
                 onSelect={(key) => {
                   threadInbox.selectThread(key);
                   setMobileDetailOpen(true);

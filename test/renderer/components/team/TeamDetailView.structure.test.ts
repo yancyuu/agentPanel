@@ -10,7 +10,7 @@ describe('TeamDetailView collaboration surface contract', () => {
       'utf8'
     );
 
-    expect(source).toContain('title="成员与 Agent"');
+    expect(source).toContain('title="Agent"');
     expect(source).toContain('<TeamMemberListBridge');
     expect(source).not.toContain('title="高级诊断"');
     expect(source).not.toContain('<CcSessionsSection');

@@ -34,6 +34,12 @@ function createConversationId(): string {
   return `conversation-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+export interface InboxRecipientOption {
+  teamName: string;
+  teamDisplayName: string;
+  memberName: string;
+}
+
 export interface InboxThreadsState {
   threads: InboxThreadProjection[];
   selectedThread: InboxThreadProjection | null;
@@ -43,6 +49,8 @@ export interface InboxThreadsState {
   teamFilter: string;
   setTeamFilter(teamName: string): void;
   teamOptions: [string, string][];
+  recipientOptions: InboxRecipientOption[];
+  createThread(teamName: string, memberName: string): void;
   selectThread(key: string): void;
   refresh(): void;
   loading: boolean;
@@ -140,32 +148,59 @@ export function useInboxThreads(): InboxThreadsState {
     [activeTeams, draft, messagesByTeam, readAtByThread]
   );
 
+  const openDraft = useCallback(
+    (
+      teamName: string,
+      memberName: string,
+      options?: { conversationId?: string; initialText?: string; requestedAt?: number }
+    ): void => {
+      const normalizedTeamName = teamName.trim();
+      const normalizedMemberName = memberName.trim();
+      if (!normalizedTeamName || !normalizedMemberName) return;
+
+      const nextDraft: DraftInboxThread = {
+        teamName: normalizedTeamName,
+        memberName: normalizedMemberName,
+        conversationId: options?.conversationId?.trim() || createConversationId(),
+        createdAt: new Date().toISOString(),
+        initialText: options?.initialText,
+      };
+      setDraft(nextDraft);
+      setSelectedKey(`${nextDraft.teamName}:${nextDraft.conversationId}`);
+      setQuery('');
+      setTeamFilter('all');
+      setNavigationRequestAt(options?.requestedAt ?? Date.now());
+    },
+    []
+  );
+
   useEffect(() => {
     if (!pendingIntent) return;
-    const conversationId = pendingIntent.conversationId?.trim() || createConversationId();
-    const nextDraft: DraftInboxThread = {
-      teamName: pendingIntent.teamName,
-      memberName: pendingIntent.memberName,
-      conversationId,
-      createdAt: new Date().toISOString(),
+    openDraft(pendingIntent.teamName, pendingIntent.memberName, {
+      conversationId: pendingIntent.conversationId,
       initialText: pendingIntent.initialText,
-    };
-    setDraft(nextDraft);
-    setSelectedKey(`${nextDraft.teamName}:${nextDraft.conversationId}`);
-    setQuery('');
-    setTeamFilter('all');
-    setNavigationRequestAt(pendingIntent.requestedAt);
+      requestedAt: pendingIntent.requestedAt,
+    });
     clearPendingIntent();
-  }, [clearPendingIntent, pendingIntent]);
+  }, [clearPendingIntent, openDraft, pendingIntent]);
 
   const threads = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN');
     return allThreads.filter((thread) => {
       if (teamFilter !== 'all' && thread.teamName !== teamFilter) return false;
       if (!normalizedQuery) return true;
-      return [thread.participant, thread.teamDisplayName, thread.subject, thread.preview].some(
-        (value) => value.toLocaleLowerCase('zh-CN').includes(normalizedQuery)
-      );
+      return [
+        thread.participant,
+        thread.teamDisplayName,
+        thread.subject,
+        thread.preview,
+        ...thread.messages.flatMap((message) => [
+          message.from,
+          message.to ?? '',
+          message.summary ?? '',
+          message.text,
+        ]),
+      ].some((value) => value.toLocaleLowerCase('zh-CN').includes(normalizedQuery));
     });
   }, [allThreads, query, teamFilter]);
 
@@ -179,6 +214,43 @@ export function useInboxThreads(): InboxThreadsState {
   }, [selectedKey, threads]);
 
   const selectedThread = threads.find((thread) => thread.key === selectedKey) ?? null;
+  const teamOptions = useMemo(() => {
+    const labels = new Map(activeTeams.map((team) => [team.teamName, team.displayName]));
+    return Array.from(new Set(allThreads.map((thread) => thread.teamName)))
+      .map((teamName) => [teamName, labels.get(teamName) ?? teamName] as [string, string])
+      .sort((left, right) => left[1].localeCompare(right[1], 'zh-CN'));
+  }, [activeTeams, allThreads]);
+  const recipientOptions = useMemo<InboxRecipientOption[]>(() => {
+    const seen = new Set<string>();
+    const options: InboxRecipientOption[] = [];
+    for (const team of activeTeams) {
+      const members =
+        team.members && team.members.length > 0
+          ? team.members
+          : [{ name: team.displayName || team.teamName }];
+      for (const member of members) {
+        const memberName = member.name?.trim();
+        if (!memberName) continue;
+        const key = `${team.teamName}\u0000${memberName}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        options.push({
+          teamName: team.teamName,
+          teamDisplayName: team.displayName,
+          memberName,
+        });
+      }
+    }
+    return options.sort((left, right) => {
+      const teamOrder = left.teamDisplayName.localeCompare(right.teamDisplayName, 'zh-CN');
+      return teamOrder || left.memberName.localeCompare(right.memberName, 'zh-CN');
+    });
+  }, [activeTeams]);
+
+  useEffect(() => {
+    if (teamFilter === 'all' || teamOptions.some(([teamName]) => teamName === teamFilter)) return;
+    setTeamFilter('all');
+  }, [teamFilter, teamOptions]);
 
   useEffect(() => {
     if (!selectedThread || selectedThread.messages.length === 0) return;
@@ -269,9 +341,9 @@ export function useInboxThreads(): InboxThreadsState {
     setQuery,
     teamFilter,
     setTeamFilter,
-    teamOptions: activeTeams
-      .map((team) => [team.teamName, team.displayName] as [string, string])
-      .sort((left, right) => left[1].localeCompare(right[1], 'zh-CN')),
+    teamOptions,
+    recipientOptions,
+    createThread: openDraft,
     selectThread,
     refresh,
     loading: activeTeams.some((team) => teamMessagesByName[team.teamName]?.loadingHead),
