@@ -13,7 +13,6 @@ import { extractProviderScopedBaseModel } from '@renderer/utils/teamModelContext
 import { IpcError, unwrapIpc } from '@renderer/utils/unwrapIpc';
 import { stripAgentBlocks } from '@shared/constants/agentBlocks';
 import { DEFAULT_TOOL_APPROVAL_SETTINGS } from '@shared/types/team';
-import { isLeadMember } from '@shared/utils/leadDetection';
 import { createLogger } from '@shared/utils/logger';
 import { getTaskKanbanColumn } from '@shared/utils/reviewState';
 import { formatTaskDisplayLabel } from '@shared/utils/taskIdentity';
@@ -807,6 +806,24 @@ export interface RefreshTeamMessagesHeadResult {
 }
 
 const TEAM_MESSAGES_CLEAR_PREFIX = 'team:messagesClearedAt:';
+const INBOX_UNREAD_FLAG_KEY = 'hermit:inbox-has-unread-messages';
+
+function loadInboxUnreadFlag(): boolean {
+  try {
+    return localStorage?.getItem?.(INBOX_UNREAD_FLAG_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveInboxUnreadFlag(hasUnread: boolean): void {
+  try {
+    if (hasUnread) localStorage?.setItem?.(INBOX_UNREAD_FLAG_KEY, '1');
+    else localStorage?.removeItem?.(INBOX_UNREAD_FLAG_KEY);
+  } catch {
+    // Best-effort navigation indicator persistence.
+  }
+}
 
 function loadTeamMessagesClearedAt(teamName: string): number | null {
   try {
@@ -1958,6 +1975,15 @@ function shouldInvalidateCachedTeamDataForError(teamName: string, message: strin
   );
 }
 
+export interface InboxThreadIntent {
+  teamName: string;
+  memberName: string;
+  conversationId?: string;
+  compose?: boolean;
+  initialText?: string;
+  requestedAt: number;
+}
+
 export interface TeamSlice {
   teams: TeamSummary[];
   /** O(1) lookup to avoid array scans in render-hot paths */
@@ -1979,6 +2005,12 @@ export interface TeamSlice {
   pendingMemberProfile: string | null;
   openMemberProfile: (memberName: string) => void;
   closeMemberProfile: () => void;
+  /** One-shot navigation request consumed by the /tasks collaborative inbox. */
+  pendingInboxThreadIntent: InboxThreadIntent | null;
+  setPendingInboxThreadIntent: (intent: Omit<InboxThreadIntent, 'requestedAt'>) => void;
+  clearPendingInboxThreadIntent: () => void;
+  inboxHasUnreadMessages: boolean;
+  setInboxHasUnreadMessages: (hasUnread: boolean) => void;
   /** Set by GlobalTaskDetailDialog to signal TeamDetailView to open ChangeReviewDialog */
   pendingReviewRequest: {
     taskId: string;
@@ -2110,7 +2142,13 @@ export interface TeamSlice {
    */
   appendStreamingTeamReply: (
     teamName: string,
-    chunk: { messageId: string; delta: string; from: string; to?: string }
+    chunk: {
+      messageId: string;
+      delta: string;
+      from: string;
+      to?: string;
+      conversationId?: string;
+    }
   ) => void;
   requestReview: (teamName: string, taskId: string) => Promise<void>;
   updateKanban: (teamName: string, taskId: string, patch: UpdateKanbanPatch) => Promise<void>;
@@ -2514,6 +2552,15 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
   pendingMemberProfile: null,
   openMemberProfile: (memberName: string) => set({ pendingMemberProfile: memberName }),
   closeMemberProfile: () => set({ pendingMemberProfile: null }),
+  pendingInboxThreadIntent: null,
+  setPendingInboxThreadIntent: (intent) =>
+    set({ pendingInboxThreadIntent: { ...intent, requestedAt: Date.now() } }),
+  clearPendingInboxThreadIntent: () => set({ pendingInboxThreadIntent: null }),
+  inboxHasUnreadMessages: loadInboxUnreadFlag(),
+  setInboxHasUnreadMessages: (hasUnread) => {
+    saveInboxUnreadFlag(hasUnread);
+    set({ inboxHasUnreadMessages: hasUnread });
+  },
   pendingReviewRequest: null,
   setPendingReviewRequest: (req) => set({ pendingReviewRequest: req }),
   openGlobalTaskDetail: (teamName: string, taskId: string) => {
@@ -4121,6 +4168,7 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
       const confirmedOptimisticMessage: InboxMessage = {
         ...optimisticMessage,
         messageId: result.messageId,
+        conversationId: result.conversationId ?? optimisticMessage.conversationId,
       };
       set((state) => ({
         sendingMessage: false,
@@ -4186,6 +4234,7 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
             read: true,
             messageId,
             source: 'runtime_delivery',
+            conversationId: chunk.conversationId,
           },
         ];
         nextOptimistic.sort(compareInboxMessagesByTimestamp);

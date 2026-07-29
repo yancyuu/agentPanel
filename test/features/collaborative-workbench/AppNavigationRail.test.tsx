@@ -13,6 +13,7 @@ function createProps(overrides: Partial<AppNavigationRailProps> = {}): AppNaviga
   return {
     activeArea: 'inbox',
     unreadCount: 3,
+    inboxHasUnread: true,
     onOpenInbox: vi.fn(),
     onOpenOverview: vi.fn(),
     onOpenAgents: vi.fn(),
@@ -89,6 +90,7 @@ describe('AppNavigationRail', () => {
 
     expect(host.querySelector('[aria-current="page"]')?.getAttribute('aria-label')).toBe('收件箱');
     expect(host.textContent).toContain('3');
+    expect(host.querySelector('[aria-label="有新对话"]')).not.toBeNull();
 
     click(host, '收件箱');
     click(host, '概览');

@@ -157,7 +157,7 @@ describe('MemberCapabilitiesSummary', () => {
     });
   });
 
-  it('falls back to the team project path and truthfully warns when Hermit MCP is absent', async () => {
+  it('falls back to the team project path and only shows MCPs found by the scan', async () => {
     const teamPath = '/workspace/team';
     testState.skillsProjectCatalogByProjectPath[teamPath] = [
       makeSkill('skill-team', 'Team Briefing', '读取团队上下文'),
@@ -181,7 +181,7 @@ describe('MemberCapabilitiesSummary', () => {
     expect(testState.mcpFetchInstalled).toHaveBeenCalledWith(teamPath);
     expect(host.textContent).toContain(`生效项目： ${teamPath}`);
     expect(host.textContent).toContain('Team Briefing');
-    expect(host.textContent).toContain('尚未检测到 Hermit 任务 MCP');
+    expect(host.textContent).not.toContain('尚未检测到 Hermit 任务 MCP');
     expect(host.textContent).toContain('filesystem');
     expect(host.querySelectorAll('button')).toHaveLength(0);
 

@@ -1,23 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import { Button } from '@renderer/components/ui/button';
-import { Dialog, DialogContent, DialogFooter, DialogHeader } from '@renderer/components/ui/dialog';
-import {
-  buildMemberLaunchDiagnosticsPayload,
-  getMemberLaunchDiagnosticsErrorMessage,
-  hasMemberLaunchDiagnosticsDetails,
-  hasMemberLaunchDiagnosticsError,
-} from '@renderer/utils/memberLaunchDiagnostics';
-import {
-  getRuntimeMemorySourceLabel,
-  resolveMemberRuntimeSummary,
-} from '@renderer/utils/memberRuntimeSummary';
+import { Dialog, DialogContent, DialogHeader } from '@renderer/components/ui/dialog';
+import { resolveMemberRuntimeSummary } from '@renderer/utils/memberRuntimeSummary';
 import { isLeadMember } from '@shared/utils/leadDetection';
-import { GitCompare, Mail, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Mail, Plus } from 'lucide-react';
 
 import { MemberCapabilitiesSummary } from './MemberCapabilitiesSummary';
 import { MemberDetailHeader } from './MemberDetailHeader';
-import { MemberLaunchDiagnosticsButton } from './MemberLaunchDiagnosticsButton';
 
 import type { TeamLaunchParams } from '@renderer/store/slices/teamSlice';
 import type {
@@ -78,21 +68,14 @@ export const MemberDetailDialog = ({
   leadActivity,
   spawnEntry,
   runtimeEntry,
-  runtimeRunId,
   launchParams,
   onClose,
   onSendMessage,
   onAssignTask,
   onTaskClick,
-  onRemoveMember,
-  onRestartMember,
   onUpdateRole,
   updatingRole,
-  onViewMemberChanges,
 }: MemberDetailDialogProps): React.JSX.Element | null => {
-  const [restarting, setRestarting] = useState(false);
-  const [restartError, setRestartError] = useState<string | null>(null);
-
   const runtimeSummary = useMemo(
     () =>
       member
@@ -100,7 +83,6 @@ export const MemberDetailDialog = ({
         : undefined,
     [launchParams, member, runtimeEntry, spawnEntry]
   );
-  const memorySourceLabel = getRuntimeMemorySourceLabel(runtimeEntry);
   const memberTasks = useMemo(() => {
     if (!member) return [];
     return tasks
@@ -110,47 +92,7 @@ export const MemberDetailDialog = ({
           (TASK_STATUS_ORDER[left.status] ?? 99) - (TASK_STATUS_ORDER[right.status] ?? 99)
       );
   }, [member, tasks]);
-  const launchDiagnosticsPayload = useMemo(
-    () =>
-      member
-        ? buildMemberLaunchDiagnosticsPayload({
-            teamName,
-            runId: runtimeRunId,
-            memberName: member.name,
-            spawnEntry,
-            runtimeEntry,
-          })
-        : null,
-    [member, runtimeEntry, runtimeRunId, spawnEntry, teamName]
-  );
-  const showCopyDiagnostics =
-    launchDiagnosticsPayload != null &&
-    hasMemberLaunchDiagnosticsError(launchDiagnosticsPayload) &&
-    hasMemberLaunchDiagnosticsDetails(launchDiagnosticsPayload);
-  const launchErrorMessage = launchDiagnosticsPayload
-    ? getMemberLaunchDiagnosticsErrorMessage(launchDiagnosticsPayload)
-    : undefined;
-
-  useEffect(() => {
-    if (!open || !member) return;
-    setRestartError(null);
-    setRestarting(false);
-  }, [member, open]);
-
   if (!member) return null;
-
-  const handleRestart = async (): Promise<void> => {
-    if (!onRestartMember || restarting) return;
-    setRestarting(true);
-    setRestartError(null);
-    try {
-      await onRestartMember(member.name);
-    } catch (error) {
-      setRestartError(error instanceof Error ? error.message : '重启数字员工失败');
-    } finally {
-      setRestarting(false);
-    }
-  };
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
@@ -223,69 +165,6 @@ export const MemberDetailDialog = ({
         </section>
 
         <MemberCapabilitiesSummary open={open} member={member} teamName={teamName} />
-
-        <details className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)]">
-          <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)]">
-            高级诊断
-          </summary>
-          <div className="space-y-3 border-t border-[var(--color-border)] p-3">
-            {runtimeEntry?.pid ? (
-              <div className="text-xs text-[var(--color-text-muted)]">
-                运行进程 PID {runtimeEntry.pid}
-                {memorySourceLabel ? ` · ${memorySourceLabel}` : ''}
-              </div>
-            ) : (
-              <div className="text-xs text-[var(--color-text-muted)]">暂无运行进程信息</div>
-            )}
-            <div className="flex flex-wrap gap-2">
-              {onRestartMember ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void handleRestart()}
-                  disabled={restarting}
-                >
-                  <RefreshCw size={14} className={restarting ? 'animate-spin' : undefined} />
-                  {restarting ? '重启中…' : '重启员工'}
-                </Button>
-              ) : null}
-              {onViewMemberChanges ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onViewMemberChanges(member.name)}
-                >
-                  <GitCompare size={14} />
-                  查看变更
-                </Button>
-              ) : null}
-              {onRemoveMember ? (
-                <Button type="button" size="sm" variant="destructive" onClick={onRemoveMember}>
-                  <Trash2 size={14} />
-                  移除员工
-                </Button>
-              ) : null}
-            </div>
-            {launchErrorMessage ? (
-              <div className="flex min-w-0 items-center gap-2 text-xs text-red-400">
-                <span className="min-w-0 flex-1">{launchErrorMessage}</span>
-                {launchDiagnosticsPayload && showCopyDiagnostics ? (
-                  <MemberLaunchDiagnosticsButton
-                    payload={launchDiagnosticsPayload}
-                    label="复制诊断信息"
-                    className="h-auto shrink-0 gap-1.5 px-2 py-1 text-red-300 hover:bg-red-500/10 hover:text-red-200"
-                  />
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        </details>
-
-        <DialogFooter>
-          {restartError ? <div className="text-xs text-red-400">{restartError}</div> : null}
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

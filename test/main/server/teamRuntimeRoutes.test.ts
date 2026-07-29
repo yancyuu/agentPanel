@@ -203,6 +203,41 @@ describe('team runtime operations and routes', () => {
     );
   });
 
+  it('keeps concurrent runtime replies mapped to their originating mail thread', async () => {
+    const harness = createHarness();
+
+    await harness.operations.dispatchDirectCliMessage({
+      teamName: 'team-a',
+      sessionKey: 'team-a:member:alice',
+      workDir: '/manifest/work',
+      from: 'alice',
+      to: 'user',
+      text: 'first',
+      messageId: 'reply-1',
+      conversationId: 'conversation-1',
+    });
+    await harness.operations.dispatchDirectCliMessage({
+      teamName: 'team-a',
+      sessionKey: 'team-a:member:alice',
+      workDir: '/manifest/work',
+      from: 'alice',
+      to: 'user',
+      text: 'second',
+      messageId: 'reply-2',
+      conversationId: 'conversation-2',
+    });
+
+    expect(harness.directCliRoutes.get('team-a:member:alice')).toEqual(
+      expect.objectContaining({
+        conversationId: 'conversation-2',
+        conversationIdByMessageId: {
+          'reply-1': 'conversation-1',
+          'reply-2': 'conversation-2',
+        },
+      })
+    );
+  });
+
   it('preserves loop-session reuse, dispatch routing, launch, and best-effort stop', async () => {
     const harness = createHarness();
     harness.directCliManager.getSessionId.mockReturnValue('session-1');

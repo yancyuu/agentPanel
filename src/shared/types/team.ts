@@ -803,6 +803,8 @@ export interface SendMessageResult {
   deliveredToInbox: boolean;
   deliveredViaStdin?: boolean;
   messageId: string;
+  /** Durable inbox thread used for the sent message and its runtime reply. */
+  conversationId?: string;
   deduplicated?: boolean;
   runtimeDelivery?: {
     providerId: 'opencode';
@@ -1299,6 +1301,8 @@ export interface TeamChangeEvent {
   toolInput?: unknown;
   /** direct-cli-stream: reply sender shown during streaming (team name or member name). */
   from?: string;
+  /** direct-cli-stream: durable product inbox thread for the active turn. */
+  conversationId?: string;
 }
 
 export interface ProjectBranchChangeEvent {

@@ -957,6 +957,10 @@ export function initializeNotificationListeners(): () => void {
         return;
       }
 
+      if (event.type === 'inbox') {
+        useStore.getState().setInboxHasUnreadMessages(true);
+      }
+
       const isStaleRuntimeEvent = (() => {
         if (!event.runId) return false;
         const currentRunId = useStore.getState().currentRuntimeRunIdByTeam[event.teamName];
@@ -1229,6 +1233,7 @@ export function initializeNotificationListeners(): () => void {
             delta: event.text,
             from: event.from ?? event.teamName,
             to: 'user',
+            conversationId: event.conversationId,
           });
         }
         return;

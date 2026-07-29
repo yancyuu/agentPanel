@@ -17,6 +17,7 @@ interface DirectCliMessageInput {
   text: string;
   attachments?: AttachmentPayload[];
   messageId: string;
+  conversationId?: string;
 }
 
 interface TeamMessageRouteRegistrationOptions {
@@ -225,6 +226,16 @@ export function registerTeamMessageRoutes(
         sessionKey?: string;
         messageId?: string;
         attachments?: unknown;
+        from?: string;
+        to?: string;
+        source?: string;
+        conversationId?: string;
+        replyToConversationId?: string;
+        taskRefs?: unknown;
+        actionMode?: string;
+        commentId?: string;
+        leadSessionId?: string;
+        relayOfMessageId?: string;
       };
     }>('/api/teams/:name/send-message', async (request) => {
       const teamName = request.params.name;
@@ -234,9 +245,21 @@ export function registerTeamMessageRoutes(
       const requestedMessageId =
         typeof request.body?.messageId === 'string' ? request.body.messageId.trim() : '';
       const messageId = requestedMessageId || createMessageId();
+      const member = typeof request.body?.member === 'string' ? request.body.member.trim() : '';
       const requestedSessionKey =
         typeof request.body?.sessionKey === 'string' ? request.body.sessionKey.trim() : '';
-      const sessionKey = requestedSessionKey || dependencies.buildFallbackSessionKey(teamName);
+      const sessionKey = requestedSessionKey || `${teamName}:member:${member || 'lead'}`;
+      const requestedConversationId =
+        typeof request.body?.conversationId === 'string' ? request.body.conversationId.trim() : '';
+      const conversationId = requestedConversationId || messageId;
+      const from =
+        typeof request.body?.from === 'string' && request.body.from.trim()
+          ? request.body.from.trim()
+          : 'user';
+      const to =
+        typeof request.body?.to === 'string' && request.body.to.trim()
+          ? request.body.to.trim()
+          : member || teamName;
       const attachments = Array.isArray(request.body?.attachments)
         ? request.body.attachments.filter(isAttachmentPayload)
         : [];
@@ -248,12 +271,32 @@ export function registerTeamMessageRoutes(
       const userMessage = await dependencies
         .appendMessage(teamName, {
           id: messageId,
-          from: 'user',
-          to: teamName,
-          role: 'user',
+          from,
+          to,
+          role: from === 'user' ? 'user' : 'agent',
           content: text,
           meta: {
             sessionKey,
+            conversationId,
+            replyToConversationId:
+              typeof request.body?.replyToConversationId === 'string'
+                ? request.body.replyToConversationId
+                : undefined,
+            source: typeof request.body?.source === 'string' ? request.body.source : 'user_sent',
+            summary: typeof request.body?.summary === 'string' ? request.body.summary : undefined,
+            taskRefs: Array.isArray(request.body?.taskRefs) ? request.body.taskRefs : undefined,
+            actionMode:
+              typeof request.body?.actionMode === 'string' ? request.body.actionMode : undefined,
+            commentId:
+              typeof request.body?.commentId === 'string' ? request.body.commentId : undefined,
+            leadSessionId:
+              typeof request.body?.leadSessionId === 'string'
+                ? request.body.leadSessionId
+                : undefined,
+            relayOfMessageId:
+              typeof request.body?.relayOfMessageId === 'string'
+                ? request.body.relayOfMessageId
+                : undefined,
             attachments: attachmentMeta.length > 0 ? attachmentMeta : undefined,
             attachmentData: attachmentData.length > 0 ? attachmentData : undefined,
           },
@@ -262,25 +305,24 @@ export function registerTeamMessageRoutes(
 
       dependencies.broadcastSse('team-change', { type: 'inbox', teamName });
 
-      const member = typeof request.body?.member === 'string' ? request.body.member.trim() : '';
-      const directSessionKey = `${teamName}:member:${member || 'lead'}`;
       const memberWorkDir = await dependencies.resolveDirectCliWorkDir(teamName).catch(() => '');
       const dispatchedDirect = Boolean(memberWorkDir);
       if (dispatchedDirect) {
         void dependencies
           .dispatchDirectCliMessage({
             teamName,
-            sessionKey: directSessionKey,
+            sessionKey,
             workDir: memberWorkDir,
             from: member || teamName,
             to: 'user',
             text,
             attachments: attachmentsForAgent,
-            messageId: buildDirectReplyMessageId(directSessionKey),
+            messageId: buildDirectReplyMessageId(sessionKey),
+            conversationId,
           })
           .catch((error) => {
             request.log.warn(
-              { err: error, teamName, sessionKey: directSessionKey },
+              { err: error, teamName, sessionKey },
               'send-message direct-cli delivery failed'
             );
             dependencies.broadcastSse('team-change', { type: 'inbox', teamName });
@@ -293,6 +335,7 @@ export function registerTeamMessageRoutes(
         ok: true,
         deliveredToInbox: true,
         messageId: userMessage?.id ?? messageId,
+        conversationId,
         runtimeDelivery: {
           attempted: true,
           delivered: dispatchedDirect,

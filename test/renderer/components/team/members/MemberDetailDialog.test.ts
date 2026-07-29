@@ -297,12 +297,7 @@ describe('MemberDetailDialog workbench profile', () => {
     });
   });
 
-  it('copies launch diagnostics from the detail footer only for launch errors', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    });
+  it('does not expose runtime diagnostics even when launch errors exist', async () => {
     const member: ResolvedTeamMember = {
       name: 'jack',
       status: 'active',
@@ -402,22 +397,9 @@ describe('MemberDetailDialog workbench profile', () => {
     copyButton = Array.from(host.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('复制诊断信息')
     );
-    expect(copyButton).not.toBeUndefined();
-
-    await act(async () => {
-      copyButton?.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    const payload = JSON.parse(writeText.mock.calls[0][0] as string) as {
-      runId?: string;
-      livenessKind?: string;
-      processCommand?: string;
-    };
-    expect(payload.runId).toBe('run-42');
-    expect(payload.livenessKind).toBe('not_found');
-    expect(payload.processCommand).toContain('--api-key [redacted]');
+    expect(copyButton).toBeUndefined();
+    expect(host.textContent).not.toContain('高级诊断');
+    expect(host.textContent).not.toContain('运行进程');
 
     await act(async () => {
       root.unmount();

@@ -8,7 +8,6 @@ import { OpenCodeDeliveryWarning } from '@renderer/components/team/messages/Open
 import { MentionableTextarea } from '@renderer/components/ui/MentionableTextarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
-import { getTeamColorSet } from '@renderer/constants/teamColors';
 import { useComposerDraft } from '@renderer/hooks/useComposerDraft';
 import { useProjectWorkflowCommands } from '@renderer/hooks/useProjectWorkflowCommands';
 import { useTaskSuggestions } from '@renderer/hooks/useTaskSuggestions';
@@ -24,7 +23,6 @@ import {
 } from '@renderer/utils/capabilityCommandExecution';
 import { formatAgentRole } from '@renderer/utils/formatAgentRole';
 import { buildMemberColorMap } from '@renderer/utils/memberHelpers';
-import { nameColorSet } from '@renderer/utils/projectColor';
 import { getSuggestedSlashCommandsForProvider } from '@renderer/utils/providerSlashCommands';
 import { buildSlashCommandSuggestions } from '@renderer/utils/skillCommandSuggestions';
 import {
@@ -38,7 +36,7 @@ import {
   stripEncodedTaskReferenceMetadata,
 } from '@renderer/utils/taskReferenceUtils';
 import { MAX_TEXT_LENGTH } from '@shared/constants';
-import { CANONICAL_LEAD_MEMBER_NAME, isLeadMember } from '@shared/utils/leadDetection';
+import { isLeadMember } from '@shared/utils/leadDetection';
 import { parseStandaloneSlashCommand } from '@shared/utils/slashCommands';
 import {
   inferTeamProviderIdFromModel,
@@ -67,6 +65,13 @@ interface MessageComposerProps {
   sendWarning?: string | null;
   sendDebugDetails?: OpenCodeRuntimeDeliveryDebugDetails | null;
   lastResult?: SendMessageResult | null;
+  /** Lock the composer to one employee when rendered inside an inbox thread. */
+  fixedRecipient?: string;
+  /** Thread-scoped draft persistence key. Defaults to the team name. */
+  draftKey?: string;
+  placeholder?: string;
+  sendLabel?: string;
+  initialText?: string;
   /** Ref to the underlying textarea element for external focus management. */
   textareaRef?: React.Ref<HTMLTextAreaElement>;
   onSend: (
@@ -90,6 +95,11 @@ export const MessageComposer = ({
   sendWarning,
   sendDebugDetails,
   lastResult,
+  fixedRecipient,
+  draftKey,
+  placeholder,
+  sendLabel = '下发',
+  initialText,
   textareaRef: externalTextareaRef,
   onSend,
 }: MessageComposerProps): React.JSX.Element => {
@@ -106,6 +116,7 @@ export const MessageComposer = ({
     };
   }, [externalTextareaRef]);
   const [recipient, setRecipient] = useState<string>(() => {
+    if (fixedRecipient?.trim()) return fixedRecipient.trim();
     const lead = members.find((m) => isLeadMember(m));
     return lead?.name ?? members[0]?.name ?? '';
   });
@@ -122,6 +133,11 @@ export const MessageComposer = ({
 
   // Members load async with team data; keep recipient stable if valid, otherwise default to lead/first.
   useEffect(() => {
+    const lockedRecipient = fixedRecipient?.trim();
+    if (lockedRecipient) {
+      if (lockedRecipient !== recipient) queueMicrotask(() => setRecipient(lockedRecipient));
+      return;
+    }
     if (recipient && members.some((m) => m.name === recipient)) {
       return;
     }
@@ -130,7 +146,7 @@ export const MessageComposer = ({
     if (next && next !== recipient) {
       queueMicrotask(() => setRecipient(next));
     }
-  }, [members, recipient]);
+  }, [fixedRecipient, members, recipient]);
 
   const projectPath = useStore((s) =>
     s.selectedTeamName === teamName ? (s.selectedTeamData?.config.projectPath ?? null) : null
@@ -140,17 +156,15 @@ export const MessageComposer = ({
   const capabilityPacks = useStore((s) => s.capabilityPacks);
   const fetchSkillsCatalog = useStore((s) => s.fetchSkillsCatalog);
   const fetchCapabilityPacks = useStore((s) => s.fetchCapabilityPacks);
-  const currentTeamColor = useStore((s) => {
-    if (s.selectedTeamName !== teamName) {
-      return nameColorSet(teamName).border;
-    }
-    const configColor = s.selectedTeamData?.config.color;
-    if (configColor) return getTeamColorSet(configColor).border;
-    const displayName = s.selectedTeamData?.config.name ?? teamName;
-    return nameColorSet(displayName).border;
-  });
   const isProvisioning = useStore((s) => isTeamProvisioningActive(s, teamName));
-  const draft = useComposerDraft(teamName);
+  const draft = useComposerDraft(draftKey ?? teamName);
+  const seededInitialTextRef = useRef<string | null>(null);
+  useEffect(() => {
+    const text = initialText?.trim();
+    if (!text || !draft.isLoaded || draft.text || seededInitialTextRef.current === text) return;
+    seededInitialTextRef.current = text;
+    draft.setText(text);
+  }, [draft, initialText]);
   const colorMap = useMemo(() => buildMemberColorMap(members), [members]);
 
   const mentionSuggestions = useMemo<MentionSuggestion[]>(
@@ -497,10 +511,14 @@ export const MessageComposer = ({
                 'border-[var(--color-border)]'
               )}
             >
-              <Popover open={recipientOpen} onOpenChange={setRecipientOpen}>
+              <Popover
+                open={fixedRecipient ? false : recipientOpen}
+                onOpenChange={fixedRecipient ? () => undefined : setRecipientOpen}
+              >
                 <PopoverTrigger asChild>
                   <button
                     type="button"
+                    disabled={Boolean(fixedRecipient)}
                     className={cn(
                       'inline-flex items-center gap-1.5 px-2.5 py-1 text-xs transition-colors',
                       shouldDockRecipientSelector
@@ -520,7 +538,9 @@ export const MessageComposer = ({
                     ) : (
                       <span className="text-[var(--color-text-muted)]">选择...</span>
                     )}
-                    <ChevronDown size={12} className="shrink-0 text-[var(--color-text-muted)]" />
+                    {!fixedRecipient ? (
+                      <ChevronDown size={12} className="shrink-0 text-[var(--color-text-muted)]" />
+                    ) : null}
                   </button>
                 </PopoverTrigger>
                 <PopoverContent
@@ -634,8 +654,8 @@ export const MessageComposer = ({
           id={`compose-${teamName}`}
           placeholder={
             isProvisioning
-              ? 'Agent 正在启动中... 指令将排队并在稍后执行。'
-              : '输入指令...（回车发送，Shift+Enter 换行）'
+              ? 'Agent 正在启动中... 消息将在稍后发送。'
+              : (placeholder ?? '输入指令...（回车发送，Shift+Enter 换行）')
           }
           value={draft.text}
           onValueChange={draft.setText}
@@ -711,7 +731,7 @@ export const MessageComposer = ({
                       onClick={handleSend}
                     >
                       <Send size={12} />
-                      下发
+                      {sendLabel}
                     </button>
                   </span>
                 </TooltipTrigger>

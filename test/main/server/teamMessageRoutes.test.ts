@@ -285,6 +285,7 @@ describe('team message routes', () => {
       ok: true,
       deliveredToInbox: true,
       messageId: 'optimistic-user-id',
+      conversationId: 'optimistic-user-id',
       runtimeDelivery: { attempted: true, delivered: true },
     });
     expect(order).toEqual(['persist', 'broadcast', 'dispatch']);
@@ -293,17 +294,21 @@ describe('team message routes', () => {
       expect.objectContaining({
         id: 'optimistic-user-id',
         from: 'user',
-        to: 'team-a',
+        to: 'alice',
         role: 'user',
         content: 'please investigate',
-        meta: expect.objectContaining({ sessionKey: 'custom-session' }),
+        meta: expect.objectContaining({
+          sessionKey: 'custom-session',
+          conversationId: 'optimistic-user-id',
+          source: 'user_sent',
+        }),
       })
     );
     expect(appendMessage.mock.calls[0]?.[1]).not.toHaveProperty('isMeta');
     expect(dispatchDirectCliMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         teamName: 'team-a',
-        sessionKey: 'team-a:member:alice',
+        sessionKey: 'custom-session',
         workDir: '/work/team-a',
         from: 'alice',
         to: 'user',
@@ -311,7 +316,7 @@ describe('team message routes', () => {
       })
     );
     const replyId = dispatchDirectCliMessage.mock.calls[0]?.[0].messageId;
-    expect(replyId).toMatch(/^direct-team-a:member:alice-/);
+    expect(replyId).toMatch(/^direct-custom-session-/);
     expect(replyId).not.toBe('optimistic-user-id');
     expect(broadcastSse).toHaveBeenCalledWith('team-change', {
       type: 'inbox',
@@ -347,8 +352,10 @@ describe('team message routes', () => {
     expect(appendMessage).toHaveBeenCalledWith(
       'team-a',
       expect.objectContaining({
-        meta: {
-          sessionKey: 'hermit:team-a:session',
+        meta: expect.objectContaining({
+          sessionKey: 'team-a:member:lead',
+          conversationId: expect.any(String),
+          source: 'user_sent',
           attachments: [
             {
               id: 'attachment-1',
@@ -359,7 +366,7 @@ describe('team message routes', () => {
             },
           ],
           attachmentData: [{ id: 'attachment-1', data: 'aGVsbG8=', mimeType: 'text/plain' }],
-        },
+        }),
       })
     );
     expect(dispatchDirectCliMessage).toHaveBeenCalledWith(
@@ -428,6 +435,7 @@ describe('team message routes', () => {
       ok: true,
       deliveredToInbox: true,
       messageId: 'client-id',
+      conversationId: 'client-id',
       runtimeDelivery: { attempted: true, delivered: false },
     });
     expect(dispatchDirectCliMessage).not.toHaveBeenCalled();

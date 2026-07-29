@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 
 import { useStore } from '@renderer/store';
 import { selectTeamDataForName } from '@renderer/store/slices/teamSlice';
-import { AlertTriangle, PlugZap, Sparkles } from 'lucide-react';
+import { PlugZap, Sparkles } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 
 import type { ResolvedTeamMember } from '@shared/types';
@@ -114,10 +114,6 @@ export const MemberCapabilitiesSummary = ({
     : false;
   const mcpError = capabilityPath ? (mcpErrorByPath[capabilityPath] ?? null) : null;
   const mcpLoading = capabilityPath !== null && !hasMcpSnapshot && !mcpError && open;
-  const hasBuiltinHermitMcp = mcpServers.some((entry) =>
-    BUILTIN_HERMIT_MCP_NAMES.has(normalizeCapabilityName(entry.name))
-  );
-
   return (
     <div className="space-y-3 border-t border-[var(--color-border-subtle)] pt-3">
       <div className="min-w-0 text-[11px] text-[var(--color-text-muted)]">
@@ -208,15 +204,6 @@ export const MemberCapabilitiesSummary = ({
             </span>
           </div>
           <div className="max-h-48 space-y-2 overflow-y-auto p-2">
-            {capabilityPath && !mcpLoading && !mcpError && !hasBuiltinHermitMcp ? (
-              <div
-                role="status"
-                className="flex items-start gap-2 rounded-md border border-amber-500/25 bg-amber-500/5 px-2.5 py-2 text-[10px] text-amber-500"
-              >
-                <AlertTriangle className="mt-0.5 size-3 shrink-0" />
-                <span>尚未检测到 Hermit 任务 MCP</span>
-              </div>
-            ) : null}
             {!capabilityPath ? (
               <p className="px-1 py-4 text-center text-xs text-[var(--color-text-muted)]">
                 绑定项目目录后可发现 MCP。

@@ -94,6 +94,8 @@ describe('server event handlers', () => {
       teamName: 'team-a',
       from: 'team-a',
       to: 'user',
+      conversationId: 'conversation-2',
+      conversationIdByMessageId: { 'message-42': 'conversation-1' },
     });
     harness.register();
 
@@ -111,7 +113,12 @@ describe('server event handlers', () => {
       to: 'user',
       role: 'agent',
       content: '完成结果',
-      meta: { sessionKey: 'session-1', source: 'direct-cli' },
+      meta: {
+        sessionKey: 'session-1',
+        source: 'direct-cli',
+        conversationId: 'conversation-1',
+        replyToConversationId: 'conversation-1',
+      },
     });
     expect(harness.broadcastSse).not.toHaveBeenCalled();
 

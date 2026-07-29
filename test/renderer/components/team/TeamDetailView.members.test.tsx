@@ -46,6 +46,8 @@ const testState = vi.hoisted(() => {
   };
   const createTeamTask = vi.fn(() => Promise.resolve(task));
   const closeMemberProfile = vi.fn();
+  const openTasksTab = vi.fn();
+  const setPendingInboxThreadIntent = vi.fn();
   const noop = vi.fn();
   const asyncNoop = vi.fn(() => Promise.resolve(undefined));
   const store = {
@@ -97,6 +99,8 @@ const testState = vi.hoisted(() => {
     createTeamTask,
     deleteTeam: asyncNoop,
     openTeamsTab: noop,
+    openTasksTab,
+    setPendingInboxThreadIntent,
     closeTab: noop,
     restartMember: asyncNoop,
     skipMemberForLaunch: asyncNoop,
@@ -113,7 +117,17 @@ const testState = vi.hoisted(() => {
     fetchTeams: asyncNoop,
     closeMemberProfile,
   };
-  return { member, members, task, snapshot, store, createTeamTask, closeMemberProfile };
+  return {
+    member,
+    members,
+    task,
+    snapshot,
+    store,
+    createTeamTask,
+    closeMemberProfile,
+    openTasksTab,
+    setPendingInboxThreadIntent,
+  };
 });
 
 vi.mock('@renderer/api', () => ({
@@ -364,6 +378,8 @@ describe('TeamDetailView member roster interactions', () => {
     testState.store.selectedTeamData = testState.snapshot;
     testState.store.pendingMemberProfile = null;
     testState.createTeamTask.mockClear();
+    testState.openTasksTab.mockClear();
+    testState.setPendingInboxThreadIntent.mockClear();
     testState.closeMemberProfile.mockReset();
     testState.closeMemberProfile.mockImplementation(() => {
       testState.store.pendingMemberProfile = null;
@@ -425,7 +441,12 @@ describe('TeamDetailView member roster interactions', () => {
       await Promise.resolve();
     });
     expect(host.querySelector('[aria-label="成员详情"]')).toBeNull();
-    expect(host.querySelector('[aria-label="收件箱新消息"]')?.textContent).toContain('bob');
+    expect(testState.setPendingInboxThreadIntent).toHaveBeenCalledWith({
+      teamName: 'team-alpha',
+      memberName: 'bob',
+      compose: true,
+    });
+    expect(testState.openTasksTab).toHaveBeenCalledOnce();
 
     await openMember();
     await act(async () => {

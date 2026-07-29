@@ -50,6 +50,7 @@ export const TabbedLayout = (): React.JSX.Element => {
     panes,
     activeTabId,
     unreadCount,
+    inboxHasUnreadMessages,
     openTasksTab,
     openDashboard,
     openTeamsTab,
@@ -65,6 +66,7 @@ export const TabbedLayout = (): React.JSX.Element => {
       panes: s.paneLayout.panes,
       activeTabId: s.activeTabId,
       unreadCount: s.unreadCount,
+      inboxHasUnreadMessages: s.inboxHasUnreadMessages,
       // eslint-disable-next-line @typescript-eslint/unbound-method -- Zustand actions are receiver-independent.
       openTasksTab: s.openTasksTab,
       openDashboard: s.openDashboard,
@@ -186,6 +188,7 @@ export const TabbedLayout = (): React.JSX.Element => {
       <AppNavigationRail
         activeArea={activeArea}
         unreadCount={unreadCount}
+        inboxHasUnread={inboxHasUnreadMessages}
         onOpenInbox={openTasksTab}
         onOpenOverview={openDashboard}
         onOpenAgents={openTeamsTab}

@@ -56,11 +56,13 @@ interface NavigationItem {
   icon: ComponentType<{ className?: string }>;
   onClick: () => void;
   badge?: number;
+  dot?: boolean;
 }
 
 export interface AppNavigationRailProps {
   activeArea: WorkbenchNavigationArea | null;
   unreadCount?: number;
+  inboxHasUnread?: boolean;
   onOpenInbox(): void;
   onOpenOverview(): void;
   onOpenAgents(): void;
@@ -97,7 +99,15 @@ function NavigationButton({
           : 'text-muted-foreground hover:bg-workbench-surface-hover hover:text-foreground'
       )}
     >
-      <Icon className="size-4 shrink-0" />
+      <span className="relative shrink-0">
+        <Icon className="size-4" />
+        {item.dot ? (
+          <span
+            className="absolute -right-1 -top-1 size-2 rounded-full bg-red-500 ring-2 ring-app-shell"
+            aria-label="有新对话"
+          />
+        ) : null}
+      </span>
       <span className="hidden min-w-0 flex-1 truncate text-left xl:block">{item.label}</span>
       {badgeLabel ? (
         <span className="hidden min-w-5 rounded-full bg-brand/10 px-1.5 text-center text-xs text-brand xl:inline-flex xl:justify-center">
@@ -111,6 +121,7 @@ function NavigationButton({
 export function AppNavigationRail({
   activeArea,
   unreadCount = 0,
+  inboxHasUnread = false,
   onOpenInbox,
   onOpenOverview,
   onOpenAgents,
@@ -123,7 +134,13 @@ export function AppNavigationRail({
   onOpenCommunity,
 }: Readonly<AppNavigationRailProps>): React.JSX.Element {
   const primaryItems: NavigationItem[] = [
-    { id: 'inbox', label: '收件箱', icon: Inbox, onClick: onOpenInbox },
+    {
+      id: 'inbox',
+      label: '收件箱',
+      icon: Inbox,
+      onClick: onOpenInbox,
+      dot: inboxHasUnread,
+    },
     { id: 'overview', label: '概览', icon: LayoutDashboard, onClick: onOpenOverview },
     { id: 'agents', label: '数字员工', icon: Bot, onClick: onOpenAgents },
     { id: 'schedules', label: '定时任务', icon: CalendarClock, onClick: onOpenSchedules },

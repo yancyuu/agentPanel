@@ -24,13 +24,23 @@ export interface DirectCliMessageInput {
   text: string;
   attachments?: AttachmentPayload[];
   messageId: string;
+  conversationId?: string;
 }
 
 interface TeamRuntimeOperationDependencies {
   teamProvisioning: Pick<TeamProvisioningService, 'readTeamManifestByProject'>;
   bridgeClient: Pick<HermitBridgeClient, 'getProject' | 'updateProject' | 'createProject'>;
   directCliManager: Pick<DirectCliSessionManager, 'getSessionId' | 'send'>;
-  directCliRoutes: Map<string, { teamName: string; from: string; to: string }>;
+  directCliRoutes: Map<
+    string,
+    {
+      teamName: string;
+      from: string;
+      to: string;
+      conversationId?: string;
+      conversationIdByMessageId?: Record<string, string>;
+    }
+  >;
   ensureSystemManager(): Promise<unknown>;
   restartBridge(): Promise<void>;
   workbenchUrl: string;
@@ -145,10 +155,20 @@ export function createTeamRuntimeOperations(
   }
 
   async function dispatchDirectCliMessage(params: DirectCliMessageInput): Promise<void> {
+    const existingRoute = dependencies.directCliRoutes.get(params.sessionKey);
     dependencies.directCliRoutes.set(params.sessionKey, {
       teamName: params.teamName,
       from: params.from,
       to: params.to,
+      ...(params.conversationId
+        ? {
+            conversationId: params.conversationId,
+            conversationIdByMessageId: {
+              ...existingRoute?.conversationIdByMessageId,
+              [params.messageId]: params.conversationId,
+            },
+          }
+        : {}),
     });
     let teamSlug = params.teamName;
     try {

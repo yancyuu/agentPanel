@@ -1,12 +1,12 @@
-import type { FastifyBaseLogger } from 'fastify';
-
 import { DEFAULT_TOOL_APPROVAL_SETTINGS } from '@shared/types/team';
-import type { ToolApprovalRequest } from '@shared/types/team';
 
+import { shouldAutoAllow } from './utils/toolApprovalRules';
+
+import type { ServerRuntimeState } from './serverContext';
 import type { DirectCliEvent } from './services/direct-cli';
 import type { TeamProvisioningService } from './services/team-management';
-import type { ServerRuntimeState } from './serverContext';
-import { shouldAutoAllow } from './utils/toolApprovalRules';
+import type { ToolApprovalRequest } from '@shared/types/team';
+import type { FastifyBaseLogger } from 'fastify';
 
 type AppendMessagePayload = Parameters<TeamProvisioningService['appendMessage']>[1];
 type AppendMessageResult = ReturnType<TeamProvisioningService['appendMessage']>;
@@ -53,6 +53,10 @@ export function registerServerEventHandlers({
     const route = state.directCliRoutes.get(event.sessionKey);
     if (!route) return;
     const { teamName } = route;
+    const eventMessageId = 'messageId' in event ? event.messageId : undefined;
+    const conversationId =
+      (eventMessageId ? route.conversationIdByMessageId?.[eventMessageId] : undefined) ??
+      route.conversationId;
 
     if (event.kind === 'complete') {
       void (async () => {
@@ -65,10 +69,27 @@ export function registerServerEventHandlers({
             to: route.to,
             role: 'agent',
             content: event.text,
-            meta: { sessionKey: event.sessionKey, source: 'direct-cli' },
+            meta: {
+              sessionKey: event.sessionKey,
+              source: 'direct-cli',
+              ...(conversationId
+                ? {
+                    conversationId,
+                    replyToConversationId: conversationId,
+                  }
+                : {}),
+            },
           }).catch((error) =>
             logger.warn({ err: error, sessionKey: event.sessionKey }, 'direct-cli append failed')
           );
+        }
+        if (eventMessageId && route.conversationIdByMessageId?.[eventMessageId]) {
+          const conversationIdByMessageId = { ...route.conversationIdByMessageId };
+          delete conversationIdByMessageId[eventMessageId];
+          state.directCliRoutes.set(event.sessionKey, {
+            ...route,
+            conversationIdByMessageId,
+          });
         }
         broadcastSse('team-change', { type: 'inbox', teamName });
       })();
@@ -128,6 +149,7 @@ export function registerServerEventHandlers({
       toolName: 'toolName' in event ? event.toolName : undefined,
       toolInput: 'toolInput' in event ? event.toolInput : undefined,
       from: route.from,
+      conversationId,
     });
   };
 

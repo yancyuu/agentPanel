@@ -25,6 +25,10 @@ export interface DirectCliRoute {
   /** `from` persisted on assistant replies: team name for lead, member name for DM. */
   from: string;
   to: string;
+  /** Latest product inbox thread associated with this runtime session. */
+  conversationId?: string;
+  /** Per-turn thread routing prevents concurrent replies from crossing mail threads. */
+  conversationIdByMessageId?: Record<string, string>;
 }
 
 export interface PendingPermissionApproval {

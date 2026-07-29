@@ -12,9 +12,9 @@ describe('TeamDetailView collaboration surface contract', () => {
 
     expect(source).toContain('title="成员与 Agent"');
     expect(source).toContain('<TeamMemberListBridge');
-    expect(source).toContain('title="高级诊断"');
-    expect(source).toContain('<CcSessionsSection');
-    expect(source).toContain('<ProcessesSection');
+    expect(source).not.toContain('title="高级诊断"');
+    expect(source).not.toContain('<CcSessionsSection');
+    expect(source).not.toContain('<ProcessesSection');
     expect(source).not.toContain('title="会话"');
     expect(source).not.toContain('title="指令台"');
     expect(source).not.toContain('<LoopConsolePanel');

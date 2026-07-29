@@ -102,7 +102,10 @@ export const TasksView = (): React.JSX.Element => {
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-page-canvas">
-      <WorkbenchPageHeader title="收件箱" description="集中处理跨团队任务、评论与 Agent 执行状态" />
+      <WorkbenchPageHeader
+        title="收件箱"
+        description="像邮件一样集中处理数字员工对话、任务与协作状态"
+      />
       <div
         role="tablist"
         aria-label="任务工作台视图"

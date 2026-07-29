@@ -35,9 +35,8 @@ import {
   selectResolvedMembersForTeamName,
   selectTeamMemberSnapshotsForName,
 } from '@renderer/store/slices/teamSlice';
-import { createChipFromSelection } from '@renderer/utils/chipUtils';
 import { sumContextInjectionTokens } from '@renderer/utils/contextMath';
-import { buildMemberColorMap, teamAvatarUrl } from '@renderer/utils/memberHelpers';
+import { teamAvatarUrl } from '@renderer/utils/memberHelpers';
 import {
   hasUnresolvedMemberSpawnStatus,
   MEMBER_SPAWN_STATUS_REFRESH_MS,
@@ -50,24 +49,18 @@ import {
   buildTaskChangeRequestOptions,
   type TaskChangeRequestOptions,
 } from '@renderer/utils/taskChangeRequest';
-import { stripAgentBlocks } from '@shared/constants/agentBlocks';
 import { deriveContextMetrics } from '@shared/utils/contextMetrics';
-import { isLeadAgentType, isLeadMember } from '@shared/utils/leadDetection';
+import { isLeadMember } from '@shared/utils/leadDetection';
 import { formatTaskDisplayLabel } from '@shared/utils/taskIdentity';
 import {
-  AlertTriangle,
-  Bot,
-  Download,
   FolderOpen,
   GitBranch,
   History,
   Link,
   Loader2,
   MoreHorizontal,
-  Network,
   Pencil,
   Play,
-  Terminal,
   Trash2,
   Users,
 } from 'lucide-react';
@@ -76,14 +69,11 @@ import { useShallow } from 'zustand/react/shallow';
 import { CreateTaskDialog } from './dialogs/CreateTaskDialog';
 import { EditTeamDialog } from './dialogs/EditTeamDialog';
 import { LaunchTeamDialog, type TeamLaunchDialogMode } from './dialogs/LaunchTeamDialog';
-import { PlatformBindingDialog } from './dialogs/PlatformBindingDialog';
 import { ReviewDialog } from './dialogs/ReviewDialog';
 import { RuntimeConfigDialog } from './dialogs/RuntimeConfigDialog';
-import { SendMessageDialog } from './dialogs/SendMessageDialog';
 import { executeTeamRelaunch } from './dialogs/teamRelaunchFlow';
 import { MemberDetailDialog } from './members/MemberDetailDialog';
 
-import type { TeamMessagesPanelMode } from '@renderer/types/teamMessagesPanelMode';
 import type { ComponentProps } from 'react';
 
 const ProjectEditorOverlay = lazy(() =>
@@ -92,22 +82,12 @@ const ProjectEditorOverlay = lazy(() =>
 import { SYSTEM_MANAGER_TEAM_NAME } from '@shared/types/team';
 
 import { MemberList } from './members/MemberList';
-import { MessagesPanel } from './messages/MessagesPanel';
 import { ChangeReviewDialog } from './review/ChangeReviewDialog';
 import {
   getTeamPendingRepliesState,
   setTeamPendingRepliesState,
 } from './sidebar/teamSidebarUiState';
-import {
-  buildAllSessionsCsv,
-  buildAllSessionsCsvFilename,
-  CcSessionsSection,
-  downloadTextFile,
-  hasDataRows,
-  isExportPayload,
-} from './CcSessionsSection';
 import { CollapsibleTeamSection } from './CollapsibleTeamSection';
-import { ProcessesSection } from './ProcessesSection';
 import { getLaunchJoinMilestonesFromMembers, getLaunchJoinState } from './provisioningSteps';
 import { TeamProvisioningBanner } from './TeamProvisioningBanner';
 import {
@@ -117,21 +97,13 @@ import {
 
 import type { ContextInjection } from '@renderer/types/contextInjection';
 import type { Session } from '@renderer/types/data';
-import type { InlineChip } from '@renderer/types/inlineChip';
 import type {
-  CcSession,
-  EffortLevel,
-  GlobalProvider,
   MemberSpawnStatusEntry,
   ResolvedTeamMember,
   TaskRef,
   TeamAgentRuntimeEntry,
   TeamCreateRequest,
-  TeamFastMode,
   TeamLaunchRequest,
-  TeamProviderId,
-  TeamTaskWithKanban,
-  TeamViewSnapshot,
 } from '@shared/types';
 import type { EditorSelectionAction } from '@shared/types/editor';
 import type { ContextUsageLike } from '@shared/utils/contextMetrics';
@@ -197,46 +169,6 @@ function useStableActiveMembers(
   return stableMembersRef.current;
 }
 
-const TeamOfflineStatusBanner = memo(function TeamOfflineStatusBanner({
-  teamName,
-  onLaunch,
-}: {
-  teamName: string;
-  onLaunch: () => void;
-}): React.JSX.Element {
-  const message = 'Agent 未运行：当前没有本地 Claude/Agent 进程在运行，已有状态和任务仍会保留。';
-
-  return (
-    <div
-      className="mb-3 flex items-center justify-between gap-3 rounded-md border px-3 py-2"
-      style={{
-        backgroundColor: 'var(--warning-bg)',
-        borderColor: 'var(--warning-border)',
-        color: 'var(--warning-text)',
-      }}
-    >
-      <span className="flex items-center gap-1.5 text-xs">
-        <AlertTriangle size={14} className="shrink-0" />
-        {message}
-      </span>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 shrink-0 gap-1 px-2 text-xs text-[var(--step-done-text)] hover:bg-[var(--step-done-bg)]"
-        onClick={onLaunch}
-      >
-        <Play size={12} />
-        启动 Agent
-      </Button>
-    </div>
-  );
-});
-
-type TeamMessagesPanelBridgeProps = Omit<
-  ComponentProps<typeof MessagesPanel>,
-  'leadActivity' | 'leadContextUpdatedAt'
->;
-type SharedTeamMessagesPanelProps = Omit<TeamMessagesPanelBridgeProps, 'position'>;
 type TeamMemberListBridgeProps = Omit<
   ComponentProps<typeof MemberList>,
   'leadActivity' | 'memberSpawnStatuses'
@@ -752,27 +684,6 @@ const TeamMemberListBridge = memo(function TeamMemberListBridge({
   );
 });
 
-const TeamMessagesPanelBridge = memo(function TeamMessagesPanelBridge({
-  teamName,
-  ...props
-}: TeamMessagesPanelBridgeProps): React.JSX.Element {
-  const { leadActivity, leadContextUpdatedAt } = useStore(
-    useShallow((s) => ({
-      leadActivity: s.leadActivityByTeam[teamName],
-      leadContextUpdatedAt: s.leadContextByTeam[teamName]?.updatedAt,
-    }))
-  );
-
-  return (
-    <MessagesPanel
-      {...props}
-      teamName={teamName}
-      leadActivity={leadActivity}
-      leadContextUpdatedAt={leadContextUpdatedAt}
-    />
-  );
-});
-
 const TeamMemberDetailDialogBridge = memo(function TeamMemberDetailDialogBridge({
   teamName,
   member,
@@ -911,11 +822,14 @@ export const TeamDetailView = ({
     };
     const onSendMsg = (e: Event) => {
       const { teamName: tn, memberName } = (e as CustomEvent).detail ?? {};
-      if (tn !== teamName) return;
-      setSendDialogRecipient(memberName);
-      setSendDialogDefaultText(undefined);
-      setSendDialogDefaultChip(undefined);
-      setSendDialogOpen(true);
+      if (tn !== teamName || typeof memberName !== 'string' || !memberName.trim()) return;
+      const store = useStore.getState();
+      store.setPendingInboxThreadIntent({
+        teamName,
+        memberName: memberName.trim(),
+        compose: true,
+      });
+      store.openTasksTab();
     };
     const onOpenProfile = (e: Event) => {
       const { teamName: tn, memberName } = (e as CustomEvent).detail ?? {};
@@ -947,11 +861,11 @@ export const TeamDetailView = ({
                 `Task ${formatTaskDisplayLabel(task)} "${task.subject}" has started. Please begin working on it.`
               );
             }
-          } catch {
-            /* best-effort */
+          } catch (error) {
+            console.error('Failed to notify task owner from graph action:', error);
           }
-        } catch {
-          /* error via store */
+        } catch (error) {
+          console.error('Failed to start task from graph action:', error);
         }
       })();
     });
@@ -961,8 +875,8 @@ export const TeamDetailView = ({
       void (async () => {
         try {
           await updateTaskStatus(teamName, taskId, 'completed');
-        } catch {
-          /* */
+        } catch (error) {
+          console.error('Failed to complete task from graph action:', error);
         }
       })();
     });
@@ -970,8 +884,8 @@ export const TeamDetailView = ({
       void (async () => {
         try {
           await updateKanban(teamName, taskId, { op: 'set_column', column: 'approved' });
-        } catch {
-          /* */
+        } catch (error) {
+          console.error('Failed to approve task from graph action:', error);
         }
       })();
     });
@@ -981,8 +895,8 @@ export const TeamDetailView = ({
       void (async () => {
         try {
           await requestReview(teamName, taskId);
-        } catch {
-          /* */
+        } catch (error) {
+          console.error('Failed to request task review from graph action:', error);
         }
       })();
     });
@@ -995,8 +909,8 @@ export const TeamDetailView = ({
       void (async () => {
         try {
           await updateTaskStatus(teamName, taskId, 'pending');
-        } catch {
-          /* */
+        } catch (error) {
+          console.error('Failed to cancel task from graph action:', error);
         }
       })();
     });
@@ -1005,8 +919,8 @@ export const TeamDetailView = ({
         try {
           await updateKanban(teamName, taskId, { op: 'remove' });
           await updateTaskStatus(teamName, taskId, 'completed');
-        } catch {
-          /* */
+        } catch (error) {
+          console.error('Failed to move task back to done from graph action:', error);
         }
       })();
     });
@@ -1031,17 +945,8 @@ export const TeamDetailView = ({
     };
   });
 
-  const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [sendDialogRecipient, setSendDialogRecipient] = useState<string | undefined>(undefined);
-  const [sendDialogDefaultText, setSendDialogDefaultText] = useState<string | undefined>(undefined);
-  const [sendDialogDefaultChip, setSendDialogDefaultChip] = useState<InlineChip | undefined>(
-    undefined
-  );
-  const [replyQuote, setReplyQuote] = useState<{ from: string; text: string } | undefined>(
-    undefined
-  );
   const [reviewDialogState, setReviewDialogState] = useState<{
     open: boolean;
     mode: 'agent' | 'task';
@@ -1060,57 +965,6 @@ export const TeamDetailView = ({
   // Session loading and filtering state
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
-  const [sessionsError, setSessionsError] = useState<string | null>(null);
-  const [ccSessions, setCcSessions] = useState<CcSession[]>([]);
-  const [ccSessionsLoading, setCcSessionsLoading] = useState(false);
-  const [ccSessionsError, setCcSessionsError] = useState<string | null>(null);
-  const [ccExporting, setCcExporting] = useState(false);
-
-  const handleExportAllCcSessions = useCallback(async () => {
-    if (ccExporting) return;
-    setCcExporting(true);
-    try {
-      const params = new URLSearchParams({
-        teamName,
-        format: 'csv',
-        includeContent: 'full',
-        includeToolResults: 'false',
-        includeSystemMessages: 'false',
-      });
-      const res = await fetch(`/api/telemetry/conversations/export?${params.toString()}`);
-      if (res.ok) {
-        const payload = (await res.json()) as unknown;
-        if (isExportPayload(payload) && hasDataRows(payload.content)) {
-          downloadTextFile(payload.content, payload.filename, payload.mimeType);
-          return;
-        }
-      }
-
-      const details = await Promise.all(
-        ccSessions.map(async (session) => {
-          try {
-            const detail = await api.teams.getSessionDetail(
-              teamName,
-              session.id,
-              Math.max(session.historyCount, 1)
-            );
-            return { session, detail };
-          } catch {
-            return { session, detail: null };
-          }
-        })
-      );
-      downloadTextFile(
-        buildAllSessionsCsv(details),
-        buildAllSessionsCsvFilename(teamName),
-        'text/csv;charset=utf-8'
-      );
-    } catch (err) {
-      console.error('Failed to export all conversation telemetry:', err);
-    } finally {
-      setCcExporting(false);
-    }
-  }, [ccExporting, ccSessions, teamName]);
   const {
     data,
     members,
@@ -1124,18 +978,14 @@ export const TeamDetailView = ({
     selectTeam,
     updateKanban,
     updateTaskStatus,
-    sendTeamMessage,
     requestReview,
     startTaskByUser,
     createTeamTask,
     deleteTeam,
     openTeamsTab,
+    openTasksTab,
+    setPendingInboxThreadIntent,
     closeTab,
-    sendingMessage,
-    sendMessageError,
-    sendMessageWarning,
-    sendMessageDebugDetails,
-    lastSendMessageResult,
     reviewActionError,
     restartMember,
     skipMemberForLaunch,
@@ -1145,7 +995,6 @@ export const TeamDetailView = ({
     provisioningError,
     clearProvisioningError,
     isTeamProvisioning,
-    refreshTeamData,
     refreshTeamMessagesHead,
     refreshMemberActivityMeta,
     syncTeamPendingReplyRefresh,
@@ -1153,7 +1002,6 @@ export const TeamDetailView = ({
     selectReviewFile,
     pendingReviewRequest,
     setPendingReviewRequest,
-    teams,
     teamSummaryDisplayName,
     fetchTeams,
   } = useStore(
@@ -1166,18 +1014,14 @@ export const TeamDetailView = ({
       selectTeam: s.selectTeam,
       updateKanban: s.updateKanban,
       updateTaskStatus: s.updateTaskStatus,
-      sendTeamMessage: s.sendTeamMessage,
       requestReview: s.requestReview,
       startTaskByUser: s.startTaskByUser,
       createTeamTask: s.createTeamTask,
       deleteTeam: s.deleteTeam,
       openTeamsTab: s.openTeamsTab,
+      openTasksTab: s.openTasksTab,
+      setPendingInboxThreadIntent: s.setPendingInboxThreadIntent,
       closeTab: s.closeTab,
-      sendingMessage: s.sendingMessage,
-      sendMessageError: s.sendMessageError,
-      sendMessageWarning: s.sendMessageWarning,
-      sendMessageDebugDetails: s.sendMessageDebugDetails,
-      lastSendMessageResult: s.lastSendMessageResult,
       reviewActionError: s.reviewActionError,
       restartMember: s.restartMember,
       skipMemberForLaunch: s.skipMemberForLaunch,
@@ -1191,7 +1035,6 @@ export const TeamDetailView = ({
       members: selectResolvedMembersForTeamName(s, teamName),
       loading: s.selectedTeamName === teamName ? s.selectedTeamLoading : false,
       error: s.selectedTeamName === teamName ? s.selectedTeamError : null,
-      refreshTeamData: s.refreshTeamData,
       refreshTeamMessagesHead: s.refreshTeamMessagesHead,
       refreshMemberActivityMeta: s.refreshMemberActivityMeta,
       syncTeamPendingReplyRefresh: s.syncTeamPendingReplyRefresh,
@@ -1199,7 +1042,6 @@ export const TeamDetailView = ({
       selectReviewFile: s.selectReviewFile,
       pendingReviewRequest: s.pendingReviewRequest,
       setPendingReviewRequest: s.setPendingReviewRequest,
-      teams: s.teams,
       teamSummaryDisplayName: teamName ? s.teamByName[teamName]?.displayName : undefined,
       fetchTeams: s.fetchTeams,
     }))
@@ -1209,8 +1051,6 @@ export const TeamDetailView = ({
   const activeTabId = useStore((s) => s.activeTabId);
   const isThisTabActive = tabId ? activeTabId === tabId : false;
   const wasInteractiveRef = useRef(false);
-
-  const keepMessagesInline = useCallback((_mode: TeamMessagesPanelMode) => {}, []);
 
   useEffect(() => {
     if (tabId) {
@@ -1359,43 +1199,10 @@ export const TeamDetailView = ({
   ]);
 
   useEffect(() => {
-    if (!teamName) return;
-    let cancelled = false;
-    setCcSessions([]);
-
-    const loadCcSessions = async (showLoading: boolean): Promise<void> => {
-      if (showLoading) setCcSessionsLoading(true);
-      setCcSessionsError(null);
-      try {
-        const result = await api.teams.getTeamSessions(teamName);
-        if (!cancelled) setCcSessions(result);
-      } catch (e) {
-        if (!cancelled) {
-          setCcSessions([]);
-          setCcSessionsError(e instanceof Error ? e.message : '加载运行会话失败');
-        }
-      } finally {
-        if (!cancelled && showLoading) setCcSessionsLoading(false);
-      }
-    };
-
-    void loadCcSessions(true);
-    const interval = window.setInterval(() => {
-      void loadCcSessions(false);
-    }, 3_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [teamName, data?.isAlive]);
-
-  useEffect(() => {
     if (!projectId) return;
 
     let cancelled = false;
     setSessionsLoading(true);
-    setSessionsError(null);
 
     void (async () => {
       try {
@@ -1403,10 +1210,8 @@ export const TeamDetailView = ({
         if (!cancelled) {
           setSessions(result);
         }
-      } catch (e) {
-        if (!cancelled) {
-          setSessionsError(e instanceof Error ? e.message : '加载会话失败');
-        }
+      } catch {
+        // Runtime sessions remain an internal context source and are best-effort.
       } finally {
         if (!cancelled) {
           setSessionsLoading(false);
@@ -1482,29 +1287,6 @@ export const TeamDetailView = ({
       return nextMember;
     });
   }, [data, leadBranch, members, trackedBranches]);
-  const resolvedMemberColorMap = useMemo(
-    () => buildMemberColorMap(membersWithLiveBranches),
-    [membersWithLiveBranches]
-  );
-
-  // Filter sessions to team-only using sessionHistory + leadSessionId
-  const teamSessionIds = useMemo(() => {
-    const sessionIds = new Set<string>();
-    if (data?.config.leadSessionId) {
-      sessionIds.add(data.config.leadSessionId);
-    }
-    if (data?.config.sessionHistory) {
-      for (const id of data.config.sessionHistory) {
-        sessionIds.add(id);
-      }
-    }
-    return sessionIds;
-  }, [data?.config.leadSessionId, data?.config.sessionHistory]);
-
-  const teamSessions = useMemo(() => {
-    return sessions.filter((s) => teamSessionIds.has(s.id));
-  }, [sessions, teamSessionIds]);
-
   const activeMembers = useStableActiveMembers(membersWithLiveBranches);
 
   const activeTeammateCount = useMemo(
@@ -1517,14 +1299,6 @@ export const TeamDetailView = ({
   const taskMapRef = useRef(taskMap);
   taskMapRef.current = taskMap;
 
-  const handleReplyToMessage = useCallback((message: { from: string; text: string }) => {
-    setSendDialogRecipient(message.from);
-    setSendDialogDefaultText(undefined);
-    setSendDialogDefaultChip(undefined);
-    setReplyQuote({ from: message.from, text: stripAgentBlocks(message.text) });
-    setSendDialogOpen(true);
-  }, []);
-
   const openLaunchDialog = useCallback((mode: TeamLaunchDialogMode) => {
     setLaunchDialogState({ open: true, mode });
   }, []);
@@ -1532,27 +1306,6 @@ export const TeamDetailView = ({
   const closeLaunchDialog = useCallback(() => {
     setLaunchDialogState((prev) => ({ ...prev, open: false }));
   }, []);
-
-  const handleRestartTeam = useCallback(() => {
-    openLaunchDialog('relaunch');
-  }, [openLaunchDialog]);
-
-  const handleStartCcConnectTeam = useCallback(() => {
-    void (async () => {
-      if (!data?.config.projectPath) {
-        openLaunchDialog('launch');
-        return;
-      }
-      await api.teams.launchTeam({
-        teamName,
-        cwd: data.config.projectPath,
-      });
-      window.setTimeout(() => {
-        void fetchTeams();
-        void selectTeam(teamName);
-      }, 1500);
-    })();
-  }, [data?.config.projectPath, fetchTeams, openLaunchDialog, selectTeam, teamName]);
 
   const handleLaunchDialogSubmit = useCallback(
     async (request: TeamLaunchRequest): Promise<void> => {
@@ -1580,36 +1333,6 @@ export const TeamDetailView = ({
       await Promise.all([fetchTeams(), selectTeam(teamName)]);
     },
     [data?.isAlive, fetchTeams, launchTeam, selectTeam, teamName]
-  );
-
-  const handleRestartTeamFromEdit = useCallback(async (): Promise<void> => {
-    await Promise.all([fetchTeams(), selectTeam(teamName)]);
-  }, [fetchTeams, selectTeam, teamName]);
-
-  const handleSaveAndRestartFromEdit = useCallback(
-    async (runtimeConfig: {
-      providerId: TeamProviderId;
-      model: string | undefined;
-      effort: EffortLevel | undefined;
-      fastMode: TeamFastMode | undefined;
-      clearContext: boolean;
-    }): Promise<void> => {
-      if (!data?.config.projectPath) {
-        throw new Error('团队缺少项目路径，无法自动重启。');
-      }
-      await api.teams.stop(teamName);
-      const request: TeamLaunchRequest = {
-        teamName,
-        cwd: data.config.projectPath,
-        providerId: runtimeConfig.providerId,
-        model: runtimeConfig.model,
-        effort: runtimeConfig.effort,
-        fastMode: runtimeConfig.fastMode,
-        clearContext: runtimeConfig.clearContext,
-      };
-      await launchTeam(request);
-    },
-    [data?.config.projectPath, launchTeam, teamName]
   );
 
   const handleRestartMember = useCallback(
@@ -1671,13 +1394,17 @@ export const TeamDetailView = ({
     [createTeamTask, teamName]
   );
 
-  const handleSendMessageToMember = useCallback((member: ResolvedTeamMember) => {
-    setSendDialogRecipient(member.name);
-    setSendDialogDefaultText(undefined);
-    setSendDialogDefaultChip(undefined);
-    setReplyQuote(undefined);
-    setSendDialogOpen(true);
-  }, []);
+  const handleSendMessageToMember = useCallback(
+    (member: ResolvedTeamMember) => {
+      setPendingInboxThreadIntent({
+        teamName,
+        memberName: member.name,
+        compose: true,
+      });
+      openTasksTab();
+    },
+    [openTasksTab, setPendingInboxThreadIntent, teamName]
+  );
 
   const handleTaskIdClick = useCallback(
     (taskId: string) => {
@@ -1695,16 +1422,21 @@ export const TeamDetailView = ({
     [taskMap, data?.tasks]
   );
 
-  const handleEditorAction = useCallback((action: EditorSelectionAction) => {
-    const chip = createChipFromSelection(action, []) ?? undefined;
-    if (action.type === 'sendMessage') {
-      setSendDialogDefaultText(chip ? undefined : action.formattedContext);
-      setSendDialogDefaultChip(chip);
-      setSendDialogRecipient(undefined);
-      setReplyQuote(undefined);
-      setSendDialogOpen(true);
-    }
-  }, []);
+  const handleEditorAction = useCallback(
+    (action: EditorSelectionAction) => {
+      if (action.type !== 'sendMessage') return;
+      const lead = activeMembers.find((member) => isLeadMember(member)) ?? activeMembers[0];
+      if (!lead) return;
+      setPendingInboxThreadIntent({
+        teamName,
+        memberName: lead.name,
+        compose: true,
+        initialText: action.formattedContext,
+      });
+      openTasksTab();
+    },
+    [activeMembers, openTasksTab, setPendingInboxThreadIntent, teamName]
+  );
 
   // Pick up pending review request from GlobalTaskDetailDialog
   useEffect(() => {
@@ -1733,36 +1465,6 @@ export const TeamDetailView = ({
     useStore.getState().closeMemberProfile();
   }, [data, pendingMemberProfile, membersWithLiveBranches]);
 
-  const handleViewChanges = useCallback(
-    (taskId: string) => {
-      const task = taskMap.get(taskId);
-      setReviewDialogState({
-        open: true,
-        mode: 'task',
-        taskId,
-        taskChangeRequestOptions: task ? buildTaskChangeRequestOptions(task) : {},
-      });
-    },
-    [taskMap]
-  );
-
-  const handleViewChangesForFile = useCallback(
-    (taskId: string, filePath?: string) => {
-      const task = taskMap.get(taskId);
-      setReviewDialogState({
-        open: true,
-        mode: 'task',
-        taskId,
-        initialFilePath: filePath,
-        taskChangeRequestOptions: task ? buildTaskChangeRequestOptions(task) : {},
-      });
-      if (filePath) {
-        selectReviewFile(filePath);
-      }
-    },
-    [selectReviewFile, taskMap]
-  );
-
   const handleDeleteTeam = useCallback((): void => {
     setDeleteConfirmOpen(true);
   }, []);
@@ -1771,7 +1473,7 @@ export const TeamDetailView = ({
     setDeleting(true);
     void (async () => {
       try {
-        const result = await deleteTeam(teamName);
+        await deleteTeam(teamName);
         await fetchTeams();
         setDeleteConfirmOpen(false);
         if (tabId) closeTab(tabId);
@@ -1784,42 +1486,6 @@ export const TeamDetailView = ({
       }
     })();
   }, [teamName, deleteTeam, openTeamsTab, closeTab, tabId, fetchTeams]);
-
-  const sharedMessagesPanelProps = useMemo<SharedTeamMessagesPanelProps>(
-    () => ({
-      teamName,
-      onPositionChange: keepMessagesInline,
-      mountPoint: null,
-      members: activeMembers,
-      tasks: data?.tasks ?? [],
-      isTeamAlive: data?.isAlive,
-      timeWindow: null,
-      sessions: ccSessions,
-      currentLeadSessionId: data?.config.leadSessionId,
-      pendingRepliesByMember,
-      onPendingReplyChange: setPendingRepliesByMember,
-      onMemberClick: handleSelectMember,
-      onTaskIdClick: handleTaskIdClick,
-      onReplyToMessage: handleReplyToMessage,
-      onRestartTeam: handleRestartTeam,
-      inlineScrollContainerRef: contentRef,
-      showPositionControls: false,
-    }),
-    [
-      activeMembers,
-      data?.config.leadSessionId,
-      data?.isAlive,
-      data?.tasks,
-      ccSessions,
-      handleReplyToMessage,
-      handleRestartTeam,
-      handleSelectMember,
-      handleTaskIdClick,
-      pendingRepliesByMember,
-      teamName,
-      keepMessagesInline,
-    ]
-  );
 
   if (!teamName) {
     return (
@@ -2029,6 +1695,18 @@ export const TeamDetailView = ({
                         size="sm"
                         className="h-7 gap-1.5 px-2.5 text-xs text-[var(--color-text-secondary)]"
                         disabled={isTeamProvisioning}
+                        onClick={() => openLaunchDialog(data.isAlive ? 'relaunch' : 'launch')}
+                      >
+                        <Play size={12} />
+                        {data.isAlive ? '重启' : '启动'}
+                      </Button>
+                    ) : null}
+                    {teamName !== SYSTEM_MANAGER_TEAM_NAME ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1.5 px-2.5 text-xs text-[var(--color-text-secondary)]"
+                        disabled={isTeamProvisioning}
                         onClick={() => setBindingDialogOpen(true)}
                       >
                         <Link size={12} />
@@ -2181,77 +1859,6 @@ export const TeamDetailView = ({
                 />
               </CollapsibleTeamSection>
 
-              <CollapsibleTeamSection
-                sectionId="advanced-diagnostics"
-                title="高级诊断"
-                icon={<Terminal size={14} />}
-                defaultOpen={false}
-              >
-                <div className="space-y-4">
-                  {(data.processes?.length ?? 0) > 0 ? (
-                    <section aria-labelledby="team-runtime-processes-heading">
-                      <div className="mb-2 flex items-center gap-2">
-                        <h3
-                          id="team-runtime-processes-heading"
-                          className="text-xs font-medium text-[var(--color-text-secondary)]"
-                        >
-                          运行进程
-                        </h3>
-                        {data.processes.some((process) => !process.stoppedAt) ? (
-                          <span className="relative inline-flex size-2 shrink-0" title="活跃中">
-                            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-50" />
-                            <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
-                          </span>
-                        ) : null}
-                      </div>
-                      <ProcessesSection
-                        teamName={teamName}
-                        members={membersWithLiveBranches}
-                        processes={data.processes}
-                      />
-                    </section>
-                  ) : null}
-
-                  <section aria-labelledby="team-runtime-records-heading">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <div>
-                        <h3
-                          id="team-runtime-records-heading"
-                          className="text-xs font-medium text-[var(--color-text-secondary)]"
-                        >
-                          运行记录
-                        </h3>
-                        <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">
-                          仅用于运行时排查；日常交流请前往收件箱。
-                        </p>
-                      </div>
-                      {ccSessions.length > 0 ? (
-                        <button
-                          type="button"
-                          className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
-                          onClick={() => void handleExportAllCcSessions()}
-                          disabled={ccExporting}
-                          title="导出运行诊断记录"
-                        >
-                          {ccExporting ? (
-                            <Loader2 size={12} className="animate-spin" />
-                          ) : (
-                            <Download size={12} />
-                          )}
-                          导出诊断
-                        </button>
-                      ) : null}
-                    </div>
-                    <CcSessionsSection
-                      teamName={teamName}
-                      sessions={ccSessions}
-                      loading={ccSessionsLoading}
-                      error={ccSessionsError}
-                    />
-                  </section>
-                </div>
-              </CollapsibleTeamSection>
-
               <ReviewDialog
                 open={requestChangesTaskId !== null}
                 teamName={teamName}
@@ -2305,13 +1912,15 @@ export const TeamDetailView = ({
                 launchParams={launchParams}
                 onClose={closeSelectedMemberDialog}
                 onSendMessage={() => {
-                  const name = selectedMember?.name ?? '';
+                  const memberName = selectedMember?.name?.trim() ?? '';
+                  if (!memberName) return;
                   closeSelectedMemberDialog();
-                  setSendDialogRecipient(name || undefined);
-                  setSendDialogDefaultText(undefined);
-                  setSendDialogDefaultChip(undefined);
-                  setReplyQuote(undefined);
-                  setSendDialogOpen(true);
+                  setPendingInboxThreadIntent({
+                    teamName,
+                    memberName,
+                    compose: true,
+                  });
+                  openTasksTab();
                 }}
                 onAssignTask={() => {
                   if (!selectedMember) return;
@@ -2434,62 +2043,6 @@ export const TeamDetailView = ({
                 onClose={closeLaunchDialog}
                 onLaunch={handleLaunchDialogSubmit}
                 onRelaunch={handleRelaunchDialogSubmit}
-              />
-
-              <SendMessageDialog
-                open={sendDialogOpen}
-                teamName={teamName}
-                members={activeMembers}
-                defaultRecipient={sendDialogRecipient}
-                defaultText={sendDialogDefaultText}
-                defaultChip={sendDialogDefaultChip}
-                quotedMessage={replyQuote}
-                isTeamAlive={data.isAlive}
-                sending={sendingMessage}
-                sendError={sendMessageError}
-                sendWarning={sendMessageWarning}
-                sendDebugDetails={sendMessageDebugDetails}
-                lastResult={lastSendMessageResult}
-                onSend={async (member, text, summary, attachments, actionMode, taskRefs) => {
-                  const sentAtMs = Date.now();
-                  setPendingRepliesByMember((prev) => ({ ...prev, [member]: sentAtMs }));
-                  try {
-                    const result = await sendTeamMessage(teamName, {
-                      member,
-                      text,
-                      summary,
-                      attachments,
-                      actionMode,
-                      taskRefs,
-                    });
-                    if (
-                      result?.runtimeDelivery?.attempted === true &&
-                      result.runtimeDelivery.delivered === false
-                    ) {
-                      setPendingRepliesByMember((prev) => {
-                        if (prev[member] !== sentAtMs) return prev;
-                        const next = { ...prev };
-                        delete next[member];
-                        return next;
-                      });
-                    }
-                    return result;
-                  } catch (error) {
-                    setPendingRepliesByMember((prev) => {
-                      if (prev[member] !== sentAtMs) return prev;
-                      const next = { ...prev };
-                      delete next[member];
-                      return next;
-                    });
-                    throw error;
-                  }
-                }}
-                onClose={() => {
-                  setSendDialogOpen(false);
-                  setReplyQuote(undefined);
-                  setSendDialogDefaultText(undefined);
-                  setSendDialogDefaultChip(undefined);
-                }}
               />
 
               <ChangeReviewDialog
