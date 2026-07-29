@@ -15,10 +15,10 @@ function getBaseUrl(): string {
   const params = new URLSearchParams(window.location.search);
   const explicitPort = params.get('port');
   if (explicitPort) return `http://127.0.0.1:${parseInt(explicitPort, 10)}`;
-  const backendPort = 5680;
-  if (window.location.port && window.location.port !== String(backendPort)) {
-    return `http://127.0.0.1:${backendPort}`;
-  }
+
+  // Provider requests use the Workbench's existing /api/v1 bridge proxy.
+  // Keeping them same-origin supports production, alternate preview ports,
+  // and Vite's development proxy without hard-coding the default port.
   return window.location.origin;
 }
 
