@@ -46,6 +46,7 @@ function createHarness(overrides: Partial<Dependencies> = {}) {
       slug: teamName === 'project-a' ? 'team-a' : teamName,
       displayName: teamName === 'project-a' ? 'Team Alpha' : teamName,
     })),
+    broadcastTaskChange: vi.fn(),
     reply500: (error) => ({
       ok: false,
       error: error instanceof Error ? error.message : String(error),
@@ -124,7 +125,7 @@ describe('team task routes', () => {
     expect(blockedPatch.statusCode).toBe(409);
     expect(blockedPatch.json()).toEqual({
       ok: false,
-      error: 'Agent 正在处理中，不能手动完成或取消。请等待 agent 调用 complete_task。',
+      error: 'Agent 正在处理中，不能手动完成或取消。请等待 agent 通过 Hermit CLI 提交结果。',
     });
     expect(blockedDelete.statusCode).toBe(409);
     expect(blockedDelete.json()).toEqual({
@@ -194,6 +195,87 @@ describe('team task routes', () => {
     expect((await failed.app.inject({ method: 'GET', url: '/api/teams/tasks' })).json()).toEqual(
       []
     );
+  });
+
+  it('provides a team-scoped CLI task bus for list, claim, comment, clarification, and completion', async () => {
+    let stored = task({ assignee: 'team-b' });
+    const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
+      stored = { ...stored, ...patch, updatedAt: '2026-01-01T00:00:02.000Z' };
+      return stored;
+    });
+    const harness = createHarness({
+      listProjects: vi.fn(async () => [{ name: 'project-a' }]),
+      readTasks: vi.fn(async () => [stored]),
+      patchTask,
+    });
+
+    const listed = await harness.app.inject({
+      method: 'GET',
+      url: '/api/task-bus/tasks?team=team-b',
+    });
+    expect(listed.json()).toEqual([
+      expect.objectContaining({ id: stored.id, owner: 'team-b', teamName: 'team-a' }),
+    ]);
+
+    const forbidden = await harness.app.inject({
+      method: 'POST',
+      url: `/api/task-bus/tasks/${stored.id}/claim`,
+      payload: { team: 'team-c' },
+    });
+    expect(forbidden.statusCode).toBe(403);
+
+    const claimed = await harness.app.inject({
+      method: 'POST',
+      url: `/api/task-bus/tasks/${stored.id.slice(0, 12)}/claim`,
+      payload: { team: 'team-b' },
+    });
+    expect(claimed.json()).toEqual(
+      expect.objectContaining({
+        ok: true,
+        task: expect.objectContaining({ status: 'in_progress' }),
+      })
+    );
+
+    const commented = await harness.app.inject({
+      method: 'POST',
+      url: `/api/task-bus/tasks/${stored.id}/comments`,
+      payload: { team: 'team-b', text: '正在处理' },
+    });
+    expect(commented.json()).toEqual(
+      expect.objectContaining({
+        ok: true,
+        comment: expect.objectContaining({ author: 'team-b', text: '正在处理' }),
+      })
+    );
+
+    const clarified = await harness.app.inject({
+      method: 'POST',
+      url: `/api/task-bus/tasks/${stored.id}/clarification`,
+      payload: { team: 'team-b', target: 'user' },
+    });
+    expect(clarified.json()).toEqual(
+      expect.objectContaining({
+        ok: true,
+        task: expect.objectContaining({ needsClarification: 'user' }),
+      })
+    );
+
+    const completed = await harness.app.inject({
+      method: 'POST',
+      url: `/api/task-bus/tasks/${stored.id}/complete`,
+      payload: { team: 'team-b', result: '任务已完成' },
+    });
+    expect(completed.json()).toEqual(
+      expect.objectContaining({
+        ok: true,
+        task: expect.objectContaining({ status: 'completed', result: '任务已完成' }),
+      })
+    );
+    expect(stored.status).toBe('done');
+    expect(stored.comments).toEqual([
+      expect.objectContaining({ author: 'team-b', text: '正在处理' }),
+    ]);
+    expect(harness.dependencies.broadcastTaskChange).toHaveBeenCalledTimes(4);
   });
 
   it('keeps request-review and review alias behavior identical, including the doing guard', async () => {

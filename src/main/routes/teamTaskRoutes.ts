@@ -29,6 +29,7 @@ interface TeamTaskRouteDependencies {
     displayName?: string;
     deletedAt?: string;
   }>;
+  broadcastTaskChange?(teamName: string, taskId: string): void;
   reply500(error: unknown): { ok: boolean; error: string };
 }
 
@@ -112,6 +113,62 @@ function isSoftDeletedTask(task: Pick<Task, 'result'>): boolean {
 
 export function activeTasks<T extends Pick<Task, 'result'>>(tasks: T[]): T[] {
   return tasks.filter((task) => !isSoftDeletedTask(task));
+}
+
+interface TaskBusMatch {
+  task: Task;
+  ownerTeamName: string;
+  ownerTeamSlug: string;
+}
+
+async function resolveTaskBusTask(
+  dependencies: TeamTaskRouteDependencies,
+  taskId: string
+): Promise<TaskBusMatch | 'ambiguous' | null> {
+  const matches: TaskBusMatch[] = [];
+  const projects = await dependencies.listProjects();
+  for (const project of projects) {
+    try {
+      const [tasks, manifest] = await Promise.all([
+        dependencies.readTasks(project.name),
+        dependencies.readTeamManifest(project.name).catch(() => null),
+      ]);
+      for (const task of activeTasks(tasks)) {
+        if (task.id === taskId || task.id.startsWith(taskId)) {
+          matches.push({
+            task,
+            ownerTeamName: project.name,
+            ownerTeamSlug: manifest?.slug || task.teamSlug || project.name,
+          });
+        }
+      }
+    } catch {
+      // Ignore projects without a readable local task board.
+    }
+  }
+  if (matches.length === 0) return null;
+  if (matches.length > 1) return 'ambiguous';
+  return matches[0];
+}
+
+function canReadTaskBusTask(match: TaskBusMatch, actorTeam: string): boolean {
+  return match.ownerTeamSlug === actorTeam || match.task.assignee === actorTeam;
+}
+
+function canExecuteTaskBusTask(match: TaskBusMatch, actorTeam: string): boolean {
+  return (match.task.assignee ?? match.ownerTeamSlug) === actorTeam;
+}
+
+function normalizeTaskBusActor(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const actor = value.trim();
+  return /^[a-zA-Z0-9:_-]+$/.test(actor) ? actor : null;
+}
+
+function normalizeTaskBusText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  return text ? text : null;
 }
 
 function normalizeTaskRefs(value: unknown): TaskRef[] | undefined {
@@ -210,7 +267,7 @@ function registerCoreRoutes(app: FastifyInstance, dependencies: TeamTaskRouteDep
       if (isManualInProgressExitBlocked(existingTask?.status, nextStatus)) {
         return reply.code(409).send({
           ok: false,
-          error: 'Agent 正在处理中，不能手动完成或取消。请等待 agent 调用 complete_task。',
+          error: 'Agent 正在处理中，不能手动完成或取消。请等待 agent 通过 Hermit CLI 提交结果。',
         });
       }
 
@@ -270,7 +327,7 @@ function createRequestReviewHandler(dependencies: TeamTaskRouteDependencies): Re
       if (existingTask?.status === 'doing') {
         return reply.code(409).send({
           ok: false,
-          error: 'Agent 正在处理中，不能手动提交审核。请等待 agent 调用 complete_task。',
+          error: 'Agent 正在处理中，不能手动提交审核。请等待 agent 通过 Hermit CLI 提交结果。',
         });
       }
       const task = await dependencies.patchTask(request.params.name, request.params.id, {
@@ -311,6 +368,150 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
     }
   });
 
+  app.get<{ Querystring: { team?: string } }>('/api/task-bus/tasks', async (request, reply) => {
+    const actorTeam = normalizeTaskBusActor(request.query?.team);
+    if (!actorTeam) return reply.code(400).send({ ok: false, error: 'team required' });
+    try {
+      const visibleTasks: GlobalTaskResponse[] = [];
+      const projects = await dependencies.listProjects();
+      for (const project of projects) {
+        try {
+          const [tasks, manifest] = await Promise.all([
+            dependencies.readTasks(project.name),
+            dependencies.readTeamManifest(project.name).catch(() => null),
+          ]);
+          const ownerTeamSlug = manifest?.slug || project.name;
+          for (const task of activeTasks(tasks)) {
+            const match = { task, ownerTeamName: project.name, ownerTeamSlug };
+            if (!canReadTaskBusTask(match, actorTeam)) continue;
+            visibleTasks.push({
+              ...toTeamTask(task),
+              teamName: ownerTeamSlug,
+              teamDisplayName: manifest?.displayName || ownerTeamSlug,
+              teamDeleted: Boolean(manifest?.deletedAt),
+            });
+          }
+        } catch {
+          // Ignore projects without a readable local task board.
+        }
+      }
+      return visibleTasks;
+    } catch (error) {
+      return reply.code(500).send(dependencies.reply500(error));
+    }
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { team?: string };
+  }>('/api/task-bus/tasks/:id/claim', async (request, reply) => {
+    const actorTeam = normalizeTaskBusActor(request.body?.team);
+    if (!actorTeam) return reply.code(400).send({ ok: false, error: 'team required' });
+    const match = await resolveTaskBusTask(dependencies, request.params.id);
+    if (!match) return reply.code(404).send({ ok: false, error: 'task not found' });
+    if (match === 'ambiguous') {
+      return reply.code(409).send({ ok: false, error: 'task id is ambiguous' });
+    }
+    if (!canExecuteTaskBusTask(match, actorTeam)) {
+      return reply.code(403).send({ ok: false, error: 'task is not assigned to this team' });
+    }
+    if (match.task.status === 'done') {
+      return reply.code(409).send({ ok: false, error: 'completed task cannot be claimed' });
+    }
+    const task =
+      match.task.status === 'doing'
+        ? match.task
+        : await dependencies.patchTask(match.ownerTeamName, match.task.id, { status: 'doing' });
+    dependencies.broadcastTaskChange?.(match.ownerTeamSlug, match.task.id);
+    return { ok: true, task: toTeamTask(task), teamName: match.ownerTeamSlug };
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { team?: string; text?: string };
+  }>('/api/task-bus/tasks/:id/comments', async (request, reply) => {
+    const actorTeam = normalizeTaskBusActor(request.body?.team);
+    const text = normalizeTaskBusText(request.body?.text);
+    if (!actorTeam || !text) {
+      return reply.code(400).send({ ok: false, error: 'team and text required' });
+    }
+    const match = await resolveTaskBusTask(dependencies, request.params.id);
+    if (!match) return reply.code(404).send({ ok: false, error: 'task not found' });
+    if (match === 'ambiguous') {
+      return reply.code(409).send({ ok: false, error: 'task id is ambiguous' });
+    }
+    if (!canReadTaskBusTask(match, actorTeam)) {
+      return reply.code(403).send({ ok: false, error: 'task is not visible to this team' });
+    }
+    const comment: TaskComment = {
+      id: randomUUID(),
+      author: actorTeam,
+      text,
+      createdAt: new Date().toISOString(),
+      type: 'regular',
+    };
+    const task = await dependencies.patchTask(match.ownerTeamName, match.task.id, {
+      comments: [...(match.task.comments ?? []), comment],
+    });
+    dependencies.broadcastTaskChange?.(match.ownerTeamSlug, match.task.id);
+    return { ok: true, comment, task: toTeamTask(task), teamName: match.ownerTeamSlug };
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { team?: string; target?: 'lead' | 'user' | 'none' };
+  }>('/api/task-bus/tasks/:id/clarification', async (request, reply) => {
+    const actorTeam = normalizeTaskBusActor(request.body?.team);
+    const target = request.body?.target;
+    if (!actorTeam || !target || !['lead', 'user', 'none'].includes(target)) {
+      return reply
+        .code(400)
+        .send({ ok: false, error: 'team and target (lead, user, none) required' });
+    }
+    const match = await resolveTaskBusTask(dependencies, request.params.id);
+    if (!match) return reply.code(404).send({ ok: false, error: 'task not found' });
+    if (match === 'ambiguous') {
+      return reply.code(409).send({ ok: false, error: 'task id is ambiguous' });
+    }
+    if (!canReadTaskBusTask(match, actorTeam)) {
+      return reply.code(403).send({ ok: false, error: 'task is not visible to this team' });
+    }
+    const task = await dependencies.patchTask(match.ownerTeamName, match.task.id, {
+      needsClarification: target === 'none' ? undefined : target,
+    });
+    dependencies.broadcastTaskChange?.(match.ownerTeamSlug, match.task.id);
+    return { ok: true, task: toTeamTask(task), teamName: match.ownerTeamSlug };
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { team?: string; result?: string };
+  }>('/api/task-bus/tasks/:id/complete', async (request, reply) => {
+    const actorTeam = normalizeTaskBusActor(request.body?.team);
+    const result = normalizeTaskBusText(request.body?.result);
+    if (!actorTeam || !result) {
+      return reply.code(400).send({ ok: false, error: 'team and result required' });
+    }
+    const match = await resolveTaskBusTask(dependencies, request.params.id);
+    if (!match) return reply.code(404).send({ ok: false, error: 'task not found' });
+    if (match === 'ambiguous') {
+      return reply.code(409).send({ ok: false, error: 'task id is ambiguous' });
+    }
+    if (!canExecuteTaskBusTask(match, actorTeam)) {
+      return reply.code(403).send({ ok: false, error: 'task is not assigned to this team' });
+    }
+    if (match.task.status !== 'doing') {
+      return reply.code(409).send({ ok: false, error: 'task must be claimed before completion' });
+    }
+    const task = await dependencies.patchTask(match.ownerTeamName, match.task.id, {
+      status: 'done',
+      result,
+      needsClarification: undefined,
+    });
+    dependencies.broadcastTaskChange?.(match.ownerTeamSlug, match.task.id);
+    return { ok: true, task: toTeamTask(task), teamName: match.ownerTeamSlug };
+  });
+
   app.post<{ Params: { name: string; id: string } }>(
     '/api/teams/:name/tasks/:id/request-review',
     createRequestReviewHandler(dependencies)
@@ -332,7 +533,7 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
         if (isManualInProgressExitBlocked(existingTask?.status, nextStatus)) {
           return reply.code(409).send({
             ok: false,
-            error: 'Agent 正在处理中，不能手动完成或取消。请等待 agent 调用 complete_task。',
+            error: 'Agent 正在处理中，不能手动完成或取消。请等待 agent 通过 Hermit CLI 提交结果。',
           });
         }
         const task = await dependencies.patchTask(request.params.name, request.params.id, {

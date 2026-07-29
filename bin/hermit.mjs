@@ -320,6 +320,7 @@ import {
   OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL,
   DEV_AUTH_UNLOCK_CODE,
 } from './lib/auth.mjs';
+import { printTasksCommand } from './lib/tasks.mjs';
 import {
   listDirectoryNames,
   isSafeTeamArg,
@@ -338,7 +339,6 @@ import {
   failTeamCreate,
   createLocalTeam,
   printTeamsCreate,
-  printTasksList,
 } from './lib/teams.mjs';
 
 // Windows console UTF-8: PowerShell/cmd default to the system ANSI code page
@@ -400,7 +400,17 @@ ${BRAND.stylizedName} - 本地 AI runtime 工作区控制面
   create-digital-worker --name <name> [--description <text>] [--bind-project <id>] [--work-dir <path>] [--agent-type <runtime>] [--platform <channel>] [--platform-options <json>] [--json]
                      开通数字员工；扫码渠道返回二维码链接，手动渠道按 JSON 绑定凭据
   tasks list --team <team> [--json]
-                     查看某个本地团队的活跃任务
+                     查看分配给数字员工或由其创建的任务
+  tasks create --team <team> --title <text> [--description <text>] [--assignee <team>] [--json]
+                     在 Hermit 看板创建任务
+  tasks claim --team <team> --id <task-id> [--json]
+                     认领并开始执行任务
+  tasks comment --team <team> --id <task-id> --text <text> [--json]
+                     向任务追加协作评论
+  tasks clarify --team <team> --id <task-id> --target lead|user|none [--json]
+                     请求或清除任务澄清状态
+  tasks complete --team <team> --id <task-id> --result <text> [--json]
+                     提交任务结果并完成任务
   usage status [--json]
                      查看本地 Claude JSONL telemetry 状态，不上传
   usage today [--json]
@@ -634,8 +644,8 @@ if (commandArgs[0] === 'create-digital-worker') {
   process.exit(result.ok ? 0 : 1);
 }
 
-if (commandArgs[0] === 'tasks' && commandArgs[1] === 'list') {
-  printTasksList();
+if (commandArgs[0] === 'tasks') {
+  await printTasksCommand();
 }
 
 // `hermit create-feishu-assistant` — create a Feishu personal assistant via hermit-bridge.
@@ -749,7 +759,7 @@ if (commandArgs.length > 0 && !daemonRequested && !daemonChild) {
   if (jsonRequested) printJson(result, 1);
   console.error(`${brandLogPrefix()} 未知命令：${command}`);
   console.error(
-    `${brandLogPrefix()} 可用命令：init | web | status | doctor | update | restart | services | services start/stop | teams list/create | tasks list | usage status/today/report/start/stop/autostart | auth status/login/logout | stop`
+    `${brandLogPrefix()} 可用命令：init | web | status | doctor | update | restart | services | services start/stop | teams list/create | tasks list/create/claim/comment/clarify/complete | usage status/today/report/start/stop/autostart | auth status/login/logout | stop`
   );
   process.exit(1);
 }

@@ -1064,7 +1064,7 @@ function isLocalCommandAllowedWithoutLogin() {
   if (commandArgs[0] === 'usage') return ['status', 'today', 'report', 'start', 'stop', 'autostart'].includes(commandArgs[1]);
   if (commandArgs[0] === 'collaboration' && commandArgs[1] === 'start') return true;
   if (commandArgs[0] === 'teams') return ['list', 'create'].includes(commandArgs[1]);
-  if (commandArgs[0] === 'tasks' && commandArgs[1] === 'list') return true;
+  if (commandArgs[0] === 'tasks') return ['list', 'create', 'claim', 'comment', 'clarify', 'complete'].includes(commandArgs[1]);
   return false;
 }
 

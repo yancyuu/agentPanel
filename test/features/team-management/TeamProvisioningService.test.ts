@@ -18,8 +18,23 @@ function makeCcClient() {
   return {
     createProject: vi.fn().mockResolvedValue({ message: 'ok', restart_required: false }),
     restart: vi.fn().mockResolvedValue(undefined),
-    getProject: vi.fn().mockResolvedValue({ name: 'mock', agent_type: 'claudecode', platforms: [], work_dir: '/tmp', heartbeat: {}, settings: {}, sessions_count: 0, active_session_keys: [], agent_mode: 'auto' }),
-    getStatus: vi.fn().mockResolvedValue({ version: '1.0', uptime_seconds: 0, projects_count: 0, platforms_connected: 0 }),
+    getProject: vi.fn().mockResolvedValue({
+      name: 'mock',
+      agent_type: 'claudecode',
+      platforms: [],
+      work_dir: '/tmp',
+      heartbeat: {},
+      settings: {},
+      sessions_count: 0,
+      active_session_keys: [],
+      agent_mode: 'auto',
+    }),
+    getStatus: vi.fn().mockResolvedValue({
+      version: '1.0',
+      uptime_seconds: 0,
+      projects_count: 0,
+      platforms_connected: 0,
+    }),
     listProjects: vi.fn().mockResolvedValue([]),
   };
 }
@@ -78,19 +93,20 @@ describe('createTeam', () => {
       createCcProject: true,
     });
     expect(mockCc.createProject).toHaveBeenCalledWith(
-      'with-cc-project', 'codex', path.join(tmpDir, 'work2'), 'bridge', {}
+      'with-cc-project',
+      'codex',
+      path.join(tmpDir, 'work2'),
+      'bridge',
+      {}
     );
   });
 
   it('uses restart hook when project creation requires cc-connect restart', async () => {
     mockCc.createProject.mockResolvedValueOnce({ message: 'ok', restart_required: true });
     const restartCcConnect = vi.fn().mockResolvedValue(undefined);
-    const hookedSvc = new TeamProvisioningService(
-      mockCc as any,
-      mockBridge as any,
-      workspace,
-      { restartCcConnect }
-    );
+    const hookedSvc = new TeamProvisioningService(mockCc as any, mockBridge as any, workspace, {
+      restartCcConnect,
+    });
 
     await hookedSvc.createTeam({
       displayName: 'restart-team',
@@ -104,24 +120,25 @@ describe('createTeam', () => {
     expect(mockCc.restart).not.toHaveBeenCalled();
   });
 
-  it('injects MCP config and ops runbook context for claudecode harness', async () => {
-    const workDir = path.join(tmpDir, 'mcp-work');
+  it('injects CLI task-bus and ops runbook instructions without creating MCP config', async () => {
+    const workDir = path.join(tmpDir, 'cli-task-bus-work');
     fs.mkdirSync(workDir, { recursive: true });
     await svc.createTeam({
-      displayName: 'mcp-team',
-      bindProject: 'mcp-project',
+      displayName: 'cli-task-bus-team',
+      bindProject: 'cli-task-bus-project',
       harness: 'claudecode',
       workDir,
       createCcProject: false,
     });
-    const settingsPath = path.join(workDir, '.claude', 'settings.json');
-    expect(fs.existsSync(settingsPath)).toBe(true);
-    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    expect(settings.mcpServers['hermit-tasks']).toBeDefined();
-    expect(settings.mcpServers['hermit-tasks'].url).toContain('/mcp');
+    expect(fs.existsSync(path.join(workDir, '.claude', 'settings.json'))).toBe(false);
 
     const claudeMd = fs.readFileSync(path.join(workDir, 'CLAUDE.md'), 'utf8');
     expect(claudeMd).toContain('## Hermit Team Context');
+    expect(claudeMd).toContain("Hermit's CLI task bus");
+    expect(claudeMd).toContain('agentcli --port');
+    expect(claudeMd).toContain('tasks claim --team');
+    expect(claudeMd).toContain('tasks complete --team');
+    expect(claudeMd).toContain('Do not use MCP, Skills');
     expect(claudeMd).toContain('## Hermit Ops Runbook Context');
     expect(claudeMd).toContain(HERMIT_OPS_GUIDE_URL);
     expect(claudeMd).toContain('/hermit:doctor');
@@ -130,7 +147,7 @@ describe('createTeam', () => {
     expect(claudeMd).not.toContain('cc-connect Bridge / Management API');
   });
 
-  it('does NOT inject MCP config or CLAUDE.md instructions for codex harness', async () => {
+  it('injects the same CLI task-bus contract into AGENTS.md for codex', async () => {
     const workDir = path.join(tmpDir, 'codex-work');
     fs.mkdirSync(workDir, { recursive: true });
     await svc.createTeam({
@@ -140,9 +157,12 @@ describe('createTeam', () => {
       workDir,
       createCcProject: false,
     });
-    const settingsPath = path.join(workDir, '.claude', 'settings.json');
-    expect(fs.existsSync(settingsPath)).toBe(false);
+    expect(fs.existsSync(path.join(workDir, '.claude', 'settings.json'))).toBe(false);
     expect(fs.existsSync(path.join(workDir, 'CLAUDE.md'))).toBe(false);
+    const agentsMd = fs.readFileSync(path.join(workDir, 'AGENTS.md'), 'utf8');
+    expect(agentsMd).toContain('agentcli --port');
+    expect(agentsMd).toContain('tasks comment --team');
+    expect(agentsMd).toContain('Do not use MCP, Skills');
   });
 });
 
@@ -177,6 +197,10 @@ describe('dispatchTask — 协同开关', () => {
     expect(call.project).toBe('target-cc');
     expect(call.content).toContain(task.id);
     expect(call.content).toContain('cross task');
+    expect(call.content).toContain(`tasks claim --team ${targetSlug} --id ${task.id}`);
+    expect(call.content).toContain(`tasks complete --team ${targetSlug} --id ${task.id}`);
+    expect(call.content).toContain('不要使用 MCP、Skills');
+    expect(call.content).not.toContain('claim_task');
   });
 
   it('skips dispatch when source team collaboration=false', async () => {
@@ -208,7 +232,10 @@ describe('dispatchTask — 协同开关', () => {
       workDir: path.join(tmpDir, 'src'),
       createCcProject: false,
     });
-    const task = await svc.createTask(sourceSlug, { title: 'ghost task', assignee: 'non-existent-team' });
+    const task = await svc.createTask(sourceSlug, {
+      title: 'ghost task',
+      assignee: 'non-existent-team',
+    });
     await expect(svc.dispatchTask(sourceSlug, task)).resolves.toBeUndefined();
     expect(mockBridge.sendUserMessage).not.toHaveBeenCalled();
   });

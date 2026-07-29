@@ -241,6 +241,8 @@ async function createWorkbenchServerUncached(
     ) => svc.dispatchTask(teamName, task),
     listProjects: () => cc.listProjects(),
     readTeamManifest: (teamName: string) => svc.readTeamManifest(teamName),
+    broadcastTaskChange: (teamName: string, taskId: string) =>
+      operations.broadcastSse('team-change', { type: 'task', teamName, taskId }),
     reply500: operations.reply500,
   };
   registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['core'] });

@@ -19,10 +19,10 @@ import {
   type TeamManifest,
   TeamWorkspaceService,
 } from './TeamWorkspaceService';
-import type { DiscoverableTeam } from '@shared/types/team';
 
 import type { HermitBridgeClient } from '../hermitBridge/HermitBridgeClient';
 import type { HermitBridgeConnection } from '../hermitBridge/HermitBridgeConnection';
+import type { DiscoverableTeam } from '@shared/types/team';
 
 const logger = createLogger('TeamProvisioningService');
 const TEAM_INSTRUCTIONS_BEGIN = '<!-- hermit:team-collaboration:start -->';
@@ -46,33 +46,15 @@ function removeManagedTeamInstructions(content: string): string {
   return next.replace(/\n{3,}/g, '\n\n').trimEnd();
 }
 
-async function injectHermitTasksMcpConfig(workDir: string): Promise<void> {
-  const settingsPath = path.join(workDir, '.claude', 'settings.json');
-  let settings: Record<string, unknown> = {};
-  try {
-    const raw = await fs.promises.readFile(settingsPath, 'utf8');
-    settings = JSON.parse(raw) as Record<string, unknown>;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw err;
-    }
+function instructionPathForHarness(workDir: string, harness: string): string {
+  if (harness === 'codex' || harness === 'opencode' || harness === 'pi') {
+    return path.join(workDir, 'AGENTS.md');
   }
-
-  const existingMcpServers =
-    settings.mcpServers && typeof settings.mcpServers === 'object'
-      ? (settings.mcpServers as Record<string, unknown>)
-      : {};
-  const port = process.env.PORT ?? '5680';
-  settings.mcpServers = {
-    ...existingMcpServers,
-    'hermit-tasks': {
-      type: 'sse',
-      url: `http://127.0.0.1:${port}/mcp`,
-    },
-  };
-
-  await fs.promises.mkdir(path.dirname(settingsPath), { recursive: true });
-  await fs.promises.writeFile(settingsPath, JSON.stringify(settings, null, 2));
+  if (harness === 'gemini') return path.join(workDir, 'GEMINI.md');
+  if (harness === 'cursor') {
+    return path.join(workDir, '.cursor', 'rules', 'hermit-team-collaboration.mdc');
+  }
+  return path.join(workDir, 'CLAUDE.md');
 }
 
 export class TeamProvisioningService {
@@ -105,9 +87,8 @@ export class TeamProvisioningService {
 
     const { slug, manifest } = await this.workspace.createTeam(workspaceInput);
 
-    if (injectInstructions && manifest.harness === 'claudecode') {
-      await injectHermitTasksMcpConfig(manifest.workDir);
-      await this.injectTeamInstructions(manifest.workDir, manifest.slug);
+    if (injectInstructions) {
+      await this.injectTeamInstructions(manifest.workDir, manifest.slug, manifest.harness);
     }
 
     if (createCcProject) {
@@ -202,7 +183,7 @@ export class TeamProvisioningService {
 
   /**
    * 任务调度：当任务有 assignee 时，通过 Bridge 推送通知给目标团队的 agent。
-   * 目标团队的 agent 收到消息后，用 MCP hermit-tasks 工具认领并处理任务。
+   * 目标团队通过 Hermit CLI 任务总线认领、评论、澄清并提交任务。
    */
   async dispatchTask(sourceTeamSlug: string, task: Task): Promise<void> {
     if (!task.assignee) return;
@@ -235,15 +216,18 @@ export class TeamProvisioningService {
 
     // session key for bridge dispatch — cc-connect will apply share_session_in_channel natively
     const sessionKey = groupSessionKey(targetSlug);
+    const cli = `agentcli --port ${process.env.PORT ?? '5680'} tasks`;
     const message = [
       `[任务分配] 来自团队 ${sourceTeamSlug}`,
       `任务 ID: ${task.id}`,
       `标题: ${task.title}`,
       task.description ? `描述: ${task.description}` : null,
       ``,
-      `请使用 hermit-tasks MCP 工具处理：`,
-      `  claim_task("${targetSlug}", "${task.id}")  ← 认领任务`,
-      `  complete_task("${targetSlug}", "${task.id}", result)  ← 完成任务`,
+      `请通过 Hermit CLI 任务总线处理，不要使用 MCP、Skills 或运行时自带任务系统：`,
+      `  ${cli} claim --team ${targetSlug} --id ${task.id}`,
+      `  ${cli} comment --team ${targetSlug} --id ${task.id} --text "进度说明"`,
+      `  ${cli} clarify --team ${targetSlug} --id ${task.id} --target user`,
+      `  ${cli} complete --team ${targetSlug} --id ${task.id} --result "交付结果"`,
     ]
       .filter((l) => l !== null)
       .join('\n');
@@ -327,8 +311,12 @@ export class TeamProvisioningService {
   // CLAUDE.md instruction injection
   // ===========================================================================
 
-  async injectTeamInstructions(workDir: string, teamSlug: string): Promise<void> {
-    const mdPath = path.join(workDir, 'CLAUDE.md');
+  async injectTeamInstructions(
+    workDir: string,
+    teamSlug: string,
+    harness = 'claudecode'
+  ): Promise<void> {
+    const mdPath = instructionPathForHarness(workDir, harness);
     const teams = await this.workspace.listTeams().catch(() => []);
     const availableTeams = teams
       .filter((team) => team.slug !== teamSlug)
@@ -351,10 +339,17 @@ Current team slug: \`${teamSlug}\`
 Available teams:
 ${availableTeams.length > 0 ? availableTeams.join('\n') : '- No other teams currently registered.'}
 
-Cross-team collaboration is handled through Hermit's team bus and task-pool surfaces.
+Cross-team collaboration is handled through Hermit's CLI task bus. Hermit task state is the single source of truth.
+Do not use MCP, Skills, or the harness's native task/todo tools for collaborative task management.
 
-Do not call cross-team dispatch APIs yourself and do not invent dispatch IDs.
-You may use the team list only to understand which teams exist and when a user is referring to one.
+Use these commands for collaborative tasks:
+- List visible tasks: \`agentcli --port ${process.env.PORT ?? '5680'} tasks list --team ${teamSlug}\`
+- Claim a task before work: \`agentcli --port ${process.env.PORT ?? '5680'} tasks claim --team ${teamSlug} --id <task-id>\`
+- Post progress: \`agentcli --port ${process.env.PORT ?? '5680'} tasks comment --team ${teamSlug} --id <task-id> --text "<progress>"\`
+- Request clarification: \`agentcli --port ${process.env.PORT ?? '5680'} tasks clarify --team ${teamSlug} --id <task-id> --target user\`
+- Submit the result: \`agentcli --port ${process.env.PORT ?? '5680'} tasks complete --team ${teamSlug} --id <task-id> --result "<result>"\`
+
+Do not call cross-team dispatch APIs yourself and do not invent task IDs. Use only task IDs returned by the CLI or supplied by Hermit.
 
 ${opsRunbookContext}
 ${TEAM_INSTRUCTIONS_END}
@@ -369,6 +364,7 @@ ${TEAM_INSTRUCTIONS_END}
       }
 
       const cleaned = removeManagedTeamInstructions(existing);
+      await fs.promises.mkdir(path.dirname(mdPath), { recursive: true });
       await fs.promises.writeFile(mdPath, `${cleaned}${section}`, 'utf8');
       logger.info(`injected team instructions → ${mdPath}`);
     } catch (err) {
