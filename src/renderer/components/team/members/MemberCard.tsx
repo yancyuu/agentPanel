@@ -439,7 +439,7 @@ export const MemberCard = ({
                     <button
                       type="button"
                       className="inline-flex size-7 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
-                      aria-label={`给 ${displayMemberName(member.name)} 发送消息`}
+                      aria-label={`给 ${displayMemberName(member.name)} 发私信`}
                       onClick={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -449,7 +449,7 @@ export const MemberCard = ({
                       <MessageSquare size={13} />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">发送消息</TooltipContent>
+                  <TooltipContent side="bottom">发私信</TooltipContent>
                 </Tooltip>
               ) : null}
               {onAssignTask ? (

@@ -98,7 +98,7 @@ describe('inbox thread projection', () => {
       expect.objectContaining({
         key: 'team-a:conversation-new',
         participant: 'alice',
-        preview: '新对话',
+        preview: '新私信',
         draft: true,
         unread: false,
       }),

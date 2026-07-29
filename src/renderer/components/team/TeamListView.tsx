@@ -160,21 +160,21 @@ const StatusBadge = ({ status }: { status: TeamStatus | null }): React.JSX.Eleme
       return (
         <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium text-emerald-400">
           <span className="size-1.5 animate-pulse rounded-full bg-emerald-400" aria-hidden="true" />
-          活跃
+          工作中
         </span>
       );
     case 'idle':
       return (
         <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-[var(--color-text-secondary)]">
           <span className="size-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
-          运行中
+          在线
         </span>
       );
     case 'provisioning':
       return (
         <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium text-amber-400">
           <span className="size-1.5 animate-pulse rounded-full bg-amber-400" aria-hidden="true" />
-          启动中
+          接入中
         </span>
       );
     default:
@@ -184,7 +184,7 @@ const StatusBadge = ({ status }: { status: TeamStatus | null }): React.JSX.Eleme
             className="size-1.5 rounded-full bg-[var(--color-text-muted)] opacity-50"
             aria-hidden="true"
           />
-          未运行
+          离线
         </span>
       );
   }
@@ -1050,7 +1050,7 @@ export const TeamListView = (): React.JSX.Element => {
             <strong className="font-medium text-[var(--color-text)]">
               {teamListStats.running}
             </strong>{' '}
-            个运行中
+            个在线
           </span>
           <span>
             <strong className="font-medium text-[var(--color-text)]">
@@ -1204,6 +1204,11 @@ export const TeamListView = (): React.JSX.Element => {
                 {isSystemManager ? (
                   <span className="rounded bg-[var(--color-accent-soft)] px-1 py-px text-[9px] font-medium text-[var(--color-accent)]">
                     系统
+                  </span>
+                ) : null}
+                {team.isExternallyReachable ? (
+                  <span className="rounded bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-medium text-sky-500">
+                    可对外
                   </span>
                 ) : null}
                 {team.pendingDelete || team.restartRequired ? <PendingDeleteBadge /> : null}

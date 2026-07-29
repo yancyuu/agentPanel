@@ -186,18 +186,19 @@ export function registerTeamSessionRoutes(
       const localByProject = new Map(localTeams.map((team) => [team.bindProject, team]));
       return await Promise.all(
         projects.map(async (project) => {
-          let isAlive = false;
+          let isExternallyReachable = project.platforms.some((platform) => platform !== 'bridge');
           try {
             const detail = await dependencies.getProject(project.name);
-            isAlive =
+            isExternallyReachable =
               Array.isArray(detail.platforms) &&
-              detail.platforms.some((platform) => platform.connected);
+              detail.platforms.some((platform) => platform.type !== 'bridge' && platform.connected);
           } catch {
-            // Preserve degraded offline state.
+            // The project remains online because it is registered; only external reachability degrades.
           }
           return {
             teamName: localByProject.get(project.name)?.slug ?? project.name,
-            isAlive,
+            isAlive: true,
+            isExternallyReachable,
             runId: project.name,
           };
         })
@@ -210,10 +211,8 @@ export function registerTeamSessionRoutes(
   app.get<{ Params: { name: string } }>('/api/teams/:name/process-alive', async (request) => {
     try {
       const bindProject = await dependencies.resolveProjectName(request.params.name);
-      const project = await dependencies.getProject(bindProject);
-      return (
-        Array.isArray(project.platforms) && project.platforms.some((platform) => platform.connected)
-      );
+      await dependencies.getProject(bindProject);
+      return true;
     } catch {
       return false;
     }

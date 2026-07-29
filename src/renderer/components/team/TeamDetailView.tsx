@@ -1630,6 +1630,10 @@ export const TeamDetailView = ({
     const headerColorSet = data.config.color
       ? getTeamColorSet(data.config.color)
       : nameColorSet(displayTeamName);
+    const isAgentOnline = data.isOnline ?? data.isAlive === true;
+    const isExternallyReachable =
+      data.isExternallyReachable ??
+      data.platforms?.some((platform) => platform.type !== 'bridge' && platform.connected) === true;
 
     return (
       <>
@@ -1672,26 +1676,20 @@ export const TeamDetailView = ({
                         </h1>
                         <span className="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)]">
                           <span
-                            className={`size-1.5 rounded-full ${data.isAlive ? 'bg-emerald-400' : 'bg-[var(--color-text-muted)] opacity-50'}`}
+                            className={`size-1.5 rounded-full ${isAgentOnline ? 'bg-emerald-400' : 'bg-[var(--color-text-muted)] opacity-50'}`}
                             aria-hidden="true"
                           />
-                          {data.isAlive ? '运行中' : '未运行'}
+                          {isAgentOnline ? '在线' : '离线'}
                         </span>
-                        {data.platforms
-                          ?.filter((pl) => pl.type !== 'bridge')
-                          .map((pl) => (
-                            <span
-                              key={pl.type}
-                              className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400"
-                            >
-                              <span className="size-1.5 rounded-full bg-emerald-400" />
-                              {pl.type}
-                            </span>
-                          ))}
+                        {isExternallyReachable ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-500">
+                            可对外
+                          </span>
+                        ) : null}
                         {isTeamProvisioning && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/15 px-1.5 py-0.5 text-[10px] font-medium text-yellow-400">
                             <span className="size-1.5 animate-pulse rounded-full bg-yellow-400" />
-                            启动中...
+                            接入中...
                           </span>
                         )}
                       </div>

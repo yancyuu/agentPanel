@@ -45,7 +45,7 @@ function toThreadSubject(messages: InboxMessage[], participant: string): string 
   if (explicitSummary) return explicitSummary;
   const firstText = messages.find((message) => message.text.trim())?.text.trim() ?? '';
   const firstLine = firstText.split(/\r?\n/, 1)[0]?.trim();
-  return firstLine || `与 ${participant} 的对话`;
+  return firstLine || `与 ${participant} 的私信`;
 }
 
 function timestampValue(value: string): number {
@@ -120,7 +120,7 @@ export function buildInboxThreads(params: {
         participant: group.participant,
         conversationId: group.conversationId,
         subject: toThreadSubject(messages, group.participant),
-        preview: latest?.text.trim() || '新对话',
+        preview: latest?.text.trim() || '新私信',
         updatedAt: latestAt,
         messages,
         unread,

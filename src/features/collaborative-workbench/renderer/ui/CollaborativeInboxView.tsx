@@ -38,8 +38,8 @@ export function CollaborativeInboxView(): React.JSX.Element {
   }, [mode, selectedTask, threadInbox.selectedThread]);
 
   return (
-    <div className="h-full min-h-0 min-w-0">
-      <div className="grid h-full min-h-0 min-w-0 md:grid-cols-[minmax(300px,360px)_minmax(340px,1fr)]">
+    <div className="size-full min-h-0 min-w-0">
+      <div className="grid size-full min-h-0 min-w-0 md:grid-cols-[minmax(300px,360px)_minmax(340px,1fr)]">
         <div
           className={`${mobileDetailOpen ? 'hidden md:flex' : 'flex'} min-h-0 flex-col border-r border-[var(--surface-border-subtle)]`}
         >
@@ -64,9 +64,9 @@ export function CollaborativeInboxView(): React.JSX.Element {
               )}
             >
               <Mail size={13} />
-              对话
+              私信
               {threadInbox.threads.some((thread) => thread.unread) ? (
-                <span className="size-2 rounded-full bg-red-500" aria-label="有未读对话" />
+                <span className="size-2 rounded-full bg-red-500" aria-label="有未读私信" />
               ) : null}
             </button>
             <button

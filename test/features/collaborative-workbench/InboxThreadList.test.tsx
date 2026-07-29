@@ -53,7 +53,7 @@ describe('InboxThreadList', () => {
     const host = renderList(onCreateThread);
 
     const newConversation = [...host.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('新建对话')
+      button.textContent?.includes('写私信')
     );
     act(() => newConversation?.click());
 
@@ -66,7 +66,7 @@ describe('InboxThreadList', () => {
     });
 
     const start = [...host.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('开始对话')
+      button.textContent?.includes('新建私信')
     );
     act(() => start?.click());
 

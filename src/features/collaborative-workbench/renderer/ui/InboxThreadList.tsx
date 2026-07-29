@@ -62,7 +62,7 @@ export function InboxThreadList({
             className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3 text-xs font-medium text-white shadow-sm transition-opacity hover:opacity-90"
           >
             <Plus size={14} />
-            新建对话
+            写私信
           </button>
           <select
             value={teamFilter}
@@ -116,7 +116,7 @@ export function InboxThreadList({
               }}
               className="h-8 shrink-0 rounded-md bg-[var(--color-text)] px-3 text-xs font-medium text-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-35"
             >
-              开始对话
+              新建私信
             </button>
           </div>
         ) : null}
@@ -136,12 +136,12 @@ export function InboxThreadList({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto" role="listbox" aria-label="对话邮件列表">
+      <div className="min-h-0 flex-1 overflow-y-auto" role="listbox" aria-label="私信列表">
         {threads.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-[var(--color-text-muted)]">
             <Mail size={30} className="opacity-30" />
             <p className="text-sm">收件箱还是空的</p>
-            <p className="text-xs opacity-70">点击上方“新建对话”，选择数字员工开始沟通。</p>
+            <p className="text-xs opacity-70">点击上方“写私信”，选择数字员工发送第一封邮件。</p>
           </div>
         ) : (
           threads.map((thread) => (

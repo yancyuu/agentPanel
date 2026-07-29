@@ -126,6 +126,12 @@ export interface TeamSummary {
   /** cc-connect config has removed the project, but service restart is still required. */
   pendingDelete?: boolean;
   restartRequired?: boolean;
+  /** True when the Agent has been provisioned into the local runtime. */
+  isOnline?: boolean;
+  /** True when at least one non-bridge external channel is connected. */
+  isExternallyReachable?: boolean;
+  /** Connected external channel names used for display only. */
+  externalPlatforms?: string[];
   /** True when the last launch partially succeeded (e.g. lead started, but not all teammates joined). */
   partialLaunchFailure?: boolean;
   /** Planned teammate count for the last persisted partial launch marker. */
@@ -1004,6 +1010,10 @@ export interface TeamViewSnapshot {
   processes: TeamProcess[];
   warnings?: string[];
   isAlive?: boolean;
+  /** Local runtime/project integration status. This is independent from external channels. */
+  isOnline?: boolean;
+  /** Whether a non-bridge external channel is currently connected. */
+  isExternallyReachable?: boolean;
   /** Bound external platforms (feishu, telegram, etc.) from hermit-bridge */
   platforms?: import('./hermitBridge').HermitBridgeProjectPlatform[];
   /** hermit-bridge project name this team is bound to */

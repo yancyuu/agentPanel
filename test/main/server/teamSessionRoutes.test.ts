@@ -304,7 +304,7 @@ describe('team session and runtime read routes', () => {
       {
         name: 'project-a',
         agent_type: 'claudecode',
-        platforms: ['bridge'],
+        platforms: ['bridge', 'feishu'],
         sessions_count: 1,
         heartbeat_enabled: false,
       },
@@ -318,7 +318,12 @@ describe('team session and runtime read routes', () => {
     ];
     const getProject = vi.fn(async (name: string) => {
       if (name === 'project-b') throw new Error('offline');
-      return { platforms: [{ type: 'bridge', connected: true }] } as HermitBridgeProjectDetail;
+      return {
+        platforms: [
+          { type: 'bridge', connected: true },
+          { type: 'feishu', connected: true },
+        ],
+      } as HermitBridgeProjectDetail;
     });
     const harness = createHarness({
       listProjects: vi.fn(async () => projects),
@@ -333,8 +338,18 @@ describe('team session and runtime read routes', () => {
     });
 
     expect(global.json()).toEqual([
-      { teamName: 'team-a', isAlive: true, runId: 'project-a' },
-      { teamName: 'project-b', isAlive: false, runId: 'project-b' },
+      {
+        teamName: 'team-a',
+        isAlive: true,
+        isExternallyReachable: true,
+        runId: 'project-a',
+      },
+      {
+        teamName: 'project-b',
+        isAlive: true,
+        isExternallyReachable: false,
+        runId: 'project-b',
+      },
     ]);
     expect(team.json()).toBe(true);
 

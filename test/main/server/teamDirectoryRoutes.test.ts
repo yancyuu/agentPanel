@@ -45,7 +45,7 @@ function createHarness(overrides: Partial<Dependencies> = {}) {
       {
         name: 'team-a-project',
         agent_type: 'claudecode',
-        platforms: ['bridge'],
+        platforms: ['bridge', 'feishu'],
         sessions_count: 3,
         heartbeat_enabled: true,
       },
@@ -55,7 +55,10 @@ function createHarness(overrides: Partial<Dependencies> = {}) {
       agent_type: 'claudecode',
       work_dir: '/bridge/team-a',
       agent_mode: 'acceptEdits',
-      platforms: [{ type: 'bridge', connected: true }],
+      platforms: [
+        { type: 'bridge', connected: true },
+        { type: 'feishu', connected: true },
+      ],
       settings: { language: 'zh-CN', disabled_commands: ['rm'] },
       active_session_keys: ['team-a:lead'],
       heartbeat: null,
@@ -110,6 +113,9 @@ describe('team directory routes', () => {
         teamName: 'team-a',
         displayName: '中文团队',
         sessionsCount: 3,
+        isOnline: true,
+        isExternallyReachable: true,
+        externalPlatforms: ['feishu'],
         stats: expect.objectContaining({ sessions: 2, tokens: 6 }),
       }),
     ]);
@@ -192,6 +198,8 @@ describe('team directory routes', () => {
     expect(online.json()).toEqual(
       expect.objectContaining({
         isAlive: true,
+        isOnline: true,
+        isExternallyReachable: true,
         tasks: [
           expect.objectContaining({
             id: 'active-task',
@@ -208,7 +216,13 @@ describe('team directory routes', () => {
     harness.bridgeClient.getProject.mockRejectedValueOnce(new Error('offline'));
     const offline = await harness.app.inject({ method: 'GET', url: '/api/teams/team-a/data' });
     expect(offline.json()).toEqual(
-      expect.objectContaining({ isAlive: false, workDir: '/work/team-a', providerRefs: [] })
+      expect.objectContaining({
+        isAlive: false,
+        isOnline: false,
+        isExternallyReachable: false,
+        workDir: '/work/team-a',
+        providerRefs: [],
+      })
     );
   });
 

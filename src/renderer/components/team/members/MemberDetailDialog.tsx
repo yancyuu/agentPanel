@@ -122,7 +122,7 @@ export const MemberDetailDialog = ({
           </Button>
           <Button type="button" variant="outline" onClick={onSendMessage}>
             <Mail size={15} />
-            发消息 · 进入收件箱
+            发私信 · 进入收件箱
           </Button>
         </div>
 

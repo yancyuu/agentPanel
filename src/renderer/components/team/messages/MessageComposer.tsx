@@ -59,6 +59,10 @@ interface MessageComposerProps {
   teamName: string;
   members: ResolvedTeamMember[];
   layout?: 'default' | 'compact';
+  /** Render a wider, quieter mail-style body editor without the chat recipient pill. */
+  mailMode?: boolean;
+  minRows?: number;
+  maxRows?: number;
   isTeamAlive?: boolean;
   sending: boolean;
   sendError: string | null;
@@ -89,6 +93,9 @@ export const MessageComposer = ({
   teamName,
   members,
   layout = 'default',
+  mailMode = false,
+  minRows,
+  maxRows,
   isTeamAlive,
   sending,
   sendError,
@@ -452,6 +459,7 @@ export const MessageComposer = ({
     >
       <div
         className={cn(
+          mailMode && 'hidden',
           shouldDockRecipientSelector ? 'mb-0' : 'mb-1',
           isCompactLayout ? 'space-y-1.5' : 'space-y-2'
         )}
@@ -695,16 +703,22 @@ export const MessageComposer = ({
               .join('、');
             return [`Tips：你可以输入 "/" 来运行命令，如 ${commands} 等。`];
           }, [slashCommandSuggestions])}
-          surfaceClassName="message-composer-shell message-composer-orbit-surface bg-[var(--color-surface-raised)]"
-          surfaceDecoration="orbit-border"
-          surfaceFadeColor="var(--color-surface-raised)"
-          className="border-transparent shadow-none"
-          minRows={1}
-          maxRows={6}
+          surfaceClassName={
+            mailMode
+              ? 'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]'
+              : 'message-composer-shell message-composer-orbit-surface bg-[var(--color-surface-raised)]'
+          }
+          surfaceDecoration={mailMode ? 'none' : 'orbit-border'}
+          surfaceFadeColor={mailMode ? 'var(--color-surface)' : 'var(--color-surface-raised)'}
+          className={cn(
+            mailMode ? 'border-transparent px-1 shadow-none' : 'border-transparent shadow-none'
+          )}
+          minRows={minRows ?? (mailMode ? 4 : 1)}
+          maxRows={maxRows ?? (mailMode ? 12 : 6)}
           maxLength={MAX_TEXT_LENGTH}
           disabled={sending}
           hintText={undefined}
-          showHint={!isCompactLayout}
+          showHint={!isCompactLayout && !mailMode}
           cornerActionInset="compact"
           cornerAction={
             <div className="flex items-center gap-2">

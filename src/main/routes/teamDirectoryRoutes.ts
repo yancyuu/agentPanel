@@ -83,6 +83,10 @@ export function registerTeamDirectoryRoutes(
               const color = meta.color || 'blue';
               const displayName = meta.displayName || meta.slug;
               const usageStats = workDir ? dependencies.getProjectStatsSnapshot(workDir) : null;
+              const externalPlatforms = (project?.platforms ?? []).filter(
+                (platform) => platform !== 'bridge'
+              );
+              const isOnline = Boolean(project);
 
               return {
                 teamName: meta.slug,
@@ -93,7 +97,10 @@ export function registerTeamDirectoryRoutes(
                 members: [{ name: displayName, role: 'agent', agentId: harness, color }],
                 taskCount: 0,
                 lastActivity: null,
-                isAlive: false,
+                isAlive: isOnline,
+                isOnline,
+                isExternallyReachable: externalPlatforms.length > 0,
+                externalPlatforms,
                 harness,
                 bindProject,
                 workDir,
@@ -228,9 +235,10 @@ export function registerTeamDirectoryRoutes(
       try {
         bindProject = await dependencies.resolveProjectName(name);
         const project = await cc.getProject(bindProject);
-        const isOnline =
-          Array.isArray(project.platforms) &&
-          project.platforms.some((platform) => platform.connected);
+        const externalPlatforms = Array.isArray(project.platforms)
+          ? project.platforms.filter((platform) => platform.type !== 'bridge' && platform.connected)
+          : [];
+        const isOnline = true;
         const projectSettings = (project.settings ?? {}) as Record<string, unknown>;
         const resolvedLanguage =
           typeof projectSettings.language === 'string' && projectSettings.language.trim().length > 0
@@ -307,6 +315,8 @@ export function registerTeamDirectoryRoutes(
           kanbanState: { teamName: name, reviewers: [], tasks: {} },
           processes: [],
           isAlive: isOnline,
+          isOnline,
+          isExternallyReachable: externalPlatforms.length > 0,
           platforms: project.platforms ?? [],
           harness: project.agent_type,
           bindProject,
@@ -365,6 +375,8 @@ export function registerTeamDirectoryRoutes(
           kanbanState: { teamName: name, reviewers: [], tasks: {} },
           processes: [],
           isAlive: false,
+          isOnline: false,
+          isExternallyReachable: false,
           platforms: [] as HermitBridgeProjectPlatform[],
           harness,
           bindProject,
