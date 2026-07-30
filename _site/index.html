@@ -196,7 +196,7 @@
       <a href="#tiers">产品路径</a>
       <a href="#capabilities">能力</a>
       <a href="#commands">命令</a>
-      <a href="#config">配置</a>
+      <a href="#token-claim">Token 认领</a>
       <a href="#usage">上报</a>
       <a href="#update">更新</a>
       <a href="#faq">FAQ</a>
@@ -272,7 +272,7 @@ npm uninstall -g @yancyyu/agentcli</code></pre>
           <li>本地 Web 工作台：团队、看板、运行时、代码评审</li>
           <li>自动采集本机 AI 运行时用量（token / 会话 / 消息）</li>
           <li>数据默认落 <code>~/.hermit/</code>，单机完整可用，无需注册</li>
-          <li>token 池认领：签发网关 key → 直接写入所选 Claude Code / Codex 配置；不修改 shell 启动文件、不安装 shell hook</li>
+          <li>token 池认领：从授权池签发一次性网关 key，可写入 Codex / Claude Code / Pi；支持配置快照与一键恢复</li>
           <li>支持自托管、可二次开发</li>
         </ul>
         <p class="tier-cta"><a href="#commands">装好之后从这几条命令开始 →</a></p>
@@ -349,7 +349,7 @@ npm uninstall -g @yancyyu/agentcli</code></pre>
 
   <section id="config" class="prose">
     <h2>配置 AI 运行时（客户端配置）</h2>
-    <p class="section-sub">AgentCli 读写的本机配置位置，以及如何把网关 key 写进 Claude / Codex。</p>
+    <p class="section-sub">AgentCli 读写的本机配置位置，以及如何认领网关 key 并写进 Codex / Claude Code / Pi。</p>
 
     <h3>本机数据来源</h3>
     <table>
@@ -360,20 +360,34 @@ npm uninstall -g @yancyyu/agentcli</code></pre>
       </tbody>
     </table>
 
-    <h3>把网关 Key 写进 Claude / Codex（token 池认领）</h3>
-    <p>登录后，在终端菜单 <code>agentcli</code> →「token 池(测试版)」→「认领」，会自动签发一个一次性网关 key，当前默认且唯一写入目标是 <strong>Codex</strong>（Claude Code 保留为后续可恢复选项），然后直写进本地配置：</p>
+    <h3 id="token-claim">Token 池认领是什么？</h3>
+    <div class="callout success">
+      <div class="callout-title">这里的 token 不是“用量 token”</div>
+      <p>Token 池认领指的是：AgentCli 为已授权用户从 AI 网关签发一个<strong>一次性明文访问 key</strong>，再把 key、网关地址和所选模型写入本机运行时配置。认领完成后，Codex、Claude Code 或 Pi 就可以通过统一网关调用已分配的模型。</p>
+    </div>
+
+    <h3>如何认领</h3>
+    <ol>
+      <li><span class="step-label">先登录</span> — 运行 <code>agentcli auth login</code>，再用 <code>agentcli auth status</code> 确认已登录。</li>
+      <li><span class="step-label">进入认领入口</span> — 运行 <code>agentcli</code>，展开「token 池（Beta）」并选择「认领」。</li>
+      <li><span class="step-label">选择运行时和模型</span> — 可选择 Codex、Claude Code、Pi 或组合；默认只选 Codex。随后从网关授权的模型中选择一个模型。</li>
+      <li><span class="step-label">等待自动配置</span> — AgentCli 自动完成签发、领取一次性 key、备份原配置和写入配置；完成后重启所选运行时，并新开终端让系统环境变量生效。</li>
+    </ol>
+
+    <h3>认领后会改哪些配置？</h3>
     <ul>
-      <li><strong>Claude Code</strong> <code>~/.claude/settings.json</code>：写入网关 endpoint（<code>ANTHROPIC_BASE_URL</code>）+ <code>ANTHROPIC_AUTH_TOKEN</code>，deep-merge 保留其它键，<strong>不固定模型</strong>。</li>
-      <li><strong>Codex</strong> <code>~/.codex/auth.json</code>（<code>OPENAI_API_KEY</code>）+ <code>~/.codex/config.toml</code>：surgical 改写 <code>model_provider</code> / <code>model</code> / wire_api 与 <code>[model_providers.*]</code>，<strong>原样保留 <code>[projects.*]</code></strong>。Codex base_url 由网关 <code>proxyPaths</code> 按所选 wire_api 解析，与 Claude endpoint 不同。</li>
+      <li><strong>Claude Code</strong>：更新 <code>~/.claude/settings.json</code>，写入 <code>ANTHROPIC_BASE_URL</code>、<code>ANTHROPIC_AUTH_TOKEN</code> 和所选模型对应的 tier 配置，同时保留其它设置。</li>
+      <li><strong>Codex</strong>：更新 <code>~/.codex/auth.json</code> 的 <code>OPENAI_API_KEY</code>，并在 <code>~/.codex/config.toml</code> 写入网关 provider、模型与 <code>responses</code> 协议；原有 <code>[projects.*]</code> 等其它区块会保留。</li>
+      <li><strong>Pi</strong>：更新 <code>~/.pi/agent/auth.json</code>、<code>models.json</code> 和 <code>settings.json</code> 中的 <code>skg</code> provider、可用模型和默认模型。</li>
+      <li><strong>通用环境</strong>：写入权限为 0600 的 <code>~/.hermit/aikey.env</code>；同时一次性更新 macOS/Linux shell rc 管理块或 Windows 当前用户环境变量。不会安装每次提示符都执行的 shell hook。</li>
     </ul>
-    <p>配置文件是 Claude Code / Codex 的常规生效路径：AgentCli 不再修改 <code>.zshrc</code> / <code>.bashrc</code>，也不安装 <code>precmd</code> / <code>PROMPT_COMMAND</code> shell hook；重新启动所选运行时即可读取新配置。<code>~/.hermit/aikey.env</code> 仍以 0600 权限保留为认领标记，外部 agent 需要时可手动 <code>source</code>。</p>
     <div class="callout">
-      <div class="callout-title">api key 与 base url 怎么用</div>
-      <p><strong>Claude Code</strong> 认 <code>ANTHROPIC_AUTH_TOKEN</code>，认领时已写入 <code>~/.claude/settings.json</code> 的 <code>env</code> 块（不是 shell 环境变量）——重启 Claude Code 即生效，无需 <code>source</code> 或 <code>export</code>。<strong>Codex</strong> 认 <code>~/.codex/auth.json</code> 的 <code>OPENAI_API_KEY</code>。<strong>外部 agent / 手动调用</strong>才 <code>source ~/.hermit/aikey.env</code>，里面导出的是 <code>ANTHROPIC_API_KEY</code>。<code>ANTHROPIC_AUTH_TOKEN</code>（Claude 专用）与 <code>ANTHROPIC_API_KEY</code>（aikey.env / 外部 agent）是两个不同的变量，别混用。</p>
+      <div class="callout-title">什么时候生效？</div>
+      <p>运行时自己的配置通常在<strong>重启 Codex / Claude Code / Pi</strong> 后生效；系统环境变量需要新开终端。外部 agent 或手动脚本也可以运行 <code>source ~/.hermit/aikey.env</code>。Claude Code 使用 <code>ANTHROPIC_AUTH_TOKEN</code>，Codex 使用 <code>OPENAI_API_KEY</code>，不要混用变量名。</p>
     </div>
     <div class="callout warn">
-      <div class="callout-title">注意</div>
-      <p>首次写入前自动把<strong>原始</strong> Claude/Codex 配置快照到 <code>~/.hermit/agentcli.env.bak</code>（<strong>只创建一次</strong>，后续认领不覆盖）；在「token 池 → 一键恢复原始配置」可随时还原，token 池新建的文件会被删除、无残留。检查快照时会自动修正旧版本遗留的备份路径记录。认领到的 key 是<strong>即焚明文</strong>，不落库、不回显明文。该能力需服务端授权开通（部分账户暂未开放）。</p>
+      <div class="callout-title">安全与恢复</div>
+      <p>每次认领前都会在 <code>~/.hermit/agentcli.env.bak</code> 新建一个带时间点的配置快照，最多保留最近 20 份；可从「token 池 → 恢复配置快照」选择任意时间点还原。一次性 key 只在领取时进入内存并写入你选择的本地配置，结果页只显示脱敏值；请勿分享相关配置文件或备份。该能力需要服务端授权，部分账户可能暂未开放。</p>
     </div>
   </section>
 
