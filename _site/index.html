@@ -3,554 +3,536 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AgentCLI — 本地 AI 助手桌面客户端</title>
-  <meta name="description" content="安装一个 AgentCLI 桌面客户端，即可在本地管理智能体、任务、小队、定时任务和交付成果。内置 AgentCLI 与 cc-connect，无需预装 Node.js。" />
-  <meta property="og:title" content="AgentCLI — 本地 AI 助手桌面客户端" />
-  <meta property="og:description" content="面向普通用户的本地 AI 助手客户端。安装 App 即可使用完整工作台，同时保留内置 CLI 能力。" />
+  <title>AgentCLI — 让智能体真正把工作做完</title>
+  <meta name="description" content="AgentCLI 是面向普通用户的本地 AI 助手客户端。管理智能体、任务、小队、定时任务与交付成果，安装 App 即可使用。" />
+  <meta property="og:title" content="AgentCLI — 本地 AI 助手客户端" />
+  <meta property="og:description" content="不需要学习命令行。把任务交给智能体，跟进过程，审核成果。" />
   <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#1769aa" />
   <link rel="icon" href="icon.png" />
   <style>
     :root {
-      --bg: #090A0B;
-      --bg-card: #111113;
-      --border: #27272a;
-      --text: #e4e4e7;
-      --text-muted: #a1a1aa;
-      --text-dim: #71717a;
-      --accent: #8B5CF6;
-      --accent-light: #a78bfa;
-      --green: #22c55e;
-      --yellow: #eab308;
-      color-scheme: dark;
+      --ink: #10233d;
+      --muted: #58708d;
+      --line: rgba(26, 72, 118, 0.14);
+      --paper: #f7f9fc;
+      --white: #ffffff;
+      --blue-950: #073967;
+      --blue-900: #09528a;
+      --blue-800: #126eb2;
+      --blue-700: #2387ca;
+      --blue-100: #e8f5ff;
+      --pink: #f5a9bd;
+      --lavender: #bbb3ff;
+      --green: #1c9b75;
+      --shadow: 0 30px 90px rgba(5, 43, 78, 0.18);
+      color-scheme: light;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; overflow-x: hidden; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.7;
+      margin: 0;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.6;
       -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
     }
-    a { color: var(--accent-light); text-decoration: none; }
-    a:hover { text-decoration: underline; }
+    a { color: inherit; text-decoration: none; }
+    button, select { font: inherit; }
     code {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 4px;
+      font-size: 0.92em;
+      background: #eef3f8;
+      border: 1px solid #dce6ef;
+      border-radius: 7px;
       padding: 2px 6px;
-      font-size: 0.9em;
-      color: var(--green);
     }
-    pre {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px 18px;
-      overflow-x: auto;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 13.5px;
-      line-height: 1.6;
-      margin: 12px 0;
+
+    .site-header {
+      position: fixed;
+      inset: 0 0 auto;
+      z-index: 50;
+      height: 76px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(12, 92, 151, 0.72);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      color: white;
     }
-    pre code { background: none; border: none; padding: 0; color: var(--green); }
-
-    .header {
-      position: sticky; top: 0; z-index: 10;
-      background: rgba(9, 10, 11, 0.85);
-      backdrop-filter: blur(8px);
-      border-bottom: 1px solid var(--border);
-      padding: 14px 24px;
-      display: flex; align-items: center; justify-content: space-between;
-      max-width: 1100px; margin: 0 auto;
+    .nav {
+      width: min(1240px, calc(100% - 48px));
+      height: 100%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
     }
-    .header-logo { font-size: 20px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
-    .header-logo img { width: 26px; height: 26px; border-radius: 6px; }
-    .header-nav { display: flex; gap: 22px; align-items: center; }
-    .header-nav a { color: var(--text-muted); font-size: 14px; }
-    .header-nav a:hover { color: var(--text); text-decoration: none; }
+    .brand { display: inline-flex; align-items: center; gap: 11px; font-weight: 750; letter-spacing: -0.02em; font-size: 20px; }
+    .brand-mark { width: 30px; height: 30px; border-radius: 9px; box-shadow: 0 8px 24px rgba(4, 35, 68, 0.24); }
+    .nav-links { display: flex; align-items: center; gap: 30px; margin-left: auto; }
+    .nav-links a { color: rgba(255, 255, 255, 0.82); font-size: 14px; }
+    .nav-links a:hover { color: white; }
+    .nav-download { padding: 10px 17px; border-radius: 11px; background: white; color: var(--blue-950) !important; font-weight: 700; }
 
-    section { max-width: 860px; margin: 0 auto; padding: 56px 24px; }
-    section h2 { font-size: 28px; font-weight: 800; margin-bottom: 10px; letter-spacing: -0.01em; }
-    section .section-sub { color: var(--text-muted); margin-bottom: 28px; font-size: 16px; }
-    section h3 { font-size: 18px; font-weight: 600; margin: 28px 0 10px; }
-
-    .hero { text-align: center; padding: 72px 24px 40px; max-width: 860px; margin: 0 auto; }
-    .hero-badge {
-      display: inline-block;
-      background: rgba(139, 92, 246, 0.1);
-      border: 1px solid rgba(139, 92, 246, 0.3);
+    .hero {
+      position: relative;
+      overflow: hidden;
+      min-height: 980px;
+      padding: 150px 24px 0;
+      color: white;
+      text-align: center;
+      background:
+        radial-gradient(circle at 16% 72%, rgba(245, 169, 189, 0.88) 0, rgba(245, 169, 189, 0) 24%),
+        radial-gradient(circle at 82% 43%, rgba(187, 179, 255, 0.58) 0, rgba(187, 179, 255, 0) 22%),
+        linear-gradient(180deg, #1268ad 0%, #238acb 58%, #83c9ee 100%);
+    }
+    .hero::before,
+    .hero::after {
+      content: "";
+      position: absolute;
+      pointer-events: none;
+      filter: blur(1px);
+      opacity: 0.9;
+    }
+    .hero::before {
+      width: 680px;
+      height: 360px;
+      left: -210px;
+      bottom: 170px;
+      border-radius: 48% 52% 55% 45%;
+      transform: rotate(12deg);
+      background: linear-gradient(140deg, rgba(255, 210, 220, 0.95), rgba(120, 195, 236, 0.08) 68%);
+      clip-path: polygon(0 76%, 16% 45%, 25% 62%, 40% 20%, 52% 58%, 67% 34%, 81% 68%, 100% 48%, 100% 100%, 0 100%);
+    }
+    .hero::after {
+      width: 620px;
+      height: 320px;
+      right: -190px;
+      bottom: 70px;
+      background: linear-gradient(145deg, rgba(202, 188, 255, 0.9), rgba(80, 157, 218, 0.06) 68%);
+      clip-path: polygon(0 58%, 17% 37%, 30% 66%, 44% 25%, 58% 55%, 72% 35%, 84% 62%, 100% 42%, 100% 100%, 0 100%);
+    }
+    .hero-inner { position: relative; z-index: 2; max-width: 990px; margin: 0 auto; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 13px;
+      border: 1px solid rgba(255,255,255,0.24);
       border-radius: 999px;
-      padding: 5px 16px; font-size: 13px; color: var(--accent-light); margin-bottom: 22px;
+      background: rgba(2, 47, 87, 0.14);
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
     }
+    .eyebrow-dot { width: 7px; height: 7px; border-radius: 50%; background: #8ff1d0; box-shadow: 0 0 0 5px rgba(143,241,208,0.12); }
     .hero h1 {
-      font-size: clamp(40px, 7vw, 68px); font-weight: 800; line-height: 1.05; margin-bottom: 18px;
-      background: linear-gradient(135deg, var(--text) 0%, var(--accent-light) 100%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      max-width: 940px;
+      margin: 32px auto 22px;
+      font-family: Iowan Old Style, Baskerville, "Times New Roman", "Songti SC", serif;
+      font-size: clamp(56px, 8vw, 104px);
+      font-weight: 500;
+      letter-spacing: -0.055em;
+      line-height: 0.98;
+      text-wrap: balance;
     }
-    .hero .lede { font-size: 19px; color: var(--text-muted); max-width: 640px; margin: 0 auto 14px; }
-    .hero .oss-line { font-size: 14px; color: var(--text-dim); margin-bottom: 30px; }
-    .hero .oss-line strong { color: var(--green); }
+    .hero-lede {
+      max-width: 760px;
+      margin: 0 auto;
+      color: rgba(255,255,255,0.88);
+      font-size: clamp(17px, 2vw, 21px);
+      line-height: 1.75;
+    }
+    .hero-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 31px; }
+    .button {
+      min-height: 50px;
+      padding: 0 22px;
+      border: 0;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      cursor: pointer;
+      font-weight: 720;
+      transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+    .button:hover { transform: translateY(-2px); }
+    .button-primary { background: white; color: var(--blue-950); box-shadow: 0 15px 38px rgba(3, 41, 74, 0.2); }
+    .button-secondary { color: white; background: rgba(3, 50, 91, 0.22); border: 1px solid rgba(255,255,255,0.22); }
+    .download-context { min-height: 23px; margin-top: 12px; color: rgba(255,255,255,0.72); font-size: 13px; }
+    .works-with { margin-top: 35px; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 18px; color: rgba(255,255,255,0.78); font-size: 14px; }
+    .works-with strong { color: white; font-weight: 650; }
+    .runtime-dot { opacity: .5; }
 
-    .install-box { max-width: 600px; margin: 0 auto; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; text-align: left; }
-    .install-tabs { display: flex; border-bottom: 1px solid var(--border); }
-    .install-tab { flex: 1; padding: 10px 16px; font-size: 13px; color: var(--text-muted); text-align: center; cursor: pointer; border: none; background: none; transition: color 0.2s, background 0.2s; }
-    .install-tab.active { color: var(--accent-light); background: rgba(139, 92, 246, 0.05); border-bottom: 2px solid var(--accent); }
-    .install-content { display: none; padding: 18px 22px; }
-    .install-content.active { display: block; }
-    .install-cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 14px; color: var(--green); word-break: break-all; user-select: all; }
-    .install-cmd .comment { color: var(--text-dim); }
-    .install-help { max-width: 600px; margin: 14px auto 0; background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid var(--yellow); border-radius: 8px; padding: 12px 16px; font-size: 13px; color: var(--text-muted); text-align: left; line-height: 1.6; }
-    .install-help strong { color: var(--text); }
-    .desktop-download { max-width: 600px; margin: 0 auto 18px; padding: 24px; border: 1px solid rgba(139, 92, 246, 0.45); border-radius: 14px; background: linear-gradient(145deg, rgba(139,92,246,0.14), var(--bg-card)); text-align: left; }
-    .desktop-download h2 { margin: 0 0 6px; font-size: 20px; }
-    .desktop-download p { margin: 0 0 18px; color: var(--text-muted); font-size: 14px; }
-    .download-button { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; border-radius: 10px; background: var(--accent); color: white; font-size: 15px; font-weight: 700; }
-    .download-button:hover { background: #7c3aed; text-decoration: none; }
-    .download-meta { margin-top: 10px; color: var(--text-dim); font-size: 12px; text-align: center; }
-    .cli-secondary-label { max-width: 600px; margin: 24px auto 10px; color: var(--text-muted); font-size: 13px; text-align: left; }
+    .product-shot {
+      position: relative;
+      z-index: 3;
+      width: min(1240px, calc(100% - 56px));
+      margin: 52px auto 0;
+      padding: 8px;
+      border: 1px solid rgba(255,255,255,0.52);
+      border-radius: 22px 22px 0 0;
+      background: rgba(255,255,255,0.48);
+      box-shadow: 0 40px 110px rgba(0, 43, 79, 0.34);
+      backdrop-filter: blur(14px);
+    }
+    .window-bar { height: 32px; border-radius: 14px 14px 0 0; background: #f7f8fa; display: flex; align-items: center; gap: 7px; padding: 0 13px; }
+    .window-dot { width: 9px; height: 9px; border-radius: 50%; }
+    .window-dot.red { background: #ff6b67; }
+    .window-dot.yellow { background: #ffc857; }
+    .window-dot.green { background: #55c878; }
+    .product-shot img { display: block; width: 100%; border-radius: 0 0 13px 13px; background: white; }
 
-    .tiers { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-    .tier { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 26px 24px; }
-    .tier.enterprise { border-color: rgba(139, 92, 246, 0.35); background: linear-gradient(180deg, rgba(139,92,246,0.06), var(--bg-card)); }
-    .tier-tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; margin-bottom: 12px; }
-    .tier-tag.free { background: rgba(34, 197, 94, 0.12); color: var(--green); border: 1px solid rgba(34, 197, 94, 0.25); }
-    .tier-tag.ent { background: rgba(139, 92, 246, 0.12); color: var(--accent-light); border: 1px solid rgba(139, 92, 246, 0.3); }
-    .tier h3 { font-size: 20px; margin: 0 0 6px; }
-    .tier .tier-sub { color: var(--text-muted); font-size: 14px; margin-bottom: 16px; }
-    .tier ul { list-style: none; padding: 0; }
-    .tier li { font-size: 14px; color: var(--text-muted); padding: 5px 0 5px 22px; position: relative; }
-    .tier li::before { content: '\2713'; position: absolute; left: 0; color: var(--green); font-weight: 700; }
-    .tier.enterprise li::before { color: var(--accent-light); }
-    .tier .tier-cta { margin-top: 16px; font-size: 13px; }
+    .trust-strip { background: white; border-bottom: 1px solid var(--line); }
+    .trust-grid { width: min(1180px, calc(100% - 48px)); margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
+    .trust-item { padding: 27px 22px; border-right: 1px solid var(--line); }
+    .trust-item:last-child { border-right: 0; }
+    .trust-item strong { display: block; margin-bottom: 3px; font-size: 14px; }
+    .trust-item span { color: var(--muted); font-size: 13px; }
 
-    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
-    .feature-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 22px 20px; transition: border-color 0.2s; }
-    .feature-card:hover { border-color: var(--accent); }
-    .feature-icon { width: 36px; height: 36px; background: rgba(139, 92, 246, 0.1); border-radius: 9px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; font-size: 18px; }
-    .feature-card h4 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
-    .feature-card p { font-size: 13.5px; color: var(--text-muted); line-height: 1.5; }
+    .section { width: min(1180px, calc(100% - 48px)); margin: 0 auto; padding: 112px 0; }
+    .section-kicker { color: var(--blue-700); font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    .section h2 { margin: 12px 0 18px; max-width: 760px; font-family: Iowan Old Style, Baskerville, "Times New Roman", "Songti SC", serif; font-size: clamp(42px, 5vw, 66px); font-weight: 500; line-height: 1.04; letter-spacing: -.045em; }
+    .section-intro { max-width: 700px; margin: 0; color: var(--muted); font-size: 18px; }
 
-    .commands-list { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-    .command-group-title { padding: 12px 20px 4px; font-size: 13px; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-    .command-row { display: flex; align-items: center; gap: 14px; padding: 11px 20px; border-top: 1px solid var(--border); }
-    .command-row .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; color: var(--green); background: rgba(34, 197, 94, 0.07); border: 1px solid rgba(34, 197, 94, 0.18); border-radius: 6px; padding: 4px 9px; white-space: nowrap; flex-shrink: 0; min-width: 230px; user-select: all; }
-    .command-row .cmd-desc { color: var(--text-muted); font-size: 13.5px; }
+    .feature-split { display: grid; grid-template-columns: .88fr 1.12fr; align-items: center; gap: 78px; }
+    .feature-split.reverse { grid-template-columns: 1.12fr .88fr; }
+    .feature-split.reverse .feature-copy { order: 2; }
+    .feature-split.reverse .feature-visual { order: 1; }
+    .feature-copy h2 { font-size: clamp(40px, 4.5vw, 62px); }
+    .feature-points { display: grid; gap: 20px; margin-top: 32px; }
+    .feature-point { display: grid; grid-template-columns: 34px 1fr; gap: 13px; }
+    .feature-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: var(--blue-800); background: var(--blue-100); font-weight: 800; }
+    .feature-point strong { display: block; font-size: 15px; }
+    .feature-point p { margin: 3px 0 0; color: var(--muted); font-size: 14px; }
+    .feature-visual { position: relative; padding: 16px; border: 1px solid var(--line); border-radius: 22px; background: white; box-shadow: 0 24px 65px rgba(31, 75, 116, 0.13); }
+    .feature-visual::before { content: ""; position: absolute; inset: -28px; z-index: -1; border-radius: 42px; background: radial-gradient(circle at 20% 30%, rgba(103,188,238,.25), transparent 55%), radial-gradient(circle at 90% 80%, rgba(245,169,189,.28), transparent 50%); }
+    .feature-visual img { width: 100%; display: block; border-radius: 13px; }
 
-    .prose p { margin: 12px 0; color: var(--text-muted); }
-    .prose strong { color: var(--text); }
-    .prose ul, .prose ol { margin: 10px 0; padding-left: 22px; color: var(--text-muted); }
-    .prose li { margin: 5px 0; }
-    .prose .step-label { color: var(--accent-light); font-weight: 600; }
+    .workflow-section { padding-top: 42px; }
+    .workflow-head { text-align: center; }
+    .workflow-head h2, .workflow-head .section-intro { margin-left: auto; margin-right: auto; }
+    .workflow-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 48px; }
+    .workflow-card { position: relative; overflow: hidden; min-height: 230px; padding: 25px; border: 1px solid var(--line); border-radius: 20px; background: white; }
+    .workflow-number { color: rgba(24, 111, 174, .15); font-family: Georgia, serif; font-size: 78px; line-height: .8; }
+    .workflow-card h3 { margin: 25px 0 8px; font-size: 18px; }
+    .workflow-card p { margin: 0; color: var(--muted); font-size: 14px; }
 
-    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
-    th, td { text-align: left; padding: 9px 13px; border: 1px solid var(--border); }
-    th { background: var(--bg-card); font-weight: 600; white-space: nowrap; }
-    td code { font-size: 0.85em; }
+    .download-section { width: min(1180px, calc(100% - 48px)); margin: 30px auto 110px; overflow: hidden; border-radius: 30px; color: white; background: linear-gradient(135deg, #073b69 0%, #126fb0 56%, #4da2d3 100%); box-shadow: var(--shadow); }
+    .download-inner { display: grid; grid-template-columns: .95fr 1.05fr; gap: 58px; padding: 70px; }
+    .download-copy h2 { margin: 10px 0 18px; font-family: Iowan Old Style, Baskerville, "Times New Roman", "Songti SC", serif; font-size: clamp(42px, 5vw, 66px); font-weight: 500; letter-spacing: -.045em; line-height: 1.02; }
+    .download-copy p { color: rgba(255,255,255,.76); }
+    .download-card { padding: 27px; border: 1px solid rgba(255,255,255,.2); border-radius: 20px; background: rgba(4, 44, 77, .24); backdrop-filter: blur(10px); }
+    .detected-label { color: #9eeed7; font-size: 12px; font-weight: 800; letter-spacing: .12em; }
+    .download-card h3 { margin: 9px 0 6px; font-size: 24px; }
+    .download-detail { min-height: 24px; color: rgba(255,255,255,.66); font-size: 13px; }
+    .download-card .button { width: 100%; margin-top: 19px; }
+    .platform-select { width: 100%; margin-top: 13px; padding: 11px 12px; color: white; border: 1px solid rgba(255,255,255,.2); border-radius: 10px; background: rgba(1, 31, 56, .28); }
+    .platform-select option { color: #142236; background: white; }
+    .download-note { margin: 12px 0 0 !important; font-size: 12px; }
+    .all-downloads { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid rgba(255,255,255,.13); }
+    .all-downloads a { padding: 18px 20px; border-right: 1px solid rgba(255,255,255,.13); }
+    .all-downloads a:last-child { border-right: 0; }
+    .all-downloads strong { display: block; font-size: 13px; }
+    .all-downloads span { color: rgba(255,255,255,.58); font-size: 11px; }
 
-    .callout { background: var(--bg-card); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
-    .callout.warn { border-left-color: var(--yellow); }
-    .callout.success { border-left-color: var(--green); }
-    .callout-title { font-weight: 600; margin-bottom: 6px; font-size: 14px; }
-    .callout p, .callout ul, .callout ol { color: var(--text-muted); margin: 4px 0; }
+    .advanced { width: min(1020px, calc(100% - 48px)); margin: 0 auto 100px; }
+    .advanced-card { border: 1px solid var(--line); border-radius: 20px; background: white; overflow: hidden; }
+    .advanced-card summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 25px 28px; font-weight: 760; }
+    .advanced-card summary::-webkit-details-marker { display: none; }
+    .advanced-card summary span { color: var(--muted); font-size: 13px; font-weight: 500; }
+    .advanced-body { padding: 0 28px 30px; border-top: 1px solid var(--line); }
+    .advanced-body h3 { margin: 27px 0 8px; }
+    .advanced-body p, .advanced-body li { color: var(--muted); font-size: 14px; }
+    .command-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 13px 0; padding: 15px 17px; border: 1px solid #dce6ef; border-radius: 12px; background: #f7f9fb; }
+    .command-box code { border: 0; padding: 0; background: none; color: #176fae; word-break: break-all; }
+    .copy-button { border: 0; border-radius: 8px; padding: 7px 10px; color: var(--blue-800); background: var(--blue-100); cursor: pointer; flex: 0 0 auto; }
 
-    .runtimes-section { text-align: center; }
-    .runtime-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
-    .runtime-tag { background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 7px 15px; font-size: 13px; color: var(--text-muted); }
+    .faq { width: min(900px, calc(100% - 48px)); margin: 0 auto; padding: 20px 0 110px; }
+    .faq h2 { text-align: center; margin-bottom: 32px; font-family: Iowan Old Style, Baskerville, "Times New Roman", "Songti SC", serif; font-size: 48px; font-weight: 500; }
+    .faq details { border-top: 1px solid var(--line); }
+    .faq details:last-child { border-bottom: 1px solid var(--line); }
+    .faq summary { cursor: pointer; padding: 20px 4px; font-weight: 700; }
+    .faq p { margin: -4px 4px 22px; color: var(--muted); }
 
-    .arch-diagram { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 26px 22px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13.5px; line-height: 2; color: var(--text-muted); overflow-x: auto; }
-    .arch-diagram .highlight { color: var(--accent-light); }
-    .arch-diagram .green { color: var(--green); }
-    .arch-diagram .dim { color: var(--text-dim); }
+    .footer { padding: 40px 24px; color: #dcecff; background: #062e53; }
+    .footer-inner { width: min(1180px, 100%); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .footer-links { display: flex; gap: 20px; color: rgba(255,255,255,.7); font-size: 13px; }
 
-    .faq-item { border-bottom: 1px solid var(--border); padding: 16px 0; }
-    .faq-item:last-child { border-bottom: none; }
-    .faq-q { font-weight: 600; font-size: 15px; margin-bottom: 8px; }
+    @media (max-width: 980px) {
+      .nav-links a:not(.nav-download) { display: none; }
+      .hero { min-height: 790px; }
+      .feature-split, .feature-split.reverse, .download-inner { grid-template-columns: 1fr; }
+      .feature-split.reverse .feature-copy, .feature-split.reverse .feature-visual { order: initial; }
+      .workflow-grid { grid-template-columns: repeat(2, 1fr); }
+      .trust-grid { grid-template-columns: repeat(2, 1fr); }
+      .trust-item:nth-child(2) { border-right: 0; }
+      .trust-item:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .all-downloads { grid-template-columns: repeat(2, 1fr); }
+      .all-downloads a:nth-child(2) { border-right: 0; }
+      .all-downloads a:nth-child(-n+2) { border-bottom: 1px solid rgba(255,255,255,.13); }
+    }
 
-    .footer { border-top: 1px solid var(--border); padding: 36px 24px; max-width: 1100px; margin: 0 auto; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; }
-    .footer-left { color: var(--text-dim); font-size: 13px; }
-    .footer-links { display: flex; gap: 20px; }
-    .footer-links a { color: var(--text-muted); font-size: 13px; }
-
-    @media (max-width: 720px) {
-      .header { flex-direction: column; gap: 10px; }
-      .header-nav { gap: 16px; flex-wrap: wrap; justify-content: center; }
-      .hero { padding: 48px 16px 32px; }
-      .tiers { grid-template-columns: 1fr; }
-      section { padding: 40px 16px; }
-      .command-row { flex-direction: column; align-items: flex-start; gap: 5px; }
-      .command-row .cmd { min-width: 0; }
-      .footer { flex-direction: column; text-align: center; }
+    @media (max-width: 640px) {
+      .site-header { height: 66px; }
+      .nav { width: min(100% - 28px, 1240px); }
+      .brand { font-size: 18px; }
+      .nav-download { padding: 8px 12px; font-size: 13px; }
+      .hero { min-height: 710px; padding: 116px 16px 0; }
+      .hero h1 { font-size: 52px; }
+      .hero-lede { font-size: 16px; }
+      .hero-actions { flex-direction: column; align-items: stretch; }
+      .product-shot { width: calc(100% - 20px); margin-top: 40px; padding: 5px; border-radius: 13px 13px 0 0; }
+      .window-bar { height: 23px; }
+      .window-dot { width: 7px; height: 7px; }
+      .section { width: min(100% - 30px, 1180px); padding: 78px 0; }
+      .section h2, .feature-copy h2 { font-size: 40px; }
+      .feature-split { gap: 36px; }
+      .workflow-grid { grid-template-columns: 1fr; }
+      .workflow-card { min-height: 190px; }
+      .trust-grid { width: 100%; grid-template-columns: 1fr; }
+      .trust-item { border-right: 0; border-bottom: 1px solid var(--line); }
+      .download-section { width: calc(100% - 24px); margin-bottom: 80px; border-radius: 22px; }
+      .download-inner { padding: 38px 24px; gap: 32px; }
+      .all-downloads { grid-template-columns: 1fr; }
+      .all-downloads a { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.13); }
+      .advanced { width: calc(100% - 24px); }
+      .advanced-card summary { align-items: flex-start; flex-direction: column; }
+      .command-box { align-items: flex-start; flex-direction: column; }
+      .footer-inner { align-items: flex-start; flex-direction: column; }
     }
   </style>
 </head>
 <body>
-  <header class="header">
-    <div class="header-logo">
-      <img src="icon.png" alt="AgentCli" />
-      AgentCli
-    </div>
-    <nav class="header-nav">
-      <a href="#download">下载客户端</a>
-      <a href="#tiers">产品路径</a>
-      <a href="#capabilities">能力</a>
-      <a href="#commands">命令</a>
-      <a href="#token-claim">Token 认领</a>
-      <a href="#usage">上报</a>
-      <a href="#update">更新</a>
-      <a href="#faq">FAQ</a>
+  <header class="site-header">
+    <nav class="nav" aria-label="主导航">
+      <a class="brand" href="#top">
+        <img class="brand-mark" src="icon.png" alt="" />
+        <span>AgentCLI</span>
+      </a>
+      <div class="nav-links">
+        <a href="#product">产品</a>
+        <a href="#workflow">如何使用</a>
+        <a href="#advanced">高级用户</a>
+        <a class="nav-download" href="#download">下载客户端</a>
+      </div>
     </nav>
   </header>
 
-  <section class="hero">
-    <span class="hero-badge">macOS 桌面客户端 · Local-first · v1.10.0</span>
-    <h1>AgentCLI</h1>
-    <p class="lede">给普通用户使用的本地 AI 助手客户端。安装一个 App，即可管理智能体、任务、小队、收件箱、定时任务和交付成果。</p>
-    <p class="oss-line">安装包已内置 AgentCLI、Node 运行能力和 cc-connect；无需预装 Node.js、pnpm 或全局 CLI，数据默认保存在本机 <code>~/.hermit/</code>。</p>
-
-    <div class="desktop-download" id="download">
-      <h2>推荐：安装桌面客户端</h2>
-      <p>适用于 Apple Silicon Mac。下载 DMG 后拖入“应用程序”即可使用；客户端启动后也会提供内置 AgentCLI 命令能力。</p>
-      <a class="download-button" href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg">下载 AgentCLI for macOS</a>
-      <div class="download-meta">macOS arm64 · DMG 安装包 · v1.9.80</div>
-    </div>
-    <div class="install-help">
-      <strong>为什么推荐客户端？</strong> 不需要终端、不需要 npm，打开 App 即可使用完整工作台。高级用户仍可通过客户端内置的 <code>~/.hermit/bin/agentcli</code> 使用命令行。
-    </div>
-
-    <p class="cli-secondary-label"><strong>高级用户：</strong>如果暂时不使用桌面客户端，也可以选择传统 CLI 安装方式。</p>
-    <div class="install-box">
-      <div class="install-tabs">
-        <button class="install-tab active" data-target="tab-win">Windows</button>
-        <button class="install-tab" data-target="tab-curl">macOS / Linux</button>
-        <button class="install-tab" data-target="tab-npm">npm</button>
-        <button class="install-tab" data-target="tab-npx">npx（免安装）</button>
+  <main id="top">
+    <section class="hero">
+      <div class="hero-inner">
+        <span class="eyebrow"><span class="eyebrow-dot"></span> 本地优先 · Desktop v1.9.80</span>
+        <h1>让智能体，<br />真正把工作做完。</h1>
+        <p class="hero-lede">不用学编程，也不用守着终端。创建任务、选择智能体或小队、查看进度、审核成果——全部在一个本地客户端里完成。</p>
+        <div class="hero-actions">
+          <a id="heroDownload" class="button button-primary" href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg"><span aria-hidden="true">↓</span><span id="heroDownloadText">下载 macOS 客户端</span></a>
+          <a class="button button-secondary" href="#product">看看它能做什么 <span aria-hidden="true">→</span></a>
+        </div>
+        <div id="heroDownloadContext" class="download-context">正在识别你的系统…</div>
+        <div class="works-with">
+          <span>可连接</span>
+          <strong>Claude Code</strong><span class="runtime-dot">•</span>
+          <strong>Codex</strong><span class="runtime-dot">•</span>
+          <strong>Gemini CLI</strong><span class="runtime-dot">•</span>
+          <strong>Cursor</strong><span class="runtime-dot">•</span>
+          <strong>OpenCode</strong>
+        </div>
       </div>
-      <div class="install-content active" id="tab-win">
-        <div class="install-cmd">irm https://gh-proxy.com/https://raw.githubusercontent.com/yancyuu/agentcli/master/scripts/install.ps1 | iex</div>
+      <div class="product-shot" aria-label="AgentCLI 工作台预览">
+        <div class="window-bar"><span class="window-dot red"></span><span class="window-dot yellow"></span><span class="window-dot green"></span></div>
+        <img src="images/workbench-inbox.png" alt="AgentCLI 收件箱与任务交付界面" />
       </div>
-      <div class="install-content" id="tab-curl">
-        <div class="install-cmd">curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/yancyuu/agentcli/master/scripts/install.sh | bash</div>
+    </section>
+
+    <section class="trust-strip" aria-label="产品特点">
+      <div class="trust-grid">
+        <div class="trust-item"><strong>安装一个 App</strong><span>无需预装 Node.js 或 pnpm</span></div>
+        <div class="trust-item"><strong>数据保存在本机</strong><span>默认写入 ~/.hermit/</span></div>
+        <div class="trust-item"><strong>内置 AgentCLI</strong><span>客户端与命令行共用数据</span></div>
+        <div class="trust-item"><strong>交付结果优先</strong><span>成果直接阅读、审核与归档</span></div>
       </div>
-      <div class="install-content" id="tab-npm">
-        <div class="install-cmd">npm install -g @yancyyu/agentcli</div>
+    </section>
+
+    <section id="product" class="section feature-split">
+      <div class="feature-copy">
+        <span class="section-kicker">任务与收件箱</span>
+        <h2>像交代同事一样，把任务交给智能体。</h2>
+        <p class="section-intro">写清楚想要的结果，附上图片、PDF、Office 或 ZIP 文件，然后等待交付。过程状态和需要你处理的反馈会统一进入收件箱。</p>
+        <div class="feature-points">
+          <div class="feature-point"><span class="feature-icon">1</span><div><strong>不需要写 Prompt 工程</strong><p>用普通语言描述目标，选择合适的智能体即可。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">2</span><div><strong>输入和成果分开管理</strong><p>原始材料进入 input，正式成果按版本归档到 outputs。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">3</span><div><strong>返工不丢上下文</strong><p>直接回复当前任务要求修改，智能体在原任务上继续完成。</p></div></div>
+        </div>
       </div>
-      <div class="install-content" id="tab-npx">
-        <div class="install-cmd"><span class="comment"># 无需安装，直接运行</span><br/>npx @yancyyu/agentcli</div>
+      <div class="feature-visual"><img src="images/workbench-tasks.png" alt="AgentCLI 任务管理页面" loading="lazy" /></div>
+    </section>
+
+    <section class="section feature-split reverse">
+      <div class="feature-copy">
+        <span class="section-kicker">智能体小队</span>
+        <h2>复杂任务，让一支小队协作完成。</h2>
+        <p class="section-intro">成员先进行有限轮次圆桌讨论，自行选出本任务的临时队长。队长负责分工、验收、整合，并向你统一交付最终结果。</p>
+        <div class="feature-points">
+          <div class="feature-point"><span class="feature-icon">✓</span><div><strong>任务级临时队长</strong><p>不是固定上下级，每次任务都能选择最合适的负责人。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">↗</span><div><strong>并行执行，集中交付</strong><p>成员同步工作，队长最终整合，避免你逐个追进度。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">◎</span><div><strong>重启后继续运行</strong><p>协作状态持久化，客户端刷新或服务重启不会永久卡住。</p></div></div>
+        </div>
       </div>
-    </div>
-    <div class="install-help">
-      <strong>国内 / 无法访问 GitHub？</strong> 上面的安装命令已默认走 GitHub 镜像：<code>curl</code> / <code>irm</code> 经由 <code>gh-proxy.com</code> 取安装脚本，脚本内部下载便携包时也会依次尝试 <code>gh-proxy.com</code> → <code>ghproxy.net</code> → 直连，全链路不依赖直连 GitHub。想换镜像可用环境变量：<code>AGENTCLI_MIRROR=https://ghproxy.net/ bash &lt;(curl -fsSL .../install.sh)</code>。
-    </div>
-    <div class="install-help">
-      <strong>安装 / 更新报错？</strong> Windows 遇到 <code>EBUSY: resource busy or locked</code> 不是权限问题（别用 sudo / 管理员），通常是 Web daemon 或用量 worker 还占着文件。先按需停掉后台服务再装：
-      <pre><code>agentcli services stop web
-agentcli usage stop
-npm install -g @yancyyu/agentcli@latest --prefer-online</code></pre>
-      <code>agentcli stop</code> 只显示停止指引，不会主动关闭后台服务；完整排查见下方 <a href="#faq">FAQ</a>。
-    </div>
-    <div class="install-help">
-      <strong>卸载</strong> 先停掉后台服务，再卸载包：
-      <pre><code>agentcli services stop web
-agentcli usage stop
-npm uninstall -g @yancyyu/agentcli</code></pre>
-      裸 <code>agentcli stop</code> 不会停止 worker；本地数据 <code>~/.hermit/</code> 不会自动删除；确认无需保留后可手动 <code>rm -rf ~/.hermit</code>。
-    </div>
-  </section>
+      <div class="feature-visual"><img src="images/workbench-agents.png" alt="AgentCLI 智能体与小队界面" loading="lazy" /></div>
+    </section>
 
-  <section id="tiers">
-    <h2>本地控制面 + 消息总线</h2>
-    <p class="section-sub">先把本机 AI 运行时管起来，再把团队消息、任务与用量接入统一总线。<strong>AgentCli 负责本地控制面，AgentBus 负责跨团队协调。</strong></p>
-    <div class="tiers">
-      <div class="tier">
-        <span class="tier-tag free">本地控制面</span>
-        <h3>AgentCli</h3>
-        <p class="tier-sub">本地优先的 CLI + Web 工作台。你现在就能装、立刻能用。</p>
-        <ul>
-          <li>交互式终端菜单 + 全套子命令（账号 / 用量 / 团队 / 服务 / 插件）</li>
-          <li>本地 Web 工作台：团队、看板、运行时、代码评审</li>
-          <li>自动采集本机 AI 运行时用量（token / 会话 / 消息）</li>
-          <li>数据默认落 <code>~/.hermit/</code>，单机完整可用，无需注册</li>
-          <li>token 池认领：从授权池签发一次性网关 key，可写入 Codex / Claude Code / Pi；支持配置快照与一键恢复</li>
-          <li>支持自托管、可二次开发</li>
-        </ul>
-        <p class="tier-cta"><a href="#commands">装好之后从这几条命令开始 →</a></p>
+    <section id="workflow" class="section workflow-section">
+      <div class="workflow-head">
+        <span class="section-kicker">完整工作闭环</span>
+        <h2>从一句需求，到一份正式成果。</h2>
+        <p class="section-intro">AgentCLI 把执行过程藏到合适的位置，让普通用户只关注目标、反馈和最终交付。</p>
       </div>
-      <div class="tier enterprise">
-        <span class="tier-tag ent">消息总线 · 协调层</span>
-        <h3>AgentBus</h3>
-        <p class="tier-sub">统一消息、任务与用量的协调层，把多个本地控制面连接成团队协作网络。</p>
-        <ul>
-          <li>企业级用量看板：按团队 / 成员 / 运行时 / 时间段汇总</li>
-          <li>IM 消息路由：飞书、微信等消息直达数字员工、触发任务</li>
-          <li>跨团队任务派发与 Task Bus（offer / bid / lease）</li>
-          <li>完整审计轨迹、权限与渠道白名单</li>
-          <li>统一收敛全组织的 AI 工程用量与协作数据</li>
-        </ul>
-        <!-- 企业版联系入口暂不在公开宣发页展示。 -->
+      <div class="workflow-grid">
+        <article class="workflow-card"><div class="workflow-number">01</div><h3>创建任务</h3><p>写下目标，添加输入文件，选择单个智能体或小队。</p></article>
+        <article class="workflow-card"><div class="workflow-number">02</div><h3>自动执行</h3><p>智能体自行推进；小队会先讨论、选队长，再并行分工。</p></article>
+        <article class="workflow-card"><div class="workflow-number">03</div><h3>收到交付</h3><p>成果进入收件箱，报告、图片和附件可以直接查看。</p></article>
+        <article class="workflow-card"><div class="workflow-number">04</div><h3>审核归档</h3><p>满意则保存正式版本；需要修改则在原任务继续返工。</p></article>
       </div>
-    </div>
-    <div class="callout">
-      <div class="callout-title">关系一句话</div>
-      <p><strong>AgentCli（本地控制面）</strong>是操作面，读写本地数据；<strong>AgentBus（消息总线）</strong>是协调骨干，提供团队协作、IM 路由与组织级看板。不接 Bus = 本地控制面独立运行；接入 Bus = 消息、任务、用量进入统一协调层。</p>
-    </div>
-  </section>
+    </section>
 
-  <section id="capabilities">
-    <h2>核心能力</h2>
-    <p class="section-sub">从用量可见，到数字员工团队化。</p>
-    <div class="features-grid">
-      <div class="feature-card"><div class="feature-icon">&#9881;</div><h4>自动采集</h4><p>无侵入扫描本地 AI Agent 会话日志，自动识别 token 消耗、会话数、消息量，零配置开箱即用。</p></div>
-      <div class="feature-card"><div class="feature-icon">&#8644;</div><h4>统一上报</h4><p>多运行时、多场景汇总至 AgentBus。断点续传、幂等去重、背压控制。</p></div>
-      <div class="feature-card"><div class="feature-icon">&#128202;</div><h4>用量看板</h4><p>按团队、成员、工具、场景维度展示 token 用量与会话活跃度。</p></div>
-      <div class="feature-card"><div class="feature-icon">&#128101;</div><h4>数字员工团队</h4><p>创建团队、配置成员与运行时、看板派活、评论协作、审核交付。</p></div>
-      <div class="feature-card"><div class="feature-icon">&#128268;</div><h4>多运行时协调</h4><p>Claude Code、Codex、Cursor、Gemini、OpenCode 在一个面板里启动与监控。</p></div>
-      <div class="feature-card"><div class="feature-icon">&#128274;</div><h4>本地优先 · 安全</h4><p>默认 metadata-only 上报，不上传消息正文、代码或密钥。数据在你本机。</p></div>
-    </div>
-  </section>
+    <section id="download" class="download-section">
+      <div class="download-inner">
+        <div class="download-copy">
+          <span class="section-kicker" style="color:#a9ead9">立即开始</span>
+          <h2>下载最适合你电脑的版本。</h2>
+          <p>页面会根据当前系统自动推荐。Apple Silicon Mac 优先使用桌面 DMG；其他系统会显示当前可用的独立安装包。</p>
+          <p>桌面客户端已内置 AgentCLI 与 cc-connect，不需要再通过 npm 安装。</p>
+        </div>
+        <div class="download-card">
+          <div class="detected-label">已为你推荐</div>
+          <h3 id="recommendedTitle">macOS 客户端</h3>
+          <div id="recommendedDetail" class="download-detail">Apple Silicon · DMG · 176 MB</div>
+          <a id="recommendedDownload" class="button button-primary" href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg">下载 macOS 客户端</a>
+          <select id="platformSelect" class="platform-select" aria-label="选择其他系统版本">
+            <option value="macArm">macOS Apple Silicon</option>
+            <option value="macIntel">macOS Intel</option>
+            <option value="windows">Windows x64</option>
+            <option value="linux">Linux x64</option>
+          </select>
+          <p id="downloadNote" class="download-note">下载后打开 DMG，将 AgentCLI 拖入“应用程序”。</p>
+        </div>
+      </div>
+      <div class="all-downloads">
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg"><strong>macOS Apple Silicon</strong><span>DMG 桌面客户端</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-macos-x64.zip"><strong>macOS Intel</strong><span>ZIP 独立包</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-windows-x64.zip"><strong>Windows x64</strong><span>ZIP 独立包</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-linux-x64.zip"><strong>Linux x64</strong><span>ZIP 独立包</span></a>
+      </div>
+    </section>
 
-  <section id="commands">
-    <h2>常用命令</h2>
-    <p class="section-sub">装好之后从这几条开始。命令统一为 <code>agentcli</code>，所有命令支持 <code>--json</code> 输出机器可读结果（适合 agent / 脚本调用）。也可以直接把本说明书链接 <code>https://yancyuu.github.io/agentcli/</code> 丢给 Claude Code / Codex，让 agent 按步骤安装、登录、上报和自检。</p>
-    <div class="commands-list">
-      <div class="command-group-title">启动与状态</div>
-      <div class="command-row"><code class="cmd">agentcli</code><span class="cmd-desc">打开终端导航（控制面菜单）：工作台、用量同步、用户、token 池(beta)</span></div>
-      <div class="command-row"><code class="cmd">Web 工作台 → 创建数字员工</code><span class="cmd-desc">运行 agentcli web 后在浏览器中创建和管理数字员工；终端工作台菜单不再提供快速创建入口</span></div>
-      <div class="command-row"><code class="cmd">agentcli init</code><span class="cmd-desc">快速初始化：默认启动 Web 工作台 + 用量后台 worker（默认开机自启）</span></div>
-      <div class="command-row"><code class="cmd">agentcli web</code><span class="cmd-desc">直接启动 Web 工作台（默认 127.0.0.1:5680）；加 <code>--daemon</code> 后台运行</span></div>
-      <div class="command-row"><code class="cmd">agentcli status · doctor</code><span class="cmd-desc">查看后台运行状态 / 只读本地诊断</span></div>
-      <div class="command-row"><code class="cmd">agentcli stop</code><span class="cmd-desc">显示停止指引（不会主动关闭 Web / 用量 worker）</span></div>
-      <div class="command-row"><code class="cmd">agentcli services stop web</code><span class="cmd-desc">停止 Web 后台 daemon</span></div>
-      <div class="command-row"><code class="cmd">agentcli restart</code><span class="cmd-desc">重启 Web daemon + 用量 worker（更新后用它让新代码生效；本地命令，免登录）</span></div>
+    <section id="advanced" class="advanced">
+      <details class="advanced-card">
+        <summary>
+          <strong>高级用户与命令行</strong>
+          <span>查看内置 CLI、传统安装方式和常用命令 ＋</span>
+        </summary>
+        <div class="advanced-body">
+          <h3>安装 App 后可以使用 CLI 吗？</h3>
+          <p>可以。客户端本身已经内置 AgentCLI，首次启动后会创建 <code>~/.hermit/bin/agentcli</code>，App 和终端共用同一份任务与配置数据，不需要再次执行 npm 安装。</p>
+          <div class="command-box"><code>~/.hermit/bin/agentcli --version</code><button class="copy-button" data-copy="~/.hermit/bin/agentcli --version">复制</button></div>
+          <p><strong>直接输入 <code>agentcli</code>：</strong>需要在客户端设置里启用一次“终端命令”，由客户端明确展示并完成 Shell PATH 集成；不会在你不知情的情况下修改 Shell 配置。</p>
 
-      <div class="command-group-title">用户授权（上报前提）</div>
-      <div class="command-row"><code class="cmd">agentcli auth login</code><span class="cmd-desc">飞书授权登录 AgentBus——登录后用量才有上报目标</span></div>
-      <div class="command-row"><code class="cmd">agentcli auth status</code><span class="cmd-desc">查看 AgentBus 用户授权状态</span></div>
+          <h3>不安装桌面 App</h3>
+          <p>传统 CLI 安装只推荐给需要脚本化或服务器环境的高级用户。</p>
+          <div class="command-box"><code>curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/yancyuu/agentcli/master/scripts/install.sh | bash</code><button class="copy-button" data-copy="curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/yancyuu/agentcli/master/scripts/install.sh | bash">复制</button></div>
+          <div class="command-box"><code>npm install -g @yancyyu/agentcli</code><button class="copy-button" data-copy="npm install -g @yancyyu/agentcli">复制</button></div>
 
-      <div class="command-group-title">用量采集与上报</div>
-      <div class="command-row"><code class="cmd">agentcli usage status</code><span class="cmd-desc">后台 worker 是否运行、消息上报是否开启</span></div>
-      <div class="command-row"><code class="cmd">agentcli usage start</code><span class="cmd-desc">开启轻量后台采集，默认配置开机自启</span></div>
-      <div class="command-row"><code class="cmd">agentcli usage stop</code><span class="cmd-desc">停止用量后台 worker，并默认关闭开机自启</span></div>
-      <div class="command-row"><code class="cmd">agentcli usage report</code><span class="cmd-desc">立即扫描并按服务端游标增量上报；<code>--full</code> 手动补报最近 7 天</span></div>
-      <div class="command-row"><code class="cmd">agentcli usage today</code><span class="cmd-desc">查看今日本地用量摘要（不上传）</span></div>
+          <h3>常用命令</h3>
+          <ul>
+            <li><code>agentcli --version</code>：查看当前版本。</li>
+            <li><code>agentcli tasks list --team &lt;team&gt;</code>：查看团队任务。</li>
+            <li><code>agentcli doctor</code>：执行只读诊断。</li>
+            <li><code>agentcli usage status</code>：查看用量采集状态。</li>
+          </ul>
+          <p><a href="https://github.com/yancyuu/agentcli">在 GitHub 查看完整说明 →</a></p>
+        </div>
+      </details>
+    </section>
 
-      <div class="command-group-title">团队 / 任务 / 维护</div>
-      <div class="command-row"><code class="cmd">agentcli teams list · create</code><span class="cmd-desc">查看 / 创建本地团队</span></div>
-      <div class="command-row"><code class="cmd">agentcli tasks list --team &lt;t&gt;</code><span class="cmd-desc">查看某团队活跃任务</span></div>
-      <div class="command-row"><code class="cmd">agentcli update</code><span class="cmd-desc">检查并自更新到最新版本</span></div>
-      <div class="command-row"><code class="cmd">agentcli add &lt;plugin&gt;</code><span class="cmd-desc">安装能力插件到 MCP library</span></div>
-    </div>
-    <div class="callout">
-      <div class="callout-title">在 Web 工作台创建数字员工</div>
-      <p>终端工作台菜单不再提供「开通数字员工」快捷向导。运行 <code>agentcli web</code>，浏览器打开 <code>http://127.0.0.1:5680</code> 后，在 Web 工作台使用「创建数字员工」完成创建、运行时选择和后续管理。底层 <code>create-digital-worker</code> 命令暂时保留，以兼容已有脚本和自动化流程。</p>
-    </div>
-  </section>
-
-  <section id="config" class="prose">
-    <h2>配置 AI 运行时（客户端配置）</h2>
-    <p class="section-sub">AgentCli 读写的本机配置位置，以及如何认领网关 key 并写进 Codex / Claude Code / Pi。</p>
-
-    <h3>本机数据来源</h3>
-    <table>
-      <thead><tr><th>运行时</th><th>数据位置</th><th>采集内容</th></tr></thead>
-      <tbody>
-        <tr><td>Claude Code</td><td><code>~/.claude/projects/**/*.jsonl</code></td><td>token 用量、会话数、消息量；支持 IM 归因</td></tr>
-        <tr><td>Codex</td><td><code>~/.codex/sessions/**/*.jsonl</code></td><td>token 用量（output_tokens 为主）</td></tr>
-      </tbody>
-    </table>
-
-    <h3 id="token-claim">Token 池认领是什么？</h3>
-    <div class="callout success">
-      <div class="callout-title">这里的 token 不是“用量 token”</div>
-      <p>Token 池认领指的是：AgentCli 为已授权用户从 AI 网关签发一个<strong>一次性明文访问 key</strong>，再把 key、网关地址和所选模型写入本机运行时配置。认领完成后，Codex、Claude Code 或 Pi 就可以通过统一网关调用已分配的模型。</p>
-    </div>
-
-    <h3>如何认领</h3>
-    <ol>
-      <li><span class="step-label">先登录</span> — 运行 <code>agentcli auth login</code>，再用 <code>agentcli auth status</code> 确认已登录。</li>
-      <li><span class="step-label">进入认领入口</span> — 运行 <code>agentcli</code>，展开「token 池（Beta）」并选择「认领」。</li>
-      <li><span class="step-label">选择运行时和模型</span> — 可选择 Codex、Claude Code、Pi 或组合；默认只选 Codex。随后从网关授权的模型中选择一个模型。</li>
-      <li><span class="step-label">等待自动配置</span> — AgentCli 自动完成签发、领取一次性 key、备份原配置和写入配置；完成后重启所选运行时，并新开终端让系统环境变量生效。</li>
-    </ol>
-
-    <h3>认领后会改哪些配置？</h3>
-    <ul>
-      <li><strong>Claude Code</strong>：更新 <code>~/.claude/settings.json</code>，写入 <code>ANTHROPIC_BASE_URL</code>、<code>ANTHROPIC_AUTH_TOKEN</code> 和所选模型对应的 tier 配置，同时保留其它设置。</li>
-      <li><strong>Codex</strong>：更新 <code>~/.codex/auth.json</code> 的 <code>OPENAI_API_KEY</code>，并在 <code>~/.codex/config.toml</code> 写入网关 provider、模型与 <code>responses</code> 协议；原有 <code>[projects.*]</code> 等其它区块会保留。</li>
-      <li><strong>Pi</strong>：更新 <code>~/.pi/agent/auth.json</code>、<code>models.json</code> 和 <code>settings.json</code> 中的 <code>skg</code> provider、可用模型和默认模型。</li>
-      <li><strong>通用环境</strong>：写入权限为 0600 的 <code>~/.hermit/aikey.env</code>；同时一次性更新 macOS/Linux shell rc 管理块或 Windows 当前用户环境变量。不会安装每次提示符都执行的 shell hook。</li>
-    </ul>
-    <div class="callout">
-      <div class="callout-title">什么时候生效？</div>
-      <p>运行时自己的配置通常在<strong>重启 Codex / Claude Code / Pi</strong> 后生效；系统环境变量需要新开终端。外部 agent 或手动脚本也可以运行 <code>source ~/.hermit/aikey.env</code>。Claude Code 使用 <code>ANTHROPIC_AUTH_TOKEN</code>，Codex 使用 <code>OPENAI_API_KEY</code>，不要混用变量名。</p>
-    </div>
-    <div class="callout warn">
-      <div class="callout-title">安全与恢复</div>
-      <p>每次认领前都会在 <code>~/.hermit/agentcli.env.bak</code> 新建一个带时间点的配置快照，最多保留最近 20 份；可从「token 池 → 恢复配置快照」选择任意时间点还原。一次性 key 只在领取时进入内存并写入你选择的本地配置，结果页只显示脱敏值；请勿分享相关配置文件或备份。该能力需要服务端授权，部分账户可能暂未开放。</p>
-    </div>
-  </section>
-
-  <section id="usage" class="prose">
-    <h2>开启用量上报（三要素）</h2>
-    <p class="section-sub">自动上报需要<strong>三件事同时满足</strong>：已登录 + 消息上报已开启 + 后台采集运行中。缺一不上报。</p>
-    <ol>
-      <li><span class="step-label">登录上报目标</span> — <code>agentcli auth login</code>（飞书授权绑定 AgentBus），<code>agentcli auth status</code> 确认已登录。</li>
-      <li><span class="step-label">启用消息上报</span> — <code>agentcli</code> →「用量同步」→ 回车展开 →「消息上报」开启，选择上报运行时。<em>该开关只在终端菜单 / Web 里，没有单独子命令。</em></li>
-      <li><span class="step-label">启动后台采集</span> — 推荐 <code>agentcli services start web</code> 启动 Web 工作台，<code>agentcli usage start</code> 启动后台 worker。后台 worker 默认开机自启，约 5 分钟按服务端 cursor 增量扫描。停止用 <code>agentcli usage stop</code>。</li>
-      <li><span class="step-label">立即补报一次</span> — <code>agentcli usage report</code>（增量）；<code>usage report --full</code> 手动全量重扫最近 7 天。</li>
-      <li><span class="step-label">核对状态</span> — <code>agentcli usage status</code>，或 Web 工作台「用量」Tab。</li>
-    </ol>
-    <div class="callout success">
-      <div class="callout-title">上报不工作？三要素自检</div>
-      <p>按顺序排查：<code>auth status</code>（已登录？）→ <code>usage status</code>（worker running 且消息上报 enabled？）→ <code>usage report</code>（手动触发一次看输出）。补报历史用 <code>usage report --full</code>。</p>
-    </div>
-    <div class="callout">
-      <div class="callout-title">隐私</div>
-      <p>默认 metadata-only：只上报 token 数、时间戳、维度，不上传消息正文、助手回复、工具输入输出或密钥。具体范围取决于 AgentBus 管理员配置。</p>
-    </div>
-  </section>
-
-  <section id="update" class="prose">
-    <h2>安全更新 AgentCli</h2>
-    <p class="section-sub">更新会替换全局安装目录中的文件。为避免 Windows 的 <code>EBUSY</code>、旧 worker 继续运行旧代码或渠道连接未释放，推荐先停止会加载 AgentCli 包文件的本地进程，再安装新版本。</p>
-
-    <h3>推荐流程（手动更新，最稳妥）</h3>
-    <ol>
-      <li><span class="step-label">停止用量 worker</span> — <code>agentcli usage stop</code>。该命令默认同时关闭用量 worker 的开机自启；更新完成后再显式启动。</li>
-      <li><span class="step-label">停止 Web daemon</span> — <code>agentcli services stop web</code>。由 Web daemon 启动的 cc-connect / hermit-bridge 渠道运行时也会随之退出；协作服务只是配置项，不是本地进程，无需单独停止。</li>
-      <li><span class="step-label">安装最新版</span> — <code>npm install -g @yancyyu/agentcli@latest --prefer-online</code>。不要把裸 <code>agentcli stop</code> 当成停止命令，它只显示指引。</li>
-      <li><span class="step-label">重新启动</span> — 推荐 <code>agentcli restart</code>，一键重启 Web 工作台和用量 worker；也可分别运行 <code>agentcli services start web</code> 与 <code>agentcli usage start</code>。</li>
-      <li><span class="step-label">验证</span> — 运行 <code>agentcli --version</code>、<code>agentcli status</code>、<code>agentcli usage status</code> 和 <code>agentcli doctor</code>，确认版本、Web、worker 与本地配置均正常。</li>
-    </ol>
-    <pre><code># 1. 停止会占用安装文件的进程
-agentcli usage stop
-agentcli services stop web
-
-# 2. 安装最新版
-npm install -g @yancyyu/agentcli@latest --prefer-online
-
-# 3. 恢复服务
-agentcli restart
-
-# 4. 验证
-agentcli --version
-agentcli status
-agentcli usage status
-agentcli doctor</code></pre>
-
-    <h3>使用内置更新命令</h3>
-    <p><code>agentcli update</code> 是内置自更新：<strong>免登录</strong>（本地生命周期命令），且固定走官方 <code>registry.npmjs.org</code>——避免默认镜像（如 npmmirror）同步延迟导致装到旧版或 <code>ETARGET</code>。它会在成功后热重载用量 worker，但<strong>不重启 Web daemon</strong>；更新后跑一次 <code>agentcli restart</code> 让 Web daemon / hermit-bridge / cc-connect 也切到新代码。为最大限度避免 Windows 文件锁，仍建议先运行 <code>agentcli services stop web</code>；如果更新报 <code>EBUSY</code>，改用上面的完整手动流程。</p>
-
-    <div class="callout warn">
-      <div class="callout-title">不要漏停这些进程</div>
-      <p><strong>用量 worker</strong> 用 <code>agentcli usage stop</code>；<strong>Web daemon 和它托管的渠道运行时</strong>用 <code>agentcli services stop web</code>。独立运行的第三方 bridge 不属于 AgentCli 包更新范围；如果操作系统仍提示文件被占用，只终止与 agentcli / hermit / cc-connect 明确相关的残留进程，不要批量杀死所有 Node 进程。</p>
-    </div>
-    <div class="callout success">
-      <div class="callout-title">数据不会因更新被删除</div>
-      <p>上述停止和更新命令不会删除 <code>~/.hermit/</code> 中的团队、渠道配置、登录态或用量状态。更新后使用 <code>agentcli restart</code> 恢复服务即可。</p>
-    </div>
-  </section>
-
-  <section class="runtimes-section">
-    <h2>支持的 AI 编程工具</h2>
-    <p class="section-sub">一等适配 + 兼容注册，持续扩展。</p>
-    <div class="runtime-tags">
-      <span class="runtime-tag">Claude Code</span>
-      <span class="runtime-tag">Codex</span>
-      <span class="runtime-tag">Cursor</span>
-      <span class="runtime-tag">Gemini CLI</span>
-      <span class="runtime-tag">OpenCode</span>
-      <span class="runtime-tag">Kimi</span>
-      <span class="runtime-tag">Devin</span>
-      <span class="runtime-tag">Qoder</span>
-    </div>
-  </section>
-
-  <section class="prose">
-    <h2>架构</h2>
-    <div class="arch-diagram">
-      <span class="dim">开发者本地</span><br/>
-      <span class="highlight">Claude Code / Codex / Cursor / Gemini / OpenCode ...</span><br/>
-      &nbsp;&nbsp;&nbsp;&nbsp;&#8595; 会话日志 &amp; token 用量<br/>
-      <span class="green">AgentCli</span> <span class="dim">(本地 CLI + Web 工作台)</span><br/>
-      &nbsp;&nbsp;&nbsp;&nbsp;&#8595; 统一上报<br/>
-      <span class="highlight">AgentBus</span> <span class="dim">(消息总线 · 协调层)</span><br/>
-      &nbsp;&nbsp;&nbsp;&nbsp;&#8595; 看板 &amp; 协作<br/>
-      <span class="dim">企业管理者 / 团队成员</span>
-    </div>
-  </section>
-
-  <section id="faq" class="prose">
-    <h2>常见问题</h2>
-
-    <div class="faq-item">
-      <div class="faq-q">Q：安装桌面客户端后还能使用 CLI 吗？</div>
-      <p>可以。客户端已经内置 AgentCLI，并在启动后维护 <code>~/.hermit/bin/agentcli</code>。App 内部会直接使用它；终端用户可以运行该完整路径，或在设置中按提示把 <code>~/.hermit/bin</code> 加入 PATH。客户端不会静默修改你的 Shell 配置。</p>
-    </div>
-
-    <div class="faq-item">
-      <div class="faq-q">Q：EBUSY: resource busy or locked（Windows 安装 / 更新）</div>
-      <p><strong>原因：</strong>不是权限问题（EBUSY ≠ EACCES），sudo / 管理员身份无效。是之前运行过的 agentcli 后台进程还占着包内文件，npm 无法替换。</p>
-      <p><strong>解决（按顺序，多数第 ① 步就够）：</strong></p>
-      <pre><code>agentcli services stop web      # 停 Web daemon
-agentcli usage stop            # 停用量后台 worker
-npm install -g @yancyyu/agentcli@latest --prefer-online</code></pre>
-      <p><code>agentcli stop</code> 只显示停止指引，不会主动关闭 Web / 用量 worker；还不行就杀掉残留 node 进程（只杀 agentcli / hermit 相关），或直接重启电脑后重装。</p>
-    </div>
-
-    <div class="faq-item">
-      <div class="faq-q">Q：EACCES: permission denied（权限报错）</div>
-      <p><strong>原因：</strong>之前用 <code>sudo</code> 运行过，部分文件被 root 占有。</p>
-      <pre><code>sudo chown $(whoami) ~/.hermit/telemetry/worker.pid
-# npm global 目录也报错时：
-sudo chown -R $(whoami) ~/.npm-global</code></pre>
-      <div class="callout warn"><div class="callout-title">预防</div><p>不要用 sudo 运行 agentcli 或 npm install -g。</p></div>
-    </div>
-
-    <div class="faq-item">
-      <div class="faq-q">Q：agentcli 命令找不到</div>
-      <p><strong>macOS / Linux：</strong>npm 全局 bin 目录不在 PATH。添加到 <code>~/.zshrc</code> 或 <code>~/.bashrc</code>：</p>
-      <pre><code>export PATH="$(npm config get prefix)/bin:$PATH"</code></pre>
-      <p><strong>Windows PowerShell：</strong>如果 cmd 能用但 PowerShell 报「无法将 agentcli 项识别为 cmdlet」，是 PowerShell 默认执行策略 <code>Restricted</code> 禁止了 npm 生成的 <code>agentcli.ps1</code> 脚本。只需改当前用户的执行策略（不需要管理员）：</p>
-      <pre><code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-# 问确认时输 Y，然后重开 PowerShell 窗口</code></pre>
-      <p><code>RemoteSigned</code> 是合理安全水平：本地脚本能跑，网上下载的脚本需要签名。<strong>装完 agentcli 后必须重开 PowerShell 窗口</strong>，当前会话不会自动刷新 PATH。</p>
-    </div>
-
-    <div class="faq-item">
-      <div class="faq-q">Q：更新失败 / 想强制重装</div>
-      <pre><code>npm install -g @yancyyu/agentcli@latest --prefer-online</code></pre>
-    </div>
-
-    <div class="faq-item">
-      <div class="faq-q">Q：会上传代码或消息内容吗？</div>
-      <p>默认 metadata-only：不上传消息正文、助手回复、工具输入输出、cron prompt 或密钥。具体上报范围取决于 AgentBus 管理员配置。</p>
-    </div>
-
-    <div class="faq-item">
-      <div class="faq-q">Q：AgentCli 和 AgentBus 是什么关系？</div>
-      <p><strong>AgentCli</strong> 是本地 CLI + Web 控制面，负责管理本机 AI 运行时、用量采集、工作台与团队任务。<strong>AgentBus</strong> 是消息总线与协调层，负责 IM 路由、跨团队任务派发、组织级用量汇总与审计。不接 Bus 时，AgentCli 仍可作为本地控制面独立运行；接入 Bus 后进入团队协作网络。</p>
-    </div>
-  </section>
+    <section class="faq">
+      <h2>常见问题</h2>
+      <details open><summary>我完全不会编程，也能使用吗？</summary><p>可以。桌面客户端的默认界面只使用“任务、收件箱、智能体、小队、交付成果”等普通工作语言，CLI、端口、Session 和内部日志默认隐藏。</p></details>
+      <details><summary>数据和任务文件会上传到云端吗？</summary><p>默认本地运行，任务与配置存放在本机 <code>~/.hermit/</code> 和智能体项目目录。只有你主动配置企业团队总线及对应授权范围后，指定的数据才会进行上报。</p></details>
+      <details><summary>安装 App 后是否还需要 Node.js 或 npm？</summary><p>不需要。桌面安装包包含运行 AgentCLI 所需的 Node 运行能力和 cc-connect。</p></details>
+      <details><summary>为什么终端里暂时找不到 agentcli？</summary><p>App 内置 CLI 会先创建在 <code>~/.hermit/bin/agentcli</code>。为了不静默修改 Shell 配置，直接输入 <code>agentcli</code> 的 PATH 集成需要在客户端设置中明确启用一次。</p></details>
+      <details><summary>当前有哪些桌面版本？</summary><p>当前正式桌面客户端首先提供 macOS Apple Silicon DMG；macOS Intel、Windows 和 Linux 目前提供独立 ZIP 包。后续会继续补齐对应桌面安装器。</p></details>
+    </section>
+  </main>
 
   <footer class="footer">
-    <div class="footer-left">&copy; 2026 AgentCli · 本地控制面 · AgentBus 消息总线协调</div>
-    <div class="footer-links">
-      <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg">下载 macOS 客户端</a>
-      <a href="https://www.npmjs.com/package/@yancyyu/agentcli">npm（高级用户）</a>
+    <div class="footer-inner">
+      <a class="brand" href="#top"><img class="brand-mark" src="icon.png" alt="" /><span>AgentCLI</span></a>
+      <div class="footer-links"><a href="#download">下载</a><a href="#advanced">高级用户</a><a href="https://github.com/yancyuu/agentcli">GitHub</a><span>© 2026 AgentCLI</span></div>
     </div>
   </footer>
 
   <script>
-    document.querySelectorAll('.install-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.install-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.install-content').forEach(c => c.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById(tab.dataset.target).classList.add('active');
+    const DOWNLOADS = {"macArm":{"label":"macOS 客户端","shortLabel":"macOS Apple Silicon","detail":"Apple Silicon · DMG · 176 MB","filename":"AgentCLI-1.9.80-arm64.dmg","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg","kind":"desktop"},"macIntel":{"label":"macOS Intel 独立包","shortLabel":"macOS Intel","detail":"Intel x64 · ZIP · 131 MB","filename":"agentcli-macos-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-macos-x64.zip","kind":"portable"},"windows":{"label":"Windows 独立包","shortLabel":"Windows x64","detail":"Windows x64 · ZIP · 123 MB","filename":"agentcli-windows-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-windows-x64.zip","kind":"portable"},"linux":{"label":"Linux 独立包","shortLabel":"Linux x64","detail":"Linux x64 · ZIP · 136 MB","filename":"agentcli-linux-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-linux-x64.zip","kind":"portable"}};
+
+    function updateDownload(key) {
+      const item = DOWNLOADS[key] || DOWNLOADS.macArm;
+      const isDesktop = item.kind === 'desktop';
+      document.getElementById('recommendedTitle').textContent = item.label;
+      document.getElementById('recommendedDetail').textContent = item.detail + ' · v1.9.80';
+      document.getElementById('recommendedDownload').href = item.href;
+      document.getElementById('recommendedDownload').textContent = '下载' + item.label;
+      document.getElementById('platformSelect').value = key;
+      document.getElementById('downloadNote').textContent = isDesktop
+        ? '下载后打开 DMG，将 AgentCLI 拖入“应用程序”。'
+        : '当前系统提供免 Node.js 的独立 ZIP 包；解压后按包内说明运行。';
+      document.getElementById('heroDownload').href = item.href;
+      document.getElementById('heroDownloadText').textContent = '下载' + item.label;
+      document.getElementById('heroDownloadContext').textContent = '已识别：' + item.shortLabel + ' · ' + item.detail;
+    }
+
+    function detectBasicPlatform() {
+      const ua = navigator.userAgent.toLowerCase();
+      const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+      const value = platform.toLowerCase();
+      if (value.includes('win') || ua.includes('windows')) return 'windows';
+      if (value.includes('linux') || ua.includes('linux')) return 'linux';
+      if (value.includes('mac') || ua.includes('mac os')) return 'macArm';
+      return 'macArm';
+    }
+
+    async function detectPlatform() {
+      let key = detectBasicPlatform();
+      if (key === 'macArm' && navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+        try {
+          const values = await navigator.userAgentData.getHighEntropyValues(['architecture', 'bitness']);
+          if (String(values.architecture).toLowerCase().includes('x86')) key = 'macIntel';
+        } catch (_) {
+          // Safari does not expose CPU architecture. Modern macOS defaults to Apple Silicon.
+        }
+      }
+      updateDownload(key);
+    }
+
+    document.getElementById('platformSelect').addEventListener('change', event => updateDownload(event.target.value));
+    document.querySelectorAll('[data-copy]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const original = button.textContent;
+        try {
+          await navigator.clipboard.writeText(button.dataset.copy);
+          button.textContent = '已复制';
+        } catch (_) {
+          button.textContent = '请手动复制';
+        }
+        setTimeout(() => { button.textContent = original; }, 1400);
       });
     });
+    detectPlatform();
   </script>
 </body>
 </html>
