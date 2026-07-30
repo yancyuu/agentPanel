@@ -407,12 +407,12 @@
           <span class="section-kicker" style="color:#a9ead9">立即开始</span>
           <h2>下载最适合你电脑的版本。</h2>
           <p>页面会根据当前系统自动推荐。Apple Silicon Mac 优先使用桌面 DMG；其他系统会显示当前可用的独立安装包。</p>
-          <p>桌面客户端已内置 AgentCLI 与 cc-connect，不需要再通过 npm 安装。</p>
+          <p>桌面客户端已内置 AgentCLI、cc-connect 与 Pi 运行时，不需要再通过 npm 安装。</p>
         </div>
         <div class="download-card">
           <div class="detected-label">已为你推荐</div>
           <h3 id="recommendedTitle">macOS 客户端</h3>
-          <div id="recommendedDetail" class="download-detail">Apple Silicon · DMG · 176 MB</div>
+          <div id="recommendedDetail" class="download-detail">Apple Silicon · DMG · 208 MB</div>
           <a id="recommendedDownload" class="button button-primary" href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg">下载 macOS 客户端</a>
           <select id="platformSelect" class="platform-select" aria-label="选择其他系统版本">
             <option value="macArm">macOS Apple Silicon</option>
@@ -441,7 +441,7 @@
           <h3>安装 App 后可以使用 CLI 吗？</h3>
           <p>可以。客户端本身已经内置 AgentCLI，首次启动后会创建 <code>~/.hermit/bin/agentcli</code>，App 和终端共用同一份任务与配置数据，不需要再次执行 npm 安装。</p>
           <div class="command-box"><code>~/.hermit/bin/agentcli --version</code><button class="copy-button" data-copy="~/.hermit/bin/agentcli --version">复制</button></div>
-          <p><strong>直接输入 <code>agentcli</code>：</strong>需要在客户端设置里启用一次“终端命令”，由客户端明确展示并完成 Shell PATH 集成；不会在你不知情的情况下修改 Shell 配置。</p>
+          <p><strong>直接输入 <code>agentcli</code>：</strong>客户端首次启动会在现有 PATH 中寻找可写的标准命令目录，并安全创建指向内置 CLI 的命令链接；不会覆盖同名用户命令，也不会修改 Shell 配置。若系统目录不可写，仍可使用上面的完整路径。</p>
 
           <h3>不安装桌面 App</h3>
           <p>传统 CLI 安装只推荐给需要脚本化或服务器环境的高级用户。</p>
@@ -464,8 +464,8 @@
       <h2>常见问题</h2>
       <details open><summary>我完全不会编程，也能使用吗？</summary><p>可以。桌面客户端的默认界面只使用“任务、收件箱、智能体、小队、交付成果”等普通工作语言，CLI、端口、Session 和内部日志默认隐藏。</p></details>
       <details><summary>数据和任务文件会上传到云端吗？</summary><p>默认本地运行，任务与配置存放在本机 <code>~/.hermit/</code> 和智能体项目目录。只有你主动配置企业团队总线及对应授权范围后，指定的数据才会进行上报。</p></details>
-      <details><summary>安装 App 后是否还需要 Node.js 或 npm？</summary><p>不需要。桌面安装包包含运行 AgentCLI 所需的 Node 运行能力和 cc-connect。</p></details>
-      <details><summary>为什么终端里暂时找不到 agentcli？</summary><p>App 内置 CLI 会先创建在 <code>~/.hermit/bin/agentcli</code>。为了不静默修改 Shell 配置，直接输入 <code>agentcli</code> 的 PATH 集成需要在客户端设置中明确启用一次。</p></details>
+      <details><summary>安装 App 后是否还需要 Node.js 或 npm？</summary><p>不需要。桌面安装包包含 AgentCLI、Node 运行能力、cc-connect 和 Pi。没有 Claude Code 或 Codex 时，客户端会优先使用内置 Pi。</p></details>
+      <details><summary>为什么终端里暂时找不到 agentcli？</summary><p>客户端会创建 <code>~/.hermit/bin/agentcli</code>，并在已有 PATH 的可写标准目录中创建安全链接。如果系统没有可写目录或已有同名用户命令，客户端不会覆盖；此时可直接运行完整路径。</p></details>
       <details><summary>当前有哪些桌面版本？</summary><p>当前正式桌面客户端首先提供 macOS Apple Silicon DMG；macOS Intel、Windows 和 Linux 目前提供独立 ZIP 包。后续会继续补齐对应桌面安装器。</p></details>
     </section>
   </main>
@@ -478,7 +478,7 @@
   </footer>
 
   <script>
-    const DOWNLOADS = {"macArm":{"label":"macOS 客户端","shortLabel":"macOS Apple Silicon","detail":"Apple Silicon · DMG · 176 MB","filename":"AgentCLI-1.9.80-arm64.dmg","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg","kind":"desktop"},"macIntel":{"label":"macOS Intel 独立包","shortLabel":"macOS Intel","detail":"Intel x64 · ZIP · 131 MB","filename":"agentcli-macos-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-macos-x64.zip","kind":"portable"},"windows":{"label":"Windows 独立包","shortLabel":"Windows x64","detail":"Windows x64 · ZIP · 123 MB","filename":"agentcli-windows-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-windows-x64.zip","kind":"portable"},"linux":{"label":"Linux 独立包","shortLabel":"Linux x64","detail":"Linux x64 · ZIP · 136 MB","filename":"agentcli-linux-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-linux-x64.zip","kind":"portable"}};
+    const DOWNLOADS = {"macArm":{"label":"macOS 客户端","shortLabel":"macOS Apple Silicon","detail":"Apple Silicon · DMG · 208 MB","filename":"AgentCLI-1.9.80-arm64.dmg","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg","kind":"desktop"},"macIntel":{"label":"macOS Intel 独立包","shortLabel":"macOS Intel","detail":"Intel x64 · ZIP · 131 MB","filename":"agentcli-macos-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-macos-x64.zip","kind":"portable"},"windows":{"label":"Windows 独立包","shortLabel":"Windows x64","detail":"Windows x64 · ZIP · 123 MB","filename":"agentcli-windows-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-windows-x64.zip","kind":"portable"},"linux":{"label":"Linux 独立包","shortLabel":"Linux x64","detail":"Linux x64 · ZIP · 136 MB","filename":"agentcli-linux-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-linux-x64.zip","kind":"portable"}};
 
     function updateDownload(key) {
       const item = DOWNLOADS[key] || DOWNLOADS.macArm;
