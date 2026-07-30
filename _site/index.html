@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AgentCli — 本地优先的 AI 数字员工工作台</title>
-  <meta name="description" content="本地优先的 AI 数字员工工作台。AgentCli 负责本地 CLI / Web 控制面，AgentBus 负责消息总线、团队协作与组织级协调。" />
-  <meta property="og:title" content="AgentCli — AI 数字员工工作台" />
-  <meta property="og:description" content="本地 CLI 控制面 + 消息总线协调。CLI for agents, Web for humans. 采集 → 路由 → 协作。" />
+  <title>AgentCLI — 本地 AI 助手桌面客户端</title>
+  <meta name="description" content="安装一个 AgentCLI 桌面客户端，即可在本地管理智能体、任务、小队、定时任务和交付成果。内置 AgentCLI 与 cc-connect，无需预装 Node.js。" />
+  <meta property="og:title" content="AgentCLI — 本地 AI 助手桌面客户端" />
+  <meta property="og:description" content="面向普通用户的本地 AI 助手客户端。安装 App 即可使用完整工作台，同时保留内置 CLI 能力。" />
   <meta property="og:type" content="website" />
   <link rel="icon" href="icon.png" />
   <style>
@@ -103,6 +103,13 @@
     .install-cmd .comment { color: var(--text-dim); }
     .install-help { max-width: 600px; margin: 14px auto 0; background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid var(--yellow); border-radius: 8px; padding: 12px 16px; font-size: 13px; color: var(--text-muted); text-align: left; line-height: 1.6; }
     .install-help strong { color: var(--text); }
+    .desktop-download { max-width: 600px; margin: 0 auto 18px; padding: 24px; border: 1px solid rgba(139, 92, 246, 0.45); border-radius: 14px; background: linear-gradient(145deg, rgba(139,92,246,0.14), var(--bg-card)); text-align: left; }
+    .desktop-download h2 { margin: 0 0 6px; font-size: 20px; }
+    .desktop-download p { margin: 0 0 18px; color: var(--text-muted); font-size: 14px; }
+    .download-button { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; border-radius: 10px; background: var(--accent); color: white; font-size: 15px; font-weight: 700; }
+    .download-button:hover { background: #7c3aed; text-decoration: none; }
+    .download-meta { margin-top: 10px; color: var(--text-dim); font-size: 12px; text-align: center; }
+    .cli-secondary-label { max-width: 600px; margin: 24px auto 10px; color: var(--text-muted); font-size: 13px; text-align: left; }
 
     .tiers { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     .tier { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 26px 24px; }
@@ -185,10 +192,11 @@
       AgentCli
     </div>
     <nav class="header-nav">
+      <a href="#download">下载客户端</a>
       <a href="#tiers">产品路径</a>
       <a href="#capabilities">能力</a>
       <a href="#commands">命令</a>
-      <a href="#token-claim">Token 认领</a>
+      <a href="#config">配置</a>
       <a href="#usage">上报</a>
       <a href="#update">更新</a>
       <a href="#faq">FAQ</a>
@@ -196,11 +204,22 @@
   </header>
 
   <section class="hero">
-    <span class="hero-badge">Local-first · 本地控制面 · v1.9.80</span>
-    <h1>AgentCli</h1>
-    <p class="lede">本地优先的 AI 数字员工工作台。<strong>CLI 给 agent，Web 给人</strong>——自动采集 Claude Code / Codex / Cursor 等运行时用量，统一管理数字员工团队。</p>
-    <p class="oss-line">AgentCli 管本地运行时与工作台，数据默认落在本机 <code>~/.hermit/</code>；AgentBus 负责消息路由、团队协作与组织级用量汇总。</p>
+    <span class="hero-badge">macOS 桌面客户端 · Local-first · v1.10.0</span>
+    <h1>AgentCLI</h1>
+    <p class="lede">给普通用户使用的本地 AI 助手客户端。安装一个 App，即可管理智能体、任务、小队、收件箱、定时任务和交付成果。</p>
+    <p class="oss-line">安装包已内置 AgentCLI、Node 运行能力和 cc-connect；无需预装 Node.js、pnpm 或全局 CLI，数据默认保存在本机 <code>~/.hermit/</code>。</p>
 
+    <div class="desktop-download" id="download">
+      <h2>推荐：安装桌面客户端</h2>
+      <p>适用于 Apple Silicon Mac。下载 DMG 后拖入“应用程序”即可使用；客户端启动后也会提供内置 AgentCLI 命令能力。</p>
+      <a class="download-button" href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg">下载 AgentCLI for macOS</a>
+      <div class="download-meta">macOS arm64 · DMG 安装包 · v1.9.80</div>
+    </div>
+    <div class="install-help">
+      <strong>为什么推荐客户端？</strong> 不需要终端、不需要 npm，打开 App 即可使用完整工作台。高级用户仍可通过客户端内置的 <code>~/.hermit/bin/agentcli</code> 使用命令行。
+    </div>
+
+    <p class="cli-secondary-label"><strong>高级用户：</strong>如果暂时不使用桌面客户端，也可以选择传统 CLI 安装方式。</p>
     <div class="install-box">
       <div class="install-tabs">
         <button class="install-tab active" data-target="tab-win">Windows</button>
@@ -253,7 +272,7 @@ npm uninstall -g @yancyyu/agentcli</code></pre>
           <li>本地 Web 工作台：团队、看板、运行时、代码评审</li>
           <li>自动采集本机 AI 运行时用量（token / 会话 / 消息）</li>
           <li>数据默认落 <code>~/.hermit/</code>，单机完整可用，无需注册</li>
-          <li>token 池认领：从授权池签发一次性网关 key，可写入 Codex / Claude Code / Pi；支持配置快照与一键恢复</li>
+          <li>token 池认领：签发网关 key → 直接写入所选 Claude Code / Codex 配置；不修改 shell 启动文件、不安装 shell hook</li>
           <li>支持自托管、可二次开发</li>
         </ul>
         <p class="tier-cta"><a href="#commands">装好之后从这几条命令开始 →</a></p>
@@ -330,7 +349,7 @@ npm uninstall -g @yancyyu/agentcli</code></pre>
 
   <section id="config" class="prose">
     <h2>配置 AI 运行时（客户端配置）</h2>
-    <p class="section-sub">AgentCli 读写的本机配置位置，以及如何认领网关 key 并写进 Codex / Claude Code / Pi。</p>
+    <p class="section-sub">AgentCli 读写的本机配置位置，以及如何把网关 key 写进 Claude / Codex。</p>
 
     <h3>本机数据来源</h3>
     <table>
@@ -341,34 +360,20 @@ npm uninstall -g @yancyyu/agentcli</code></pre>
       </tbody>
     </table>
 
-    <h3 id="token-claim">Token 池认领是什么？</h3>
-    <div class="callout success">
-      <div class="callout-title">这里的 token 不是“用量 token”</div>
-      <p>Token 池认领指的是：AgentCli 为已授权用户从 AI 网关签发一个<strong>一次性明文访问 key</strong>，再把 key、网关地址和所选模型写入本机运行时配置。认领完成后，Codex、Claude Code 或 Pi 就可以通过统一网关调用已分配的模型。</p>
-    </div>
-
-    <h3>如何认领</h3>
-    <ol>
-      <li><span class="step-label">先登录</span> — 运行 <code>agentcli auth login</code>，再用 <code>agentcli auth status</code> 确认已登录。</li>
-      <li><span class="step-label">进入认领入口</span> — 运行 <code>agentcli</code>，展开「token 池（Beta）」并选择「认领」。</li>
-      <li><span class="step-label">选择运行时和模型</span> — 可选择 Codex、Claude Code、Pi 或组合；默认只选 Codex。随后从网关授权的模型中选择一个模型。</li>
-      <li><span class="step-label">等待自动配置</span> — AgentCli 自动完成签发、领取一次性 key、备份原配置和写入配置；完成后重启所选运行时，并新开终端让系统环境变量生效。</li>
-    </ol>
-
-    <h3>认领后会改哪些配置？</h3>
+    <h3>把网关 Key 写进 Claude / Codex（token 池认领）</h3>
+    <p>登录后，在终端菜单 <code>agentcli</code> →「token 池(测试版)」→「认领」，会自动签发一个一次性网关 key，当前默认且唯一写入目标是 <strong>Codex</strong>（Claude Code 保留为后续可恢复选项），然后直写进本地配置：</p>
     <ul>
-      <li><strong>Claude Code</strong>：更新 <code>~/.claude/settings.json</code>，写入 <code>ANTHROPIC_BASE_URL</code>、<code>ANTHROPIC_AUTH_TOKEN</code> 和所选模型对应的 tier 配置，同时保留其它设置。</li>
-      <li><strong>Codex</strong>：更新 <code>~/.codex/auth.json</code> 的 <code>OPENAI_API_KEY</code>，并在 <code>~/.codex/config.toml</code> 写入网关 provider、模型与 <code>responses</code> 协议；原有 <code>[projects.*]</code> 等其它区块会保留。</li>
-      <li><strong>Pi</strong>：更新 <code>~/.pi/agent/auth.json</code>、<code>models.json</code> 和 <code>settings.json</code> 中的 <code>skg</code> provider、可用模型和默认模型。</li>
-      <li><strong>通用环境</strong>：写入权限为 0600 的 <code>~/.hermit/aikey.env</code>；同时一次性更新 macOS/Linux shell rc 管理块或 Windows 当前用户环境变量。不会安装每次提示符都执行的 shell hook。</li>
+      <li><strong>Claude Code</strong> <code>~/.claude/settings.json</code>：写入网关 endpoint（<code>ANTHROPIC_BASE_URL</code>）+ <code>ANTHROPIC_AUTH_TOKEN</code>，deep-merge 保留其它键，<strong>不固定模型</strong>。</li>
+      <li><strong>Codex</strong> <code>~/.codex/auth.json</code>（<code>OPENAI_API_KEY</code>）+ <code>~/.codex/config.toml</code>：surgical 改写 <code>model_provider</code> / <code>model</code> / wire_api 与 <code>[model_providers.*]</code>，<strong>原样保留 <code>[projects.*]</code></strong>。Codex base_url 由网关 <code>proxyPaths</code> 按所选 wire_api 解析，与 Claude endpoint 不同。</li>
     </ul>
+    <p>配置文件是 Claude Code / Codex 的常规生效路径：AgentCli 不再修改 <code>.zshrc</code> / <code>.bashrc</code>，也不安装 <code>precmd</code> / <code>PROMPT_COMMAND</code> shell hook；重新启动所选运行时即可读取新配置。<code>~/.hermit/aikey.env</code> 仍以 0600 权限保留为认领标记，外部 agent 需要时可手动 <code>source</code>。</p>
     <div class="callout">
-      <div class="callout-title">什么时候生效？</div>
-      <p>运行时自己的配置通常在<strong>重启 Codex / Claude Code / Pi</strong> 后生效；系统环境变量需要新开终端。外部 agent 或手动脚本也可以运行 <code>source ~/.hermit/aikey.env</code>。Claude Code 使用 <code>ANTHROPIC_AUTH_TOKEN</code>，Codex 使用 <code>OPENAI_API_KEY</code>，不要混用变量名。</p>
+      <div class="callout-title">api key 与 base url 怎么用</div>
+      <p><strong>Claude Code</strong> 认 <code>ANTHROPIC_AUTH_TOKEN</code>，认领时已写入 <code>~/.claude/settings.json</code> 的 <code>env</code> 块（不是 shell 环境变量）——重启 Claude Code 即生效，无需 <code>source</code> 或 <code>export</code>。<strong>Codex</strong> 认 <code>~/.codex/auth.json</code> 的 <code>OPENAI_API_KEY</code>。<strong>外部 agent / 手动调用</strong>才 <code>source ~/.hermit/aikey.env</code>，里面导出的是 <code>ANTHROPIC_API_KEY</code>。<code>ANTHROPIC_AUTH_TOKEN</code>（Claude 专用）与 <code>ANTHROPIC_API_KEY</code>（aikey.env / 外部 agent）是两个不同的变量，别混用。</p>
     </div>
     <div class="callout warn">
-      <div class="callout-title">安全与恢复</div>
-      <p>每次认领前都会在 <code>~/.hermit/agentcli.env.bak</code> 新建一个带时间点的配置快照，最多保留最近 20 份；可从「token 池 → 恢复配置快照」选择任意时间点还原。一次性 key 只在领取时进入内存并写入你选择的本地配置，结果页只显示脱敏值；请勿分享相关配置文件或备份。该能力需要服务端授权，部分账户可能暂未开放。</p>
+      <div class="callout-title">注意</div>
+      <p>首次写入前自动把<strong>原始</strong> Claude/Codex 配置快照到 <code>~/.hermit/agentcli.env.bak</code>（<strong>只创建一次</strong>，后续认领不覆盖）；在「token 池 → 一键恢复原始配置」可随时还原，token 池新建的文件会被删除、无残留。检查快照时会自动修正旧版本遗留的备份路径记录。认领到的 key 是<strong>即焚明文</strong>，不落库、不回显明文。该能力需服务端授权开通（部分账户暂未开放）。</p>
     </div>
   </section>
 
@@ -466,6 +471,11 @@ agentcli doctor</code></pre>
     <h2>常见问题</h2>
 
     <div class="faq-item">
+      <div class="faq-q">Q：安装桌面客户端后还能使用 CLI 吗？</div>
+      <p>可以。客户端已经内置 AgentCLI，并在启动后维护 <code>~/.hermit/bin/agentcli</code>。App 内部会直接使用它；终端用户可以运行该完整路径，或在设置中按提示把 <code>~/.hermit/bin</code> 加入 PATH。客户端不会静默修改你的 Shell 配置。</p>
+    </div>
+
+    <div class="faq-item">
       <div class="faq-q">Q：EBUSY: resource busy or locked（Windows 安装 / 更新）</div>
       <p><strong>原因：</strong>不是权限问题（EBUSY ≠ EACCES），sudo / 管理员身份无效。是之前运行过的 agentcli 后台进程还占着包内文件，npm 无法替换。</p>
       <p><strong>解决（按顺序，多数第 ① 步就够）：</strong></p>
@@ -513,7 +523,8 @@ sudo chown -R $(whoami) ~/.npm-global</code></pre>
   <footer class="footer">
     <div class="footer-left">&copy; 2026 AgentCli · 本地控制面 · AgentBus 消息总线协调</div>
     <div class="footer-links">
-      <a href="https://www.npmjs.com/package/@yancyyu/agentcli">npm</a>
+      <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg">下载 macOS 客户端</a>
+      <a href="https://www.npmjs.com/package/@yancyyu/agentcli">npm（高级用户）</a>
     </div>
   </footer>
 
