@@ -230,14 +230,14 @@ export const TaskCommentsSection = ({
           ) : null}
 
           <div className={containerClassName ?? ''}>
-            {visibleComments.map((comment, index) => (
+            {visibleComments.map((comment) => (
               <AnimatedHeightReveal key={comment.id} animate={newCommentIds.has(comment.id)}>
                 <div
                   ref={
                     registerCommentForViewport ? registerCommentForViewport(comment.id) : undefined
                   }
                   className={[
-                    'group min-w-0 overflow-hidden px-4 py-2.5',
+                    'group min-w-0 overflow-hidden border-b border-[var(--surface-border-subtle)] px-5 py-3.5',
                     comment.type === 'review_approved'
                       ? 'border-y border-emerald-500/20 bg-emerald-500/5'
                       : comment.type === 'review_request'
@@ -253,10 +253,7 @@ export const TaskCommentsSection = ({
                           borderLeft: '3px solid var(--system-activity-accent)',
                         }
                       : !comment.type || comment.type === 'regular'
-                        ? {
-                            backgroundColor:
-                              index % 2 === 1 ? 'var(--card-bg-zebra)' : 'var(--card-bg)',
-                          }
+                        ? { backgroundColor: 'transparent' }
                         : undefined
                   }
                 >

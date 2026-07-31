@@ -92,12 +92,15 @@ function NavigationButton({
       aria-current={active ? 'page' : undefined}
       onClick={item.onClick}
       className={cn(
-        'group flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors',
+        'group relative flex h-10 w-full items-center gap-2.5 rounded-lg px-3 text-sm transition-all duration-150',
         active
-          ? 'bg-workbench-surface-selected font-medium text-foreground hover:bg-workbench-surface-selected'
-          : 'text-muted-foreground hover:bg-workbench-surface-hover hover:text-foreground'
+          ? 'bg-brand/[0.09] font-medium text-brand shadow-[inset_0_0_0_1px_rgba(var(--brand-rgb),0.08)]'
+          : 'text-muted-foreground hover:bg-white/70 hover:text-foreground dark:hover:bg-white/[0.05]'
       )}
     >
+      {active ? (
+        <span className="absolute -left-2 top-2 h-6 w-0.5 rounded-full bg-brand" aria-hidden />
+      ) : null}
       <span className="relative shrink-0">
         <Icon className="size-4" />
         <span
@@ -157,21 +160,25 @@ export function AppNavigationRail({
   ];
 
   return (
-    <aside className="flex h-full w-14 shrink-0 flex-col border-r border-[var(--surface-border)] bg-app-shell px-2 py-2 xl:w-52">
-      <div className="mb-2 flex h-9 items-center gap-2.5 px-2.5 text-foreground">
-        <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-foreground text-xs font-medium text-app-shell">
-          H
+    <aside className="bg-app-shell/95 flex h-full w-14 shrink-0 flex-col border-r border-[var(--surface-border-subtle)] px-2 py-3 backdrop-blur-xl xl:w-52">
+      <div className="mb-3 flex h-9 items-center gap-2.5 px-2.5 text-foreground">
+        <img
+          src="/icon.png"
+          alt=""
+          className="size-6 shrink-0 rounded-[7px] shadow-[0_3px_10px_rgba(var(--brand-rgb),0.18)]"
+        />
+        <span className="hidden truncate text-sm font-semibold tracking-[-0.01em] xl:block">
+          AgentCLI
         </span>
-        <span className="hidden truncate text-sm font-medium xl:block">AgentCLI</span>
       </div>
 
-      <nav aria-label="主导航" className="space-y-1">
+      <nav aria-label="主导航" className="space-y-1.5">
         {primaryItems.map((item) => (
           <NavigationButton key={item.id} item={item} active={activeArea === item.id} />
         ))}
       </nav>
 
-      <div className="mt-auto space-y-1 border-t border-[var(--surface-border-subtle)] pt-2">
+      <div className="mt-auto space-y-1.5 border-t border-[var(--surface-border-subtle)] pt-2.5">
         {utilityItems.map((item) => (
           <NavigationButton key={item.id} item={item} active={activeArea === item.id} />
         ))}

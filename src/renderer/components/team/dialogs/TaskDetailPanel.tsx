@@ -1176,10 +1176,10 @@ export const TaskDetailPanel = ({
         {currentTask.result?.trim() ? (
           <section
             data-task-deliverable
-            className="overflow-hidden rounded-xl border border-emerald-500/20 bg-emerald-500/[0.035]"
+            className="overflow-hidden rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] shadow-[var(--surface-shadow)]"
           >
-            <div className="flex items-center gap-2 border-b border-emerald-500/15 px-4 py-3">
-              <span className="flex size-7 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <div className="flex items-center gap-2 border-b border-[var(--surface-border-subtle)] px-4 py-3">
+              <span className="flex size-7 items-center justify-center text-emerald-600 dark:text-emerald-400">
                 <PackageCheck size={15} />
               </span>
               <div className="min-w-0 flex-1">

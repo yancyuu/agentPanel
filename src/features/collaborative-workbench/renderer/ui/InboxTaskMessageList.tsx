@@ -144,9 +144,9 @@ export function InboxTaskMessageList({
                 aria-selected={selected}
                 onClick={() => onSelect(entry.key)}
                 className={cn(
-                  'flex w-full gap-3 border-b border-[var(--surface-border-subtle)] px-3 py-3 text-left transition-colors',
+                  'relative flex w-full gap-3 border-b border-[var(--surface-border-subtle)] px-3 py-3 text-left transition-all duration-150',
                   selected
-                    ? 'bg-[var(--color-surface-selected)]'
+                    ? 'bg-[var(--color-surface-selected)] before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-brand'
                     : 'hover:bg-[var(--color-surface-hover)]'
                 )}
               >

@@ -477,28 +477,29 @@
 /* Light theme overrides - Warm neutral palette for eye comfort */
 
 :root.light {
-  --app-shell: #f3f3f4;
-  --page-canvas: #fbfbfb;
+  /* Calm paper-and-ink workbench: fewer gray slabs, clearer hierarchy. */
+  --app-shell: #f5f7fb;
+  --page-canvas: #fafbfc;
   --surface: #ffffff;
-  --surface-raised: #f7f7f8;
-  --surface-hover: #efeff1;
-  --surface-selected: #e7e7ea;
-  --surface-border: #dedee2;
-  --surface-border-subtle: #e9e9ec;
-  --surface-border-emphasis: #c4c4ca;
-  --foreground: #202024;
-  --foreground-secondary: #54545b;
-  --muted-foreground: #6c6c75;
-  --brand: #5b5bd6;
-  --brand-rgb: 91, 91, 214;
-  --success: #258451;
-  --warning: #aa6f19;
-  --destructive: #c74444;
-  --destructive-rgb: 199, 68, 68;
-  --info: #3d72b4;
-  --focus-ring: rgba(91, 91, 214, 0.42);
-  --surface-shadow: 0 1px 2px rgba(24, 24, 27, 0.06);
-  --floating-shadow: 0 16px 40px rgba(24, 24, 27, 0.12);
+  --surface-raised: #f7f8fb;
+  --surface-hover: #f1f4f9;
+  --surface-selected: #edf1ff;
+  --surface-border: #e2e6ed;
+  --surface-border-subtle: #edf0f4;
+  --surface-border-emphasis: #cbd2dd;
+  --foreground: #1c2430;
+  --foreground-secondary: #4f5b6b;
+  --muted-foreground: #7a8492;
+  --brand: #4f46e5;
+  --brand-rgb: 79, 70, 229;
+  --success: #21865b;
+  --warning: #a96812;
+  --destructive: #c54848;
+  --destructive-rgb: 197, 72, 72;
+  --info: #4169c1;
+  --focus-ring: rgba(79, 70, 229, 0.34);
+  --surface-shadow: 0 1px 2px rgba(30, 41, 59, 0.04);
+  --floating-shadow: 0 18px 46px rgba(30, 41, 59, 0.11);
 
   --color-surface: var(--page-canvas);
   --color-surface-raised: var(--surface-hover);
@@ -681,11 +682,11 @@
   --kbd-border: #a8a5a0;
   --kbd-text: #3a3935;
   /* Subagent/Card styling - Warm light mode */
-  --card-bg: #f9f9f7;
-  --card-bg-zebra: #f2f1ee;
-  --card-border: #d5d3cf;
-  --card-header-bg: #f0efed;
-  --card-header-hover: #eae9e6;
+  --card-bg: transparent;
+  --card-bg-zebra: transparent;
+  --card-border: #e2e6ed;
+  --card-header-bg: #f7f8fb;
+  --card-header-hover: #f1f4f9;
   --card-icon-muted: #a8a5a0;
   --card-text-light: #3a3935;
   --card-text-lighter: #2a2925;

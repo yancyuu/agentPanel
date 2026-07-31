@@ -5,7 +5,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
-import { app, BrowserWindow, Menu, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, nativeTheme, session, shell } from 'electron';
 
 import { DESKTOP_RUNTIME_METADATA_FILE, DESKTOP_SESSION_HEADER } from '../shared/constants/desktop';
 
@@ -208,7 +208,7 @@ function createWorkbenchWindow(server: RunningServer): BrowserWindow {
     height: 900,
     minWidth: 1024,
     minHeight: 700,
-    backgroundColor: '#1b1b1d',
+    backgroundColor: '#f7f8fb',
     autoHideMenuBar: true,
     webPreferences: {
       partition: 'persist:agentcli-desktop',
@@ -331,6 +331,9 @@ if (!hasSingleInstanceLock) {
   });
 
   void app.whenReady().then(async () => {
+    // Keep the native title bar aligned with the default light workbench instead
+    // of inheriting a black frame from a dark macOS system appearance.
+    nativeTheme.themeSource = 'light';
     Menu.setApplicationMenu(null);
     await bootDesktop();
   });

@@ -18,7 +18,6 @@ import { SYSTEM_MANAGER_TEAM_NAME } from '@shared/types/team';
 import { useShallow } from 'zustand/react/shallow';
 
 import { CliInstallWarningBanner } from '../common/CliInstallWarningBanner';
-import { GlobalProviderStatusHeader } from '../common/GlobalProviderStatusHeader';
 import { WorkspaceIndicator } from '../common/WorkspaceIndicator';
 import { CommandPalette } from '../search/CommandPalette';
 import { GlobalTaskDetailDialog } from '../team/dialogs/GlobalTaskDetailDialog';
@@ -91,7 +90,6 @@ export const TabbedLayout = (): React.JSX.Element => {
 
       <div className="flex min-w-0 flex-1 flex-col bg-page-canvas">
         <CliInstallWarningBanner />
-        <GlobalProviderStatusHeader />
         <div className="flex flex-1 overflow-hidden">
           <CommandPalette />
 
