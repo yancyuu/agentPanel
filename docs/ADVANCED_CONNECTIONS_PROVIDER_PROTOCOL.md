@@ -75,15 +75,27 @@ Accept: application/vnd.hermit.provider+json;version=1
 
 当前 AgentBus 如果尚未提供该 Manifest，客户端可以使用内置兼容适配器把现有固定接口映射为同一能力模型。
 
+### 客户端如何判定兼容服务
+
+用户在高级连接中填写服务地址后，客户端按以下顺序判定，不要求用户预先判断服务类型：
+
+1. 优先请求 `/.well-known/hermit-provider.json`。
+2. 如果响应是符合协议的合法 JSON Manifest，识别为标准 Provider，并按 Manifest 展示能力。
+3. 如果 Manifest 地址返回 `404`、`200` 但内容是 HTML 网页，或响应不是合法 JSON，客户端不会立即判定失败，而是继续请求 `/api/v1/auth/me`。
+4. 如果 `/api/v1/auth/me` 返回 `401` 或 `403`，说明服务端点存在但当前用户尚未授权，客户端将其识别为“需要登录”的 AgentBus 兼容服务。
+5. 如果标准 Manifest 和 AgentBus 登录端点都无法通过探测，客户端才提示该地址暂不受支持。
+
+兼容探测只用于识别服务。非本机的 `http://` 地址即使能被识别，也不能启动远程授权、数据同步或 Token 领取；这些操作必须使用 HTTPS。
+
 ## 能力
 
 协议 v1 预留四类基础能力：
 
-| 能力 | 说明 |
-| --- | --- |
-| `identity` | 用户登录、账号信息、租户和远程授权范围 |
-| `team-bus` | 团队目录、在线状态、任务投递和事件订阅 |
-| `reporting` | 用量、项目、消息和能力清单上报 |
+| 能力         | 说明                                           |
+| ------------ | ---------------------------------------------- |
+| `identity`   | 用户登录、账号信息、租户和远程授权范围         |
+| `team-bus`   | 团队目录、在线状态、任务投递和事件订阅         |
+| `reporting`  | 用量、项目、消息和能力清单上报                 |
 | `token-pool` | 模型目录、异步开通、一次性领取并写入本地运行时 |
 
 服务可以只实现其中一部分。客户端根据 Manifest 动态展示，不假设每个 Provider 都支持所有能力。
@@ -136,13 +148,92 @@ v1 首先支持：
 
 ## Token 池
 
-Token 池必须采用“领取并应用”原子操作：
+Token 池采用“领取并应用”原子操作：
 
 ```text
-发现目录 → 发起开通 → 查询进度 → 后端领取明文 → 写入本地运行时 → 返回脱敏结果
+发现目录 → 发起开通 → 查询进度 → 后端领取明文 → 校验 → 写入本地运行时 → 返回脱敏结果
 ```
 
 Renderer 不得收到一次性明文 Key。接口只返回已应用的运行时、Key 标识、过期时间和脱敏指纹。
+
+### 目录发现
+
+`tokenCatalog` 使用 `POST`，请求体：
+
+```json
+{
+  "region_id": "cn-beijing",
+  "include_upstream_models": true
+}
+```
+
+响应至少包含：
+
+```json
+{
+  "discovery_id": "opaque-discovery-id",
+  "region_id": "cn-beijing",
+  "gateway_id": "optional-gateway",
+  "default_model_api_ids": ["model-api-id"],
+  "model_apis": [
+    { "model_api_id": "model-api-id", "api_name": "Claude Sonnet", "provider": "anthropic" }
+  ]
+}
+```
+
+本地 API 只向 Renderer 返回上述目录字段的白名单摘要。远程响应中的 `api_key`、`access_token` 和未知字段一律丢弃。
+
+### 发起开通
+
+`tokenProvision` 使用 `POST`，必须携带后端生成并在同一次操作重试中复用的 `Idempotency-Key`：
+
+```json
+{
+  "discovery_id": "opaque-discovery-id",
+  "region_id": "cn-beijing",
+  "gateway_id": "optional-gateway",
+  "model_api_ids": ["model-api-id"]
+}
+```
+
+响应返回 `run_id` 或 `operation_id`。
+
+### 查询进度
+
+`tokenOperation` 可以包含 `{operationId}` 占位符。客户端仅接受以下状态：
+
+- `queued`
+- `pending`
+- `running`
+- `provisioning`
+- `succeeded`
+- `failed`
+
+客户端遵守服务返回的 `poll_after_ms`，并将间隔限制在 500 毫秒至 15 秒；本地总等待时间限制为 120 秒。
+
+### 领取并应用
+
+只有操作成功后，后端才调用 `tokenClaim`。该端点也必须携带独立的 `Idempotency-Key`，并可以使用 `{operationId}` 占位符。
+
+Receipt 可包含：
+
+```json
+{
+  "key": "one-time-plaintext-key",
+  "key_id": "safe-key-id",
+  "endpoints": {
+    "anthropic": "https://anthropic.example.com",
+    "openai": "https://openai.example.com"
+  },
+  "runtime_profiles": {},
+  "model_ids": ["model-id"],
+  "expires_at": "2027-01-01T00:00:00.000Z"
+}
+```
+
+后端先校验 Key 不是空值或占位符，并校验所有运行时端点可路由，然后立即写入用户选择的 Claude Code、Codex 和 Pi 配置。Receipt 不写入连接索引、日志、SSE 或操作历史。
+
+远程非 loopback HTTP 连接不得启动授权、同步或 Token 领取；生产 Provider 必须提供 HTTPS。
 
 ## 团队总线
 
@@ -161,13 +252,19 @@ Renderer 不得收到一次性明文 Key。接口只返回已应用的运行时�
 非秘密连接信息存放在：
 
 ```text
-~/.hermit/connections/<connection-id>.json
+~/.hermit/connections/index.json
 ```
 
-秘密优先存放在系统钥匙串；暂不支持时可使用权限为 `0600` 的后端专用文件作为兼容方案。连接凭证必须绑定：
+秘密必须存放在当前操作系统的用户级安全凭证服务，不回退为明文文件：
+
+- macOS：Keychain
+- Windows：PasswordVault / Credential Manager 用户凭据保管库
+- Linux：Secret Service（`secret-tool`）
+
+系统凭证服务缺失、未解锁或不可用时，远程登录失败关闭。连接凭证必须绑定：
 
 ```text
-connectionId + providerId + issuerOrigin + audience
+connectionId + providerId + issuerOrigin
 ```
 
 Host、Provider 身份或 Issuer 改变后必须重新授权，不能静默复用旧 Token。
@@ -192,5 +289,7 @@ Host、Provider 身份或 Issuer 改变后必须重新授权，不能静默复�
 - 提供按本地授权裁剪后的团队目录、任务状态、用量汇总和能力清单同步通道。
 - 提供远程任务只读预览；远程任务不会自动执行，也不能绕过现有任务创建和权限审批。
 - AgentBus 旧接口继续使用专用兼容通道，不会接收标准 Provider 载荷。
+- Token 池目录检测、开通、进度轮询、后端一次性领取和本地运行时应用。
+- macOS Keychain、Windows 用户凭据保管库和 Linux Secret Service 安全存储。
 
-后续阶段可继续增加事件长连接、任务导入确认和 Token 池“领取并应用”流程；CLI 现有行为保持兼容。
+后续阶段可继续增加事件长连接和远程任务导入确认；CLI 现有行为保持兼容。

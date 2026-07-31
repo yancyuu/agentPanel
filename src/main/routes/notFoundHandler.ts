@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { isSseFallbackRequest, openSseFallbackStream } from './sseRoutes';
 
 import type { ServerRuntimeState } from '../serverContext';
-import { isSseFallbackRequest, openSseFallbackStream } from './sseRoutes';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 interface WorkbenchNotFoundHandlerOptions {
   staticDir: string;

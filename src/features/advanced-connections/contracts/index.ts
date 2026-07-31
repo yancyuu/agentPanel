@@ -153,7 +153,11 @@ export interface AdvancedConnectionTokenCatalogItem {
 
 export interface AdvancedConnectionTokenCatalogSummary {
   modelCount: number;
+  discoveryId?: string;
+  regionId?: string;
+  gatewayId?: string;
   defaultModelName?: string;
+  defaultModelApiIds: string[];
   models: AdvancedConnectionTokenCatalogItem[];
 }
 
@@ -162,6 +166,36 @@ export interface AdvancedConnectionTokenCatalogResponse {
   available: boolean;
   catalog?: AdvancedConnectionTokenCatalogSummary;
   error?: string;
+}
+
+export type AdvancedConnectionRuntimeId = 'claude' | 'codex' | 'pi';
+
+export interface AdvancedConnectionTokenClaimRequest {
+  discoveryId: string;
+  regionId?: string;
+  gatewayId?: string;
+  modelApiIds: string[];
+  runtimes: AdvancedConnectionRuntimeId[];
+  model?: string;
+  wireApi?: 'responses' | 'chat';
+}
+
+export interface AdvancedConnectionRuntimeApplyResult {
+  runtime: AdvancedConnectionRuntimeId;
+  ok: boolean;
+  path?: string;
+  error?: string;
+}
+
+export interface AdvancedConnectionTokenClaimResult {
+  ok: true;
+  keyId?: string;
+  maskedKey: string;
+  expiresAt?: string;
+  model?: string;
+  runtimes: AdvancedConnectionRuntimeApplyResult[];
+  appliedAt: string;
+  warnings: string[];
 }
 
 export interface AdvancedConnectionLocalSnapshot {

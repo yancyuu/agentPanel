@@ -42,7 +42,9 @@ export const ReplyQuoteBlock = ({
 
         {/* "Replying to" + MemberBadge */}
         <div className="mb-1 flex items-center gap-1.5">
-          <span className="text-[10px] text-indigo-600/60 dark:text-indigo-300/60">Replying to</span>
+          <span className="text-[10px] text-indigo-600/60 dark:text-indigo-300/60">
+            Replying to
+          </span>
           <MemberBadge name={reply.agentName} color={memberColor} size="sm" />
         </div>
 

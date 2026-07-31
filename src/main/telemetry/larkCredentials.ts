@@ -543,6 +543,16 @@ export interface LarkCliProfile {
  * Go respects), and when decoding the buffer, treat it strictly as UTF-8 and
  * strip any leading non-JSON noise so JSON.parse survives real-world output.
  */
+function parseLarkCliJsonOutput(raw: string): unknown[] {
+  let stdout = raw.trim();
+  if (stdout.charCodeAt(0) === 0xfeff) stdout = stdout.slice(1);
+  const jsonStart = stdout.search(/[\[{]/);
+  if (jsonStart > 0) stdout = stdout.slice(jsonStart);
+  if (!stdout) return [];
+  const parsed: unknown = JSON.parse(stdout);
+  return Array.isArray(parsed) ? parsed : [parsed];
+}
+
 function runLarkCliJson(binary: string, args: string[], label: string): unknown[] {
   try {
     // Force UTF-8 on the child's side. Go programs honor LC_ALL/encoding envs
@@ -552,9 +562,6 @@ function runLarkCliJson(binary: string, args: string[], label: string): unknown[
     env.LANG = 'en_US.UTF-8';
     env.LC_ALL = 'en_US.UTF-8';
     env.LC_CTYPE = 'en_US.UTF-8';
-    // Node-side: decode stdout as utf-8 explicitly (encoding:'utf-8' already
-    // does this for the string, but also pass through Buffer to scrub invalid
-    // bytes below).
     const result = spawnSync(binary, args, {
       encoding: 'utf-8',
       shell: isWin,
@@ -566,19 +573,11 @@ function runLarkCliJson(binary: string, args: string[], label: string): unknown[
       process.stderr.write(`[diag:${label}] status=${result.status}\n`);
       return [];
     }
-    let stdout = (result.stdout || '').trim();
-    // Scrub a leading UTF-8 BOM if present.
-    if (stdout.charCodeAt(0) === 0xfeff) stdout = stdout.slice(1);
-    // Find the first '[' or '{' (JSON start) to skip any prefix noise line
-    // (banner, warning) the shim might emit before the JSON payload.
-    const jsonStart = stdout.search(/[\[{]/);
-    if (jsonStart > 0) stdout = stdout.slice(jsonStart);
     try {
-      const parsed = JSON.parse(stdout);
-      return Array.isArray(parsed) ? parsed : [parsed];
+      return parseLarkCliJsonOutput(result.stdout || '');
     } catch (err) {
       process.stderr.write(
-        `[diag:${label}] JSON.parse failed: ${(err as Error).message} | head=${stdout.slice(0, 200)}\n`
+        `[diag:${label}] JSON.parse failed: ${(err as Error).message} | head=${String(result.stdout || '').slice(0, 200)}\n`
       );
       return [];
     }
@@ -665,18 +664,13 @@ function listLarkCliPersonalAuthorizations(): LarkCliPersonalAuthorization[] {
   const profiles = listLarkProfiles();
   const authorizations = new Map<string, LarkCliPersonalAuthorization>();
   for (const profile of profiles) {
-    try {
-      const result = spawnSync(binary, ['auth', 'list', '--json', '--profile', profile.name], {
-        encoding: 'utf-8',
-        shell: isWin,
-        windowsHide: true,
-      });
-      const parsed: unknown = result.status === 0 ? JSON.parse((result.stdout || '').trim()) : [];
-      for (const authorization of parseLarkCliPersonalAuthorizations(profile, parsed)) {
-        authorizations.set(`${authorization.appId}:${authorization.userOpenId}`, authorization);
-      }
-    } catch {
-      // One malformed profile must not hide other personal authorizations.
+    const parsed = runLarkCliJson(
+      binary,
+      ['auth', 'list', '--json', '--profile', profile.name],
+      `listLarkCliPersonalAuthorizations:${profile.name}`
+    );
+    for (const authorization of parseLarkCliPersonalAuthorizations(profile, parsed)) {
+      authorizations.set(`${authorization.appId}:${authorization.userOpenId}`, authorization);
     }
   }
   return [...authorizations.values()];
@@ -1099,6 +1093,7 @@ export function getLarkCredentialsAll(): GetLarkCredentialsAllResult {
 
 export interface LarkCredentialsFreshAllOverrides {
   listAuthorizations?: () => LarkCliPersonalAuthorization[];
+  listStoredProfiles?: () => { appId: string; userOpenId: string }[];
   readCredentials?: (opts: {
     appId?: string;
     userOpenId?: string;
@@ -1115,10 +1110,31 @@ export async function getLarkCredentialsFreshAll(
   }
 
   const listAuthorizations = overrides.listAuthorizations ?? listLarkCliPersonalAuthorizations;
+  const listStoredProfiles =
+    overrides.listStoredProfiles ??
+    (overrides.listAuthorizations || !isWin ? () => [] : discoverProfilesWin);
   const readCredentials = overrides.readCredentials ?? getLarkCredentials;
+  const authorizations = new Map<string, LarkCliPersonalAuthorization>();
+  for (const authorization of listAuthorizations()) {
+    authorizations.set(`${authorization.appId}:${authorization.userOpenId}`, authorization);
+  }
+  // Windows must not depend on a globally discoverable lark-cli shim. The
+  // canonical credentials already live in the user's DPAPI-protected HKCU
+  // store, so merge stored profiles whenever CLI enumeration is incomplete.
+  for (const profile of listStoredProfiles()) {
+    const key = `${profile.appId}:${profile.userOpenId}`;
+    if (!authorizations.has(key)) {
+      authorizations.set(key, {
+        profileName: profile.appId,
+        appId: profile.appId,
+        userOpenId: profile.userOpenId,
+        brand: 'feishu',
+      });
+    }
+  }
   const credentials: LarkCredentials[] = [];
   const skipped: LarkProfileSkip[] = [];
-  for (const authorization of listAuthorizations()) {
+  for (const authorization of authorizations.values()) {
     const profile = {
       appId: authorization.appId,
       userOpenId: authorization.userOpenId,
@@ -1444,4 +1460,5 @@ export const __internals = {
   removeOrphanedRefreshLock,
   safeFileName,
   pickProfileNameByAppId,
+  parseLarkCliJsonOutput,
 };

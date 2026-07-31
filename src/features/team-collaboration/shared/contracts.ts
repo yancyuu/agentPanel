@@ -81,6 +81,8 @@ export interface CollaborationRun {
   rootTaskTeamSlug?: string;
   workItems: CollaborationWorkItem[];
   finalResult?: string;
+  revisionFeedback?: string;
+  revisionNumber?: number;
   error?: string;
   createdAt: string;
   updatedAt: string;

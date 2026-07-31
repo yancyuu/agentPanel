@@ -2,6 +2,7 @@ import path from 'node:path';
 
 import {
   buildDesktopServerEnvironment,
+  DESKTOP_TELEMETRY_RECONCILE_ARGS,
   isAllowedExternalUrl,
   isAllowedWorkbenchNavigation,
   resolveDesktopRuntimePaths,
@@ -23,6 +24,10 @@ describe('desktop runtime composition', () => {
       staticDir: '/Applications/AgentCLI.app/Contents/Resources/agentcli/dist-renderer',
       cliEntry: '/Applications/AgentCLI.app/Contents/Resources/agentcli/bin/agentcli.mjs',
     });
+  });
+
+  it('reconciles an already-enabled telemetry worker without mutating user consent', () => {
+    expect(DESKTOP_TELEMETRY_RECONCILE_ARGS).toEqual(['usage', 'reconcile', '--json']);
   });
 
   it('forces the embedded server onto loopback and ignores ambient host/port values', () => {

@@ -4,6 +4,7 @@ import { api } from '@renderer/api';
 
 import {
   type AdvancedConnectionSummary,
+  type AdvancedConnectionTokenCatalogSummary,
   DATA_PERMISSION_LABELS,
   type DataPermissionId,
   type DiscoverAdvancedConnectionResponse,
@@ -11,7 +12,7 @@ import {
 } from '../../contracts';
 import { advancedConnectionsApi } from '../adapters/advancedConnectionsApi';
 
-const DEFAULT_AGENTBUS_HOST = 'http://47.112.24.153/';
+const DEFAULT_AGENTBUS_HOST = 'https://agentbus.skg.com/';
 
 // Return type is exported below via ReturnType so the hook stays in sync with its state/actions.
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- exported ReturnType below keeps the public contract synchronized
@@ -24,6 +25,9 @@ function useAdvancedConnectionsState() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [catalogStatus, setCatalogStatus] = useState<Record<string, string>>({});
+  const [catalogs, setCatalogs] = useState<
+    Record<string, AdvancedConnectionTokenCatalogSummary | undefined>
+  >({});
   const [channelStatus, setChannelStatus] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
@@ -190,16 +194,55 @@ function useAdvancedConnectionsState() {
         advancedConnectionsApi.tokenCatalog(connectionId)
       );
       if (!result) return;
+      setCatalogs((current) => ({
+        ...current,
+        [connectionId]: result.ok ? result.catalog : undefined,
+      }));
       setCatalogStatus((current) => ({
         ...current,
         [connectionId]: result.ok
           ? result.available
-            ? 'Token 池连接正常，已读取可用目录。'
+            ? `Token 池连接正常，可用模型 ${result.catalog?.modelCount ?? 0} 个。`
             : '该服务未提供 Token 池。'
           : result.error || 'Token 池暂不可用。',
       }));
     },
     [run]
+  );
+
+  const claimAndApplyToken = useCallback(
+    async (connectionId: string) => {
+      const catalog = catalogs[connectionId];
+      if (!catalog?.discoveryId) {
+        setError('请先检测 Token 池并读取最新目录');
+        return;
+      }
+      const modelApiIds =
+        catalog.defaultModelApiIds.length > 0
+          ? catalog.defaultModelApiIds
+          : catalog.models.map((model) => model.id);
+      const result = await run(`claim:${connectionId}`, () =>
+        advancedConnectionsApi.claimAndApplyToken(connectionId, {
+          discoveryId: catalog.discoveryId!,
+          regionId: catalog.regionId,
+          gatewayId: catalog.gatewayId,
+          modelApiIds,
+          runtimes: ['claude', 'codex', 'pi'],
+        })
+      );
+      if (!result) return;
+      const applied = result.runtimes
+        .filter((runtime) => runtime.ok)
+        .map((runtime) => runtime.runtime)
+        .join('、');
+      setCatalogStatus((current) => ({
+        ...current,
+        [connectionId]: result.warnings.length
+          ? `Token ${result.maskedKey} 已应用到 ${applied || '部分运行时'}；${result.warnings.join('；')}`
+          : `Token ${result.maskedKey} 已安全领取并应用到 ${applied}。`,
+      }));
+    },
+    [catalogs, run]
   );
 
   return {
@@ -215,6 +258,7 @@ function useAdvancedConnectionsState() {
     error,
     notice,
     catalogStatus,
+    catalogs,
     channelStatus,
     discover,
     addConnection,
@@ -225,6 +269,7 @@ function useAdvancedConnectionsState() {
     syncConnection,
     pullRemoteTasks,
     checkTokenCatalog,
+    claimAndApplyToken,
     refresh,
   };
 }

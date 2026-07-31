@@ -43,7 +43,7 @@ async function ensureDigitalWorkerLocalServer() {
   const existing = await waitForOpenHermitServerReady(null, 3_000);
   if (existing.ready) return existing;
   throw new Error(
-    'AgentCLI 工作台未启动或尚未就绪：请先运行 agentcli web 或在菜单中开启 AgentCLI 工作台，再创建数字员工。'
+    'AgentCLI 本地服务未启动或尚未就绪：请先打开 AgentCLI 桌面客户端；独立 CLI 环境可运行 agentcli web 后再创建数字员工。'
   );
 }
 
@@ -86,7 +86,11 @@ function normalizedRequest(options) {
     platformOptions = mergeAssistantPlatformOptions(platformMeta, options.platformOptions);
     const missing = missingRequiredAssistantFields(platformMeta, platformOptions);
     if (missing.length > 0) {
-      return { ok: false, message: `缺少渠道必填字段：${missing.join(', ')}`, requiredFields: missing };
+      return {
+        ok: false,
+        message: `缺少渠道必填字段：${missing.join(', ')}`,
+        requiredFields: missing,
+      };
     }
   }
 
@@ -136,7 +140,12 @@ export function buildDigitalWorkerCommandOptions(args, findArg) {
   };
 }
 
-export async function provisionDigitalWorker(port, options, hooks = {}, dependencies = defaultDependencies) {
+export async function provisionDigitalWorker(
+  port,
+  options,
+  hooks = {},
+  dependencies = defaultDependencies
+) {
   const request = normalizedRequest(options);
   if (!request.ok) return { ...request, rollback: { attempted: false } };
   const dwContext = {
@@ -162,22 +171,43 @@ export async function provisionDigitalWorker(port, options, hooks = {}, dependen
     failedStage = '创建数字员工团队';
     hooks.onStage?.('team', request);
     if (request.existingTeam) {
-      team = { ok: true, teamSlug: request.bindProject, message: '使用已有数字员工', existing: true };
+      team = {
+        ok: true,
+        teamSlug: request.bindProject,
+        message: '使用已有数字员工',
+        existing: true,
+      };
     } else {
-      team = await measureDwStage('dw.team', () => dependencies.createTeam(port, request), dwContext);
+      team = await measureDwStage(
+        'dw.team',
+        () => dependencies.createTeam(port, request),
+        dwContext
+      );
     }
 
     failedStage = '启动渠道连接服务';
     hooks.onStage?.('runtime', request);
-    const runtime = await measureDwStage('dw.runtime', () => dependencies.ensureRuntime(port), dwContext);
+    const runtime = await measureDwStage(
+      'dw.runtime',
+      () => dependencies.ensureRuntime(port),
+      dwContext
+    );
     if (!runtime?.ok) throw new Error(runtime?.message || '渠道连接服务不可用');
 
     failedStage = '绑定渠道';
     hooks.onStage?.('binding', request);
     let binding;
     if (isAssistantQrPlatform(request.platform)) {
-      const begin = await measureDwStage('dw.qr.begin', () => dependencies.beginQr(port, request.platform), dwContext);
-      await hooks.onQrCode?.({ platform: request.platform, qrUrl: begin.qr_url, beginResult: begin });
+      const begin = await measureDwStage(
+        'dw.qr.begin',
+        () => dependencies.beginQr(port, request.platform),
+        dwContext
+      );
+      await hooks.onQrCode?.({
+        platform: request.platform,
+        qrUrl: begin.qr_url,
+        beginResult: begin,
+      });
       const pollResult = await measureDwStage(
         'dw.qr.poll',
         () => dependencies.waitForQr(port, request.platform, begin, hooks.onQrStatus),

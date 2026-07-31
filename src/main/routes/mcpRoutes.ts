@@ -1,8 +1,32 @@
+import { executeMcpTool, type McpToolContent } from '../services/team-management/mcpTaskTools';
+
+import type {
+  AddDeliveryInput,
+  AddDeliveryResult,
+  AddFeedbackItemInput,
+  Task,
+} from '../services/team-management/TeamWorkspaceService';
+import type { FeedbackItem, TaskHistoryEvent } from '@shared/types/team';
 import type { FastifyInstance } from 'fastify';
 
 interface McpTaskService {
-  readTasks(teamSlug: string): Promise<unknown>;
-  patchTask(teamSlug: string, taskId: string, patch: Record<string, unknown>): Promise<unknown>;
+  readTasks(teamSlug: string): Promise<Task[]>;
+  createTask(
+    teamSlug: string,
+    payload: { title: string; description?: string; assignee?: string | null }
+  ): Promise<Task>;
+  patchTask(teamSlug: string, taskId: string, patch: Partial<Task>): Promise<Task>;
+  addDelivery(
+    teamSlug: string,
+    taskId: string,
+    input: AddDeliveryInput
+  ): Promise<AddDeliveryResult>;
+  addFeedbackItem(
+    teamSlug: string,
+    taskId: string,
+    input: AddFeedbackItemInput
+  ): Promise<FeedbackItem>;
+  appendTaskHistoryEvent(teamSlug: string, taskId: string, event: TaskHistoryEvent): Promise<Task>;
 }
 
 interface McpStreamRequest {
@@ -42,13 +66,14 @@ export const MCP_TOOLS = [
   },
   {
     name: 'complete_task',
-    description: '标记任务完成（状态改为 done），可写入结果摘要',
+    description:
+      '标记任务完成（状态改为 done），可写入结果摘要（带 result 时会记录为一条交付成果 delivery）',
     inputSchema: {
       type: 'object',
       properties: {
         team_slug: { type: 'string', description: '团队 slug' },
         task_id: { type: 'string', description: '任务 ID' },
-        result: { type: 'string', description: '完成结果摘要（可选）' },
+        result: { type: 'string', description: '完成结果摘要（可选，记录为交付成果）' },
       },
       required: ['team_slug', 'task_id'],
     },
@@ -95,20 +120,27 @@ export const MCP_TOOLS = [
   },
   {
     name: 'deliver_task',
-    description: '交付任务结果。完成任务后调用此工具，将结果发送给发起方审核。',
+    description:
+      '交付任务结果。完成任务后调用此工具，将结果作为新版本交付成果提交审核；非首次交付必须提供 summary（本轮变更摘要），并可用 addressed_feedback_ids 标记已处理的反馈条目。',
     inputSchema: {
       type: 'object',
       properties: {
         team_slug: { type: 'string', description: '你的团队 slug（接收方/执行方）' },
         dispatch_id: { type: 'string', description: '任务派发 ID' },
         result: { type: 'string', description: '交付结果描述' },
+        summary: { type: 'string', description: '本轮变更摘要（非首次交付时必填）' },
+        addressed_feedback_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '本轮交付已处理的反馈条目 id 列表',
+        },
       },
       required: ['team_slug', 'dispatch_id', 'result'],
     },
   },
   {
     name: 'approve_task',
-    description: '审核通过任务交付。发起方对交付结果满意时调用。',
+    description: '审核通过任务交付。发起方对交付结果满意时调用；存在未处理的反馈条目时会被拒绝。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -120,13 +152,19 @@ export const MCP_TOOLS = [
   },
   {
     name: 'reject_result',
-    description: '退回任务交付结果，要求修改。附上反馈意见。超过 3 次退回需要人工介入。',
+    description:
+      '退回任务交付结果，要求修改。附上反馈意见（会创建一条待处理的反馈条目）。超过 3 次退回需要人工介入。',
     inputSchema: {
       type: 'object',
       properties: {
         team_slug: { type: 'string', description: '你的团队 slug（发起方/审核方）' },
         dispatch_id: { type: 'string', description: '任务派发 ID' },
         feedback: { type: 'string', description: '退回反馈（需要修改的内容）' },
+        anchor: {
+          type: 'object',
+          description:
+            '可选定位锚点：{kind:"quote",quote} 引用文本，或 {kind:"hunk",changeKey,hunkIndex,contextHash?} 代码 hunk',
+        },
       },
       required: ['team_slug', 'dispatch_id', 'feedback'],
     },
@@ -159,22 +197,12 @@ export function openMcpStream({
   return reply.hijack();
 }
 
-async function executeMcpTool(
+async function runMcpTool(
   service: McpTaskService,
   toolName: string,
-  args: Record<string, string>
-): Promise<{ type: string; text: string }[]> {
-  const content = (result: unknown) => [{ type: 'text', text: JSON.stringify(result, null, 2) }];
-  if (toolName === 'list_tasks') return content(await service.readTasks(args.team_slug));
-  if (toolName === 'claim_task') {
-    return content(await service.patchTask(args.team_slug, args.task_id, { status: 'doing' }));
-  }
-  if (toolName === 'complete_task') {
-    const patch: Record<string, unknown> = { status: 'done' };
-    if (args.result) patch.result = args.result;
-    return content(await service.patchTask(args.team_slug, args.task_id, patch));
-  }
-  throw new Error(`Unknown tool: ${toolName}`);
+  args: Record<string, unknown>
+): Promise<McpToolContent> {
+  return executeMcpTool(service, toolName, args);
 }
 
 export function registerMcpRoutes(app: FastifyInstance, service: McpTaskService): void {
@@ -200,12 +228,12 @@ export function registerMcpRoutes(app: FastifyInstance, service: McpTaskService)
     }
     if (method === 'tools/call') {
       const toolName = params.name as string;
-      const toolArgs = (params.arguments ?? {}) as Record<string, string>;
+      const toolArgs = (params.arguments ?? {}) as Record<string, unknown>;
       try {
         return {
           jsonrpc: '2.0',
           id,
-          result: { content: await executeMcpTool(service, toolName, toolArgs) },
+          result: { content: await runMcpTool(service, toolName, toolArgs) },
         };
       } catch (error) {
         return {

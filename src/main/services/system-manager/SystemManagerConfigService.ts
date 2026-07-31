@@ -26,15 +26,37 @@ export function adminWorkDir(): string {
 
 async function commandExists(command: string): Promise<boolean> {
   const paths = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
+  const extensions =
+    process.platform === 'win32'
+      ? (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD')
+          .split(';')
+          .filter(Boolean)
+          .map((extension) => extension.toLowerCase())
+      : [''];
   for (const dir of paths) {
-    try {
-      await access(path.join(dir, command));
-      return true;
-    } catch {
-      // keep looking
+    for (const extension of extensions) {
+      try {
+        await access(path.join(dir, `${command}${extension}`));
+        return true;
+      } catch {
+        // keep looking
+      }
     }
   }
   return false;
+}
+
+export type SystemManagerHarness = 'claudecode' | 'codex' | 'pi';
+
+export async function resolveSystemManagerHarness(): Promise<SystemManagerHarness | null> {
+  for (const candidate of [
+    { harness: 'claudecode' as const, command: 'claude' },
+    { harness: 'codex' as const, command: 'codex' },
+    { harness: 'pi' as const, command: 'pi' },
+  ]) {
+    if (await commandExists(candidate.command)) return candidate.harness;
+  }
+  return null;
 }
 
 export class SystemManagerConfigService {
@@ -82,15 +104,16 @@ export class SystemManagerConfigService {
   }
 
   async getStatus(): Promise<SystemManagerStatus> {
-    const hasClaude = await commandExists('claude');
+    const runtimeHarness = await resolveSystemManagerHarness();
     return {
       displayName: '诊断',
       adminWorkDir: adminWorkDir(),
       defaultWorkDir: adminWorkDir(),
       selectedWorkDir: adminWorkDir(),
       claudeCommand: 'claude',
-      localStatus: hasClaude ? 'ready' : 'missing-claude',
-      ...(hasClaude ? {} : { error: '未在 PATH 中找到 claude 命令' }),
+      ...(runtimeHarness ? { runtimeHarness } : {}),
+      localStatus: runtimeHarness ? 'ready' : 'missing-claude',
+      ...(runtimeHarness ? {} : { error: '未找到可用的 Claude Code、Codex 或内置 Pi 运行环境' }),
     };
   }
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildUsageTelemetryLaunchdPlist,
   buildUsageTelemetryWindowsTaskXml,
+  buildUsageTelemetryWindowsWrapper,
 } from '@main/telemetry/autostart';
 
 describe('usage telemetry launchd autostart', () => {
@@ -22,6 +23,8 @@ describe('usage telemetry launchd autostart', () => {
     expect(plist).toContain('<string>__telemetry-worker</string>');
     expect(plist).toContain('<key>RunAtLoad</key>');
     expect(plist).toContain('<key>KeepAlive</key>');
+    expect(plist).toContain('<key>ELECTRON_RUN_AS_NODE</key>');
+    expect(plist).toContain('<string>1</string>');
     expect(plist).toContain('<key>HERMIT_HOME</key>');
     expect(plist).toContain('<string>/tmp/hermit-home</string>');
     expect(plist).not.toContain('--daemon');
@@ -42,6 +45,20 @@ describe('usage telemetry launchd autostart', () => {
     expect(xml).toContain('<Count>999</Count>');
     expect(xml).toContain('<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>');
     expect(xml).toContain('usage-worker.cmd');
+  });
+
+  it('switches cmd.exe to UTF-8 before using non-ASCII Windows paths', () => {
+    const wrapper = buildUsageTelemetryWindowsWrapper({
+      label: 'com.openhermit.telemetry',
+      nodePath: 'C:\\程序文件\\AgentCLI\\node.exe',
+      cliPath: 'C:\\程序文件\\AgentCLI\\bin\\agentcli.mjs',
+      hermitHome: 'C:\\用户\\测试\\.hermit',
+    });
+
+    expect(wrapper).toContain(
+      '@echo off\r\nchcp 65001 >nul\r\nset "ELECTRON_RUN_AS_NODE=1"\r\n'
+    );
+    expect(wrapper).toContain('C:\\用户\\测试\\.hermit');
   });
 
   it('escapes XML values in plist fields', () => {

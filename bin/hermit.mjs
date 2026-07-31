@@ -180,6 +180,8 @@ import {
   printUsageAutostart,
   printScanOnceResult,
   restartUsageWorkerIfRunning,
+  reconcileEnabledTelemetryWorker,
+  isUsageWorkerPid,
 } from './lib/usageCommand.mjs';
 import {
   printServicesCommand,
@@ -214,7 +216,6 @@ import {
 } from './lib/usageProgress.mjs';
 import {
   NAV_ACTIONS,
-  WEB_ENTRY_ACTIONS,
   SERVICE_ACTIONS,
   LOCAL_USE_ACTIONS,
   TEAM_COLLAB_ACTIONS,
@@ -389,7 +390,7 @@ ${BRAND.stylizedName} - 本地 AI runtime 工作区控制面
 命令:
   ${BRAND.cliCommand}         打开终端导航，选择本地使用、团队协作或用户授权
   init [--json]
-                     快速初始化：启动 Web daemon + 用量后台 worker（默认开机自启）
+                     快速初始化：只启动用量后台 worker（默认开机自启），不启动 Web
   web [--json]       直接启动并打开本地数字员工工作台（Web），跳过终端导航
   status [--json]    查看后台服务状态
   doctor [--json]    运行只读本地诊断
@@ -448,7 +449,7 @@ ${BRAND.stylizedName} - 本地 AI runtime 工作区控制面
   npx ${BRAND.npmPackage}             # 不安装直接运行
   npx ${BRAND.npmPackage} --daemon --port 8080
   ${BRAND.cliCommand}                          # 全局安装后打开终端导航
-  ${BRAND.cliCommand} init                     # 快速启动 Web + 用量后台
+  ${BRAND.cliCommand} init                     # 只启动用量后台（不启动 Web）
   ${BRAND.cliCommand} --daemon                 # 后台启动 Web 控制台
   ${BRAND.cliCommand} teams create
   ${BRAND.cliCommand} teams list
@@ -524,6 +525,12 @@ if (commandArgs[0] === 'usage' && commandArgs[1] === 'start') {
   await printUsageStart();
 }
 
+if (commandArgs[0] === 'usage' && commandArgs[1] === 'reconcile') {
+  const result = await reconcileEnabledTelemetryWorker();
+  if (jsonRequested) printJson({ ok: true, command: 'usage reconcile', ...result });
+  process.exit(0);
+}
+
 if (commandArgs[0] === 'usage' && commandArgs[1] === 'stop') {
   await printUsageStop();
 }
@@ -560,8 +567,13 @@ if (commandArgs[0] === '__telemetry-worker') {
   ];
   const extraArgs = PASSTHROUGH_FLAGS.filter((flag) => args.includes(flag));
   const existingPid = readPidFile(telemetryWorkerPidPath);
-  if (!extraArgs.includes('--scan-once') && existingPid && isPidRunning(existingPid)) {
+  if (!extraArgs.includes('--scan-once') && existingPid && isUsageWorkerPid(existingPid)) {
     process.exit(0);
+  }
+  if (existingPid && isPidRunning(existingPid) && !isUsageWorkerPid(existingPid)) {
+    try {
+      unlinkSync(telemetryWorkerPidPath);
+    } catch {}
   }
   const child = spawn(process.execPath, telemetryWorkerChildArgs(extraArgs), {
     cwd: repoRoot,

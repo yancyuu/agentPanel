@@ -30,7 +30,7 @@ export interface DirectCliMessageInput {
 interface TeamRuntimeOperationDependencies {
   teamProvisioning: Pick<TeamProvisioningService, 'readTeamManifestByProject'>;
   bridgeClient: Pick<HermitBridgeClient, 'getProject' | 'updateProject' | 'createProject'>;
-  directCliManager: Pick<DirectCliSessionManager, 'getSessionId' | 'send'>;
+  directCliManager: Pick<DirectCliSessionManager, 'getSessionId' | 'send' | 'runOneShot'>;
   directCliRoutes: Map<
     string,
     {
@@ -171,20 +171,30 @@ export function createTeamRuntimeOperations(
         : {}),
     });
     let teamSlug = params.teamName;
+    let harness = 'claudecode';
     try {
       const manifest = await svc.readTeamManifestByProject(params.teamName);
       teamSlug = manifest.slug;
+      harness = manifest.harness || 'claudecode';
     } catch {
       // Route identity can already be the canonical local team slug.
     }
-    await dependencies.directCliManager.send(params.sessionKey, {
+    const message = {
       text: params.text,
       attachments: params.attachments,
       messageId: params.messageId,
       workDir: params.workDir,
       teamSlug,
       workbenchUrl: dependencies.workbenchUrl,
-    });
+    };
+    if (harness === 'codex' || harness === 'pi') {
+      await dependencies.directCliManager.runOneShot(params.sessionKey, {
+        ...message,
+        harness,
+      });
+      return;
+    }
+    await dependencies.directCliManager.send(params.sessionKey, message);
   }
 
   return {

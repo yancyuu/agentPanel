@@ -317,6 +317,58 @@ export class TeamProvisioningService {
     return this.workspace.deleteTask(teamSlug, taskId);
   }
 
+  addTaskComment(
+    teamSlug: string,
+    taskId: string,
+    input: Parameters<TeamWorkspaceService['addTaskComment']>[2]
+  ) {
+    return this.workspace.addTaskComment(teamSlug, taskId, input);
+  }
+
+  addDelivery(
+    teamSlug: string,
+    taskId: string,
+    input: Parameters<TeamWorkspaceService['addDelivery']>[2]
+  ) {
+    return this.workspace.addDelivery(teamSlug, taskId, input);
+  }
+
+  addFeedbackItem(
+    teamSlug: string,
+    taskId: string,
+    input: Parameters<TeamWorkspaceService['addFeedbackItem']>[2]
+  ) {
+    return this.workspace.addFeedbackItem(teamSlug, taskId, input);
+  }
+
+  appendTaskHistoryEvent(
+    teamSlug: string,
+    taskId: string,
+    event: Parameters<TeamWorkspaceService['appendTaskHistoryEvent']>[2]
+  ) {
+    return this.workspace.appendTaskHistoryEvent(teamSlug, taskId, event);
+  }
+
+  // ===========================================================================
+  // Review decisions (passthrough to workspace)
+  // ===========================================================================
+
+  readReviewDecisions(teamSlug: string) {
+    return this.workspace.readReviewDecisions(teamSlug);
+  }
+
+  saveReviewDecision(
+    teamSlug: string,
+    scopeKey: string,
+    payload: Parameters<TeamWorkspaceService['saveReviewDecision']>[2]
+  ) {
+    return this.workspace.saveReviewDecision(teamSlug, scopeKey, payload);
+  }
+
+  clearReviewDecision(teamSlug: string, scopeKey: string) {
+    return this.workspace.clearReviewDecision(teamSlug, scopeKey);
+  }
+
   // ===========================================================================
   // Session archive (passthrough to workspace)
   // ===========================================================================

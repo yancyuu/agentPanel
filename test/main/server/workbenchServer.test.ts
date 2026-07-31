@@ -139,15 +139,15 @@ describe('workbench server factory', () => {
     const expectedRoutes = sortedRouteKeys();
     const actualRoutes = [...runtimeRoutes].sort((left, right) => left.localeCompare(right));
 
-    expect(actualRoutes).toHaveLength(267);
-    expect(new Set(actualRoutes).size).toBe(267);
+    expect(actualRoutes).toHaveLength(269);
+    expect(new Set(actualRoutes).size).toBe(269);
     expect(actualRoutes).toEqual(expectedRoutes);
     expect(methodCounts(actualRoutes)).toEqual({
       ALL: 3,
       DELETE: 12,
       GET: 108,
       PATCH: 14,
-      POST: 124,
+      POST: 126,
       PUT: 6,
     });
     expect(methodCounts(actualRoutes)).toEqual(methodCounts(expectedRoutes));
@@ -174,7 +174,7 @@ describe('workbench server factory', () => {
       harness.composition.context.services.bridgeConnection.listenerCount('reply_stream')
     ).toBe(1);
     expect(harness.composition.context.services.bridgeConnection.listenerCount('message')).toBe(1);
-    expect(harness.composition.context.lifecycle.listenerDisposers).toHaveLength(3);
+    expect(harness.composition.context.lifecycle.listenerDisposers).toHaveLength(4);
     await first.shutdown();
   });
 

@@ -235,6 +235,43 @@ describe('SystemManagerView', () => {
     vi.unstubAllGlobals();
   });
 
+  it('lets the user retry when diagnostics are temporarily unavailable', async () => {
+    getStatusMock
+      .mockResolvedValueOnce({
+        ...baseStatus(),
+        localStatus: 'missing-claude',
+        error: '未找到可用运行环境',
+      })
+      .mockResolvedValue(baseStatus());
+    mockAdminLoopRuntime();
+
+    const { host, root } = renderSystemManager();
+    await act(async () => {
+      root.render(<SystemManagerView />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const retry = Array.from(host.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('诊断异常 · 重新检测')
+    );
+    expect(retry).toBeTruthy();
+
+    await act(async () => {
+      retry?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getStatusMock).toHaveBeenCalledTimes(2);
+    expect(host.textContent).toContain('诊断可用');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
   it('renders a simple scan page and starts a full-folder diagnostic', async () => {
     getStatusMock.mockResolvedValue(baseStatus());
     getConfigMock.mockResolvedValue(baseConfig());

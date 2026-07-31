@@ -97,6 +97,14 @@ describe('lark-cli profile authorization discovery', () => {
       ])
     ).toEqual([]);
   });
+
+  it('parses Windows CLI JSON with a BOM, warning prefix, and Chinese fields', () => {
+    expect(
+      __internals.parseLarkCliJsonOutput(
+        '\uFEFFwarning: using cached profile\r\n[{"appId":"cli_cn","userOpenId":"ou_cn","userName":"测试用户"}]'
+      )
+    ).toEqual([{ appId: 'cli_cn', userOpenId: 'ou_cn', userName: '测试用户' }]);
+  });
 });
 describe('lark-cli profile selection', () => {
   it('uses the profile name for an app instead of assuming it equals the appId', () => {
@@ -449,6 +457,29 @@ describe('getLarkCredentialsFreshAll — per-account failure isolation', () => {
     expect(result.skipped).toHaveLength(2);
     expect(result.skipped.map((s) => s.reason)).toEqual(['refresh-failed', 'refresh-failed']);
     expect(result.skipped[0].message).toContain('timed out waiting');
+  });
+
+  it('falls back to stored DPAPI/Keychain profiles when lark-cli enumeration is empty', async () => {
+    const readCredentials = vi.fn(() => ({ ok: false as const, message: 'missing test token' }));
+    const result = await getLarkCredentialsFreshAll(
+      {},
+      {
+        listAuthorizations: () => [],
+        listStoredProfiles: () => [{ appId: 'cli_stored', userOpenId: 'ou_stored' }],
+        readCredentials,
+      }
+    );
+
+    expect(readCredentials).toHaveBeenCalledWith({
+      appId: 'cli_stored',
+      userOpenId: 'ou_stored',
+      brand: 'feishu',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      credentials: [],
+      skipped: [{ appId: 'cli_stored', userOpenId: 'ou_stored', reason: 'no-credentials' }],
+    });
   });
 
   it('still reports the healthy accounts when only one account fails', async () => {

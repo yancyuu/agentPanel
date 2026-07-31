@@ -21,10 +21,14 @@ import * as path from 'path';
 
 import type {
   AgentCapability,
+  Delivery,
   DiscoverableTeam,
+  FeedbackAnchor,
+  FeedbackItem,
   SourceMessageSnapshot,
   TaskAttachmentMeta,
   TaskComment,
+  TaskCommentType,
   TaskHistoryEvent,
   TaskRef,
   TaskWorkInterval,
@@ -156,16 +160,89 @@ export interface Task {
   related?: string[];
   comments?: TaskComment[];
   needsClarification?: 'lead' | 'user';
-  deletedAt?: string;
+  /** ISO 时间戳 — 任务被软删除时写入（取代旧的 result='__deleted__' 约定） */
+  deletedAt?: string | null;
   attachments?: TaskAttachmentMeta[];
   reviewState?: TeamReviewState;
   sourceMessageId?: string;
   sourceMessage?: SourceMessageSnapshot;
-  /** agent 完成任务后写入的结果摘要 */
-  result?: string | null;
+  /** 交付成果版本（追加式，version 从 1 递增；取代旧的 result 字段） */
+  deliveries?: Delivery[];
+  /** 条目化评审反馈（reject/request_changes 产生，deliver 可标记 resolved） */
+  feedbackItems?: FeedbackItem[];
+  /** 交付结果被退回次数；>= 3 时置 needsHumanIntervention */
+  revisionCount?: number;
+  /** 退回次数达到上限，需要人工介入 */
+  needsHumanIntervention?: boolean;
   createdAt: string;
   updatedAt: string;
   order: number;
+}
+
+export interface AddTaskCommentInput {
+  text: string;
+  author?: string;
+  type?: TaskCommentType;
+  anchor?: FeedbackAnchor;
+  taskRefs?: TaskRef[];
+  attachments?: TaskAttachmentMeta[];
+}
+
+export interface AddDeliveryInput {
+  result: string;
+  summary?: string;
+  addressedFeedbackIds?: string[];
+}
+
+export interface AddDeliveryResult {
+  task: Task;
+  delivery: Delivery;
+  /** addressedFeedbackIds 中不存在（或已 resolved）而被跳过的 id */
+  skippedFeedbackIds: string[];
+}
+
+export interface AddFeedbackItemInput {
+  text: string;
+  anchor?: FeedbackAnchor;
+}
+
+/** 代码评审 decisions 的单个 scope 持久化载荷（对应前端 changeReviewSlice 的持久化字段） */
+export interface ReviewDecisionPayload {
+  scopeToken?: string;
+  hunkDecisions: Record<string, unknown>;
+  fileDecisions: Record<string, unknown>;
+  hunkContextHashesByFile?: Record<string, Record<number, string>>;
+}
+
+interface LegacyPersistedTask extends Task {
+  result?: unknown;
+}
+
+function normalizePersistedTask(task: LegacyPersistedTask): Task {
+  const { result, ...current } = task;
+  if (result === '__deleted__') {
+    return {
+      ...current,
+      deletedAt: current.deletedAt ?? current.updatedAt ?? current.createdAt,
+    };
+  }
+  if (
+    typeof result === 'string' &&
+    result.trim() &&
+    (!current.deliveries || current.deliveries.length === 0)
+  ) {
+    return {
+      ...current,
+      deliveries: [
+        {
+          version: 1,
+          result: result.trim(),
+          deliveredAt: current.updatedAt ?? current.createdAt,
+        },
+      ],
+    };
+  }
+  return current;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +334,7 @@ function nextIsoTimestamp(previous?: string): string {
 
 export class TeamWorkspaceService {
   private readonly boardMutationTail = new Map<string, Promise<unknown>>();
+  private readonly reviewDecisionMutationTail = new Map<string, Promise<unknown>>();
 
   private async serializeBoardMutation<T>(
     teamSlug: string,
@@ -269,6 +347,23 @@ export class TeamWorkspaceService {
       return await current;
     } finally {
       if (this.boardMutationTail.get(teamSlug) === current) this.boardMutationTail.delete(teamSlug);
+    }
+  }
+
+  private async serializeReviewDecisionMutation<T>(
+    teamSlug: string,
+    operation: (storageSlug: string) => Promise<T>
+  ): Promise<T> {
+    const storageSlug = await this.resolveStorageSlug(teamSlug);
+    const previous = this.reviewDecisionMutationTail.get(storageSlug) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(() => operation(storageSlug));
+    this.reviewDecisionMutationTail.set(storageSlug, current);
+    try {
+      return await current;
+    } finally {
+      if (this.reviewDecisionMutationTail.get(storageSlug) === current) {
+        this.reviewDecisionMutationTail.delete(storageSlug);
+      }
     }
   }
 
@@ -601,9 +696,13 @@ export class TeamWorkspaceService {
 
   private async readBoard(teamSlug: string): Promise<{ tasks: Task[] }> {
     const storageSlug = await this.resolveStorageSlug(teamSlug);
-    return readJson<{ tasks: Task[] }>(path.join(teamRoot(storageSlug), 'tasks', 'board.json'), {
-      tasks: [],
-    });
+    const board = await readJson<{ tasks: LegacyPersistedTask[] }>(
+      path.join(teamRoot(storageSlug), 'tasks', 'board.json'),
+      { tasks: [] }
+    );
+    return {
+      tasks: Array.isArray(board.tasks) ? board.tasks.map(normalizePersistedTask) : [],
+    };
   }
 
   private async writeBoard(teamSlug: string, board: { tasks: Task[] }): Promise<void> {
@@ -660,7 +759,6 @@ export class TeamWorkspaceService {
         blockedBy: payload.blockedBy,
         related: payload.related,
         createdBy: payload.createdBy,
-        result: null,
         createdAt: now,
         updatedAt: now,
         order,
@@ -698,6 +796,186 @@ export class TeamWorkspaceService {
       if (board.tasks.length === before) return false;
       await this.writeBoard(teamSlug, board);
       return true;
+    });
+  }
+
+  // ---- 任务评论 ----
+
+  async addTaskComment(
+    teamSlug: string,
+    taskId: string,
+    input: AddTaskCommentInput
+  ): Promise<TaskComment> {
+    const text = (input?.text ?? '').trim();
+    if (!text) throw new Error('评论内容不能为空');
+    return this.serializeBoardMutation(teamSlug, async () => {
+      const board = await this.readBoard(teamSlug);
+      const index = (board.tasks || []).findIndex((task) => task.id === taskId);
+      if (index < 0) throw new Error(`task not found: ${taskId}`);
+      const comment: TaskComment = {
+        id: randomUUID(),
+        author: input.author || 'user',
+        text,
+        createdAt: new Date().toISOString(),
+        type: input.type || 'regular',
+        ...(input.anchor ? { anchor: input.anchor } : {}),
+        ...(input.taskRefs ? { taskRefs: input.taskRefs } : {}),
+        ...(input.attachments ? { attachments: input.attachments } : {}),
+      };
+      const task = board.tasks[index];
+      board.tasks[index] = {
+        ...task,
+        comments: [...(task.comments ?? []), comment],
+        updatedAt: nextIsoTimestamp(task.updatedAt),
+      };
+      await this.writeBoard(teamSlug, board);
+      return comment;
+    });
+  }
+
+  // ---- 交付成果（deliveries）与反馈条目（feedbackItems） ----
+
+  /**
+   * 追加一条交付成果（version = 现有 deliveries 数 + 1）。
+   * addressedFeedbackIds 中处于 open 状态的反馈条目会被置为 resolved（记录 resolvedAt），
+   * 不存在或已处理的 id 记入 skippedFeedbackIds 返回。
+   */
+  async addDelivery(
+    teamSlug: string,
+    taskId: string,
+    input: AddDeliveryInput
+  ): Promise<AddDeliveryResult> {
+    const result = (input?.result ?? '').trim();
+    if (!result) throw new Error('交付结果不能为空');
+    return this.serializeBoardMutation(teamSlug, async () => {
+      const board = await this.readBoard(teamSlug);
+      const index = (board.tasks || []).findIndex((task) => task.id === taskId);
+      if (index < 0) throw new Error(`task not found: ${taskId}`);
+      const task = board.tasks[index];
+
+      const now = new Date().toISOString();
+      const delivery: Delivery = {
+        version: (task.deliveries?.length ?? 0) + 1,
+        result,
+        ...(input.summary ? { summary: input.summary } : {}),
+        deliveredAt: now,
+        ...(input.addressedFeedbackIds?.length
+          ? { addressedFeedbackIds: input.addressedFeedbackIds }
+          : {}),
+      };
+
+      const skippedFeedbackIds: string[] = [];
+      let feedbackItems = task.feedbackItems;
+      if (input.addressedFeedbackIds?.length) {
+        feedbackItems = [...(task.feedbackItems ?? [])];
+        for (const id of input.addressedFeedbackIds) {
+          const feedbackIndex = feedbackItems.findIndex(
+            (item) => item.id === id && item.status === 'open'
+          );
+          if (feedbackIndex < 0) {
+            skippedFeedbackIds.push(id);
+            continue;
+          }
+          feedbackItems[feedbackIndex] = {
+            ...feedbackItems[feedbackIndex],
+            status: 'resolved',
+            resolvedAt: now,
+          };
+        }
+      }
+
+      board.tasks[index] = {
+        ...task,
+        deliveries: [...(task.deliveries ?? []), delivery],
+        ...(feedbackItems ? { feedbackItems } : {}),
+        updatedAt: nextIsoTimestamp(task.updatedAt),
+      };
+      await this.writeBoard(teamSlug, board);
+      return { task: board.tasks[index], delivery, skippedFeedbackIds };
+    });
+  }
+
+  /** 创建一条 open 状态的反馈条目（reject_result / request_changes） */
+  async addFeedbackItem(
+    teamSlug: string,
+    taskId: string,
+    input: AddFeedbackItemInput
+  ): Promise<FeedbackItem> {
+    const text = (input?.text ?? '').trim();
+    if (!text) throw new Error('反馈内容不能为空');
+    return this.serializeBoardMutation(teamSlug, async () => {
+      const board = await this.readBoard(teamSlug);
+      const index = (board.tasks || []).findIndex((task) => task.id === taskId);
+      if (index < 0) throw new Error(`task not found: ${taskId}`);
+      const item: FeedbackItem = {
+        id: `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        text,
+        ...(input.anchor ? { anchor: input.anchor } : {}),
+        status: 'open',
+        createdAt: new Date().toISOString(),
+      };
+      const task = board.tasks[index];
+      board.tasks[index] = {
+        ...task,
+        feedbackItems: [...(task.feedbackItems ?? []), item],
+        updatedAt: nextIsoTimestamp(task.updatedAt),
+      };
+      await this.writeBoard(teamSlug, board);
+      return item;
+    });
+  }
+
+  /** 追加一条工作流事件到 historyEvents（只增不改） */
+  async appendTaskHistoryEvent(
+    teamSlug: string,
+    taskId: string,
+    event: TaskHistoryEvent
+  ): Promise<Task> {
+    return this.serializeBoardMutation(teamSlug, async () => {
+      const board = await this.readBoard(teamSlug);
+      const index = (board.tasks || []).findIndex((task) => task.id === taskId);
+      if (index < 0) throw new Error(`task not found: ${taskId}`);
+      const task = board.tasks[index];
+      board.tasks[index] = {
+        ...task,
+        historyEvents: [...(task.historyEvents ?? []), event],
+        updatedAt: nextIsoTimestamp(task.updatedAt),
+      };
+      await this.writeBoard(teamSlug, board);
+      return board.tasks[index];
+    });
+  }
+
+  // ---- 代码评审 decisions（review-decisions.json，按 scopeKey 索引） ----
+
+  async readReviewDecisions(teamSlug: string): Promise<Record<string, ReviewDecisionPayload>> {
+    const storageSlug = await this.resolveStorageSlug(teamSlug);
+    return readJson<Record<string, ReviewDecisionPayload>>(
+      path.join(teamRoot(storageSlug), 'review-decisions.json'),
+      {}
+    );
+  }
+
+  async saveReviewDecision(
+    teamSlug: string,
+    scopeKey: string,
+    payload: ReviewDecisionPayload
+  ): Promise<void> {
+    await this.serializeReviewDecisionMutation(teamSlug, async (storageSlug) => {
+      const filePath = path.join(teamRoot(storageSlug), 'review-decisions.json');
+      const all = await readJson<Record<string, ReviewDecisionPayload>>(filePath, {});
+      all[scopeKey] = payload;
+      await writeJson(filePath, all);
+    });
+  }
+
+  async clearReviewDecision(teamSlug: string, scopeKey: string): Promise<void> {
+    await this.serializeReviewDecisionMutation(teamSlug, async (storageSlug) => {
+      const filePath = path.join(teamRoot(storageSlug), 'review-decisions.json');
+      const all = await readJson<Record<string, ReviewDecisionPayload>>(filePath, {});
+      if (!(scopeKey in all)) return;
+      delete all[scopeKey];
+      await writeJson(filePath, all);
     });
   }
 }

@@ -1,35 +1,17 @@
 // servicesCommand.mjs — `services` top-level command + services menu.
 // Extracted from hermit.mjs to keep it under 3000 lines.
+import { args, commandArgs, jsonRequested, port, hermitHome, daemonLogPath } from './env.mjs';
+import { printJson, printCliRows, isInteractiveCli } from './terminal.mjs';
+import { collectDaemonStatus, startDaemon, stopDaemon } from './daemon.mjs';
 import {
-  args,
-  commandArgs,
-  jsonRequested,
-  port,
-  hermitHome,
-  daemonLogPath,
-} from './env.mjs';
-import {
-  printJson,
-  printCliRows,
-  isInteractiveCli,
-} from './terminal.mjs';
-import {
-  collectDaemonStatus,
-  startDaemon,
-  stopDaemon,
-} from './daemon.mjs';
-import { readHermitSettings, writeHermitSettings, enableTeamCollaborationDefaults } from './settings.mjs';
-import {
-  readOpenHermitAuthStatus,
-} from './auth.mjs';
+  readHermitSettings,
+  writeHermitSettings,
+  enableTeamCollaborationDefaults,
+} from './settings.mjs';
+import { readOpenHermitAuthStatus } from './auth.mjs';
 import { BRAND, brandLogPrefix } from '../branding.mjs';
-import {
-  SERVICE_ACTIONS,
-} from './menus.mjs';
-import {
-  askMenuAction,
-  waitForContinue,
-} from './navigation.mjs';
+import { SERVICE_ACTIONS } from './menus.mjs';
+import { askMenuAction, waitForContinue } from './navigation.mjs';
 import {
   enableLocalUsageTelemetry,
   disableLocalUsageTelemetry,
@@ -43,7 +25,10 @@ import {
 // --- Task-bus summarizer -------------------------------------------------------
 
 function summarizeTaskBus(taskBus = {}) {
-  const redis = taskBus.redis && typeof taskBus.redis === 'object' ? taskBus.redis : { host: '127.0.0.1', port: 6379 };
+  const redis =
+    taskBus.redis && typeof taskBus.redis === 'object'
+      ? taskBus.redis
+      : { host: '127.0.0.1', port: 6379 };
   return {
     enabled: Boolean(taskBus.enabled),
     collaboration: Boolean(taskBus.collaboration),
@@ -100,10 +85,26 @@ export function servicesStatusRows(status) {
   const usageEnabled = Boolean(status.usage.enabled);
   const collaborationEnabled = Boolean(status.collaboration.enabled);
   return [
-    ['Web 控制台', status.web.running ? `运行中 ${status.web.url}` : '未运行', status.web.running ? 'ok' : 'off'],
-    ['用量后台', usageRunning ? `运行中 (pid ${status.usage.worker.pid})` : '未运行', usageRunning ? 'ok' : 'off'],
-    ['用量统计', usageEnabled ? (usageRunning ? '本地扫描开启' : '已开启，后台未运行') : '关闭', usageEnabled && !usageRunning ? 'warn' : (usageEnabled ? 'ok' : 'off')],
-    ['IM 协作', collaborationEnabled ? '配置已开启（非本地进程）' : '关闭', collaborationEnabled ? 'info' : 'off'],
+    [
+      '本地服务',
+      status.web.running ? `运行中 ${status.web.url}` : '未运行',
+      status.web.running ? 'ok' : 'off',
+    ],
+    [
+      '用量后台',
+      usageRunning ? `运行中 (pid ${status.usage.worker.pid})` : '未运行',
+      usageRunning ? 'ok' : 'off',
+    ],
+    [
+      '用量统计',
+      usageEnabled ? (usageRunning ? '本地扫描开启' : '已开启，后台未运行') : '关闭',
+      usageEnabled && !usageRunning ? 'warn' : usageEnabled ? 'ok' : 'off',
+    ],
+    [
+      'IM 协作',
+      collaborationEnabled ? '配置已开启（非本地进程）' : '关闭',
+      collaborationEnabled ? 'info' : 'off',
+    ],
     ['用户', status.auth.authorized ? '已登录' : '未登录', status.auth.authorized ? 'ok' : 'off'],
   ];
 }
@@ -117,7 +118,9 @@ function printServicesRows(title, status, hint = '') {
 async function startUsageService({ autostartRequested = !args.includes('--no-autostart') } = {}) {
   enableLocalUsageTelemetry();
   const worker = await startTelemetryWorker({ quiet: true });
-  const autostart = autostartRequested ? await enableUsageAutostart() : await getUsageAutostartStatus();
+  const autostart = autostartRequested
+    ? await enableUsageAutostart()
+    : await getUsageAutostartStatus();
   return { enabled: true, worker, autostart, source: 'claude-jsonl' };
 }
 
@@ -139,7 +142,14 @@ function startCollaborationService() {
 
 function startWebService() {
   if (process.env.OPENHERMIT_SERVICE_WEB_MODE === 'test') {
-    return { running: true, started: true, pid: process.pid, url: `http://127.0.0.1:${port}`, logPath: daemonLogPath, mode: 'test' };
+    return {
+      running: true,
+      started: true,
+      pid: process.pid,
+      url: `http://127.0.0.1:${port}`,
+      logPath: daemonLogPath,
+      mode: 'test',
+    };
   }
   return { running: true, ...startDaemon({ exitOnDone: false, quiet: true }) };
 }
@@ -151,13 +161,47 @@ export async function runServiceAction(actionId) {
     const web = startWebService();
     const usage = await startUsageService();
     const collaboration = startCollaborationService();
-    return { ok: true, command: 'services start local', hermitHome, web, usage, collaboration, auth: { authorized: readOpenHermitAuthStatus().authorized } };
+    return {
+      ok: true,
+      command: 'services start local',
+      hermitHome,
+      web,
+      usage,
+      collaboration,
+      auth: { authorized: readOpenHermitAuthStatus().authorized },
+    };
   }
-  if (actionId === 'start-web') return { ok: true, command: 'services start web', hermitHome, web: startWebService() };
-  if (actionId === 'start-usage') return { ok: true, command: 'services start usage', hermitHome, usage: await startUsageService() };
-  if (actionId === 'start-collaboration') return { ok: true, command: 'services start collaboration', hermitHome, collaboration: startCollaborationService(), auth: { authorized: readOpenHermitAuthStatus().authorized } };
-  if (actionId === 'stop-usage') return { ok: true, command: 'services stop usage', hermitHome, usage: await stopUsageService() };
-  if (actionId === 'stop-web') return { ok: true, command: 'services stop web', hermitHome, web: await stopDaemon({ exitOnDone: false, quiet: true }) };
+  if (actionId === 'start-web')
+    return { ok: true, command: 'services start web', hermitHome, web: startWebService() };
+  if (actionId === 'start-usage')
+    return {
+      ok: true,
+      command: 'services start usage',
+      hermitHome,
+      usage: await startUsageService(),
+    };
+  if (actionId === 'start-collaboration')
+    return {
+      ok: true,
+      command: 'services start collaboration',
+      hermitHome,
+      collaboration: startCollaborationService(),
+      auth: { authorized: readOpenHermitAuthStatus().authorized },
+    };
+  if (actionId === 'stop-usage')
+    return {
+      ok: true,
+      command: 'services stop usage',
+      hermitHome,
+      usage: await stopUsageService(),
+    };
+  if (actionId === 'stop-web')
+    return {
+      ok: true,
+      command: 'services stop web',
+      hermitHome,
+      web: await stopDaemon({ exitOnDone: false, quiet: true }),
+    };
   if (actionId === 'status') return printServicesStatus({ exitOnDone: false });
   throw new Error(`Unknown services action: ${actionId}`);
 }
@@ -194,7 +238,11 @@ export async function runServicesMenu() {
       const status = await collectServicesStatus();
       printServicesRows('服务已更新', status);
     } catch (err) {
-      printCliRows('服务操作失败', [['原因', err instanceof Error ? err.message : String(err)]], '上传/托管能力需要先在「用户」中登录。');
+      printCliRows(
+        '服务操作失败',
+        [['原因', err instanceof Error ? err.message : String(err)]],
+        '上传/托管能力需要先在「用户」中登录。'
+      );
     }
     await waitForContinue('按 Enter/← 返回服务菜单 | Esc/Ctrl+C 退出');
   }

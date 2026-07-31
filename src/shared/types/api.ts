@@ -9,7 +9,6 @@
 
 import type { CliArgsValidationResult } from '../utils/cliArgsParser';
 import type { CliInstallerAPI } from './cliInstaller';
-import type { RuntimeReadiness } from './runtimeReadiness';
 import type { EditorAPI, EditorFileChangeEvent, ProjectAPI, WorkspaceListResponse } from './editor';
 import type {
   ApiKeysAPI,
@@ -37,6 +36,7 @@ import type {
   SnippetDiff,
   TaskChangeSetV2,
 } from './review';
+import type { RuntimeReadiness } from './runtimeReadiness';
 import type {
   CreateScheduleInput,
   Schedule,

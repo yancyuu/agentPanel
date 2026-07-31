@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- async test doubles implement Promise-returning route dependencies. */
 
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -23,7 +23,6 @@ function task(overrides: Partial<Task> = {}): Task {
     description: 'Task description',
     status: 'todo',
     assignee: null,
-    result: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:01.000Z',
     order: 0,
@@ -46,6 +45,24 @@ function createHarness(overrides: Partial<Dependencies> = {}) {
       })
     ),
     patchTask: vi.fn(async (_teamName, _taskId, patch) => task(patch)),
+    addDelivery: vi.fn(async (_teamName, _taskId, input) => ({
+      task: task(),
+      delivery: {
+        version: 1,
+        result: input.result,
+        deliveredAt: '2026-01-01T00:00:02.000Z',
+      },
+      skippedFeedbackIds: [] as string[],
+    })),
+    addFeedbackItem: vi.fn(async (_teamName, _taskId, input) => ({
+      id: 'f_test',
+      text: input.text,
+      status: 'open' as const,
+      createdAt: '2026-01-01T00:00:02.000Z',
+    })),
+    appendTaskHistoryEvent: vi.fn(async (_teamName, _taskId, event) =>
+      task({ historyEvents: [event] })
+    ),
     dispatchTask: vi.fn(async () => undefined),
     listProjects: vi.fn(async () => [{ name: 'project-a' }, { name: 'project-b' }]),
     readTeamManifest: vi.fn(async (teamName) => ({
@@ -73,15 +90,18 @@ afterEach(async () => {
 
 describe('team task routes', () => {
   it('presents submitted legacy tasks as waiting for review instead of still in progress', () => {
-    expect(
-      toTeamTask(task({ status: 'doing', reviewState: 'review', result: '# 已交付' })).status
-    ).toBe('completed');
+    expect(toTeamTask(task({ status: 'doing', reviewState: 'review' })).status).toBe('completed');
   });
 
   it('maps canonical list/create contracts and filters soft-deleted tasks', async () => {
     const readTasks = vi.fn(async () => [
       task(),
-      task({ id: 'deleted-task', title: 'Deleted', result: '__deleted__' }),
+      task({
+        id: 'deleted-task',
+        title: 'Deleted',
+        status: 'done',
+        deletedAt: '2026-01-02T00:00:00.000Z',
+      }),
     ]);
     const harness = createHarness({ readTasks });
 
@@ -222,15 +242,23 @@ describe('team task routes', () => {
     );
   });
 
-  it('approves and archives a deliverable through the existing local kanban action', async () => {
-    const hermitHome = await mkdtemp(path.join(os.tmpdir(), 'agentcli-task-archive-route-'));
+  it('approves and archives the latest deliverable through the kanban action', async () => {
+    const hermitHome = await mkdtemp(path.join(os.tmpdir(), 'agentcli-approval-'));
     tempDirs.push(hermitHome);
     process.env.HERMIT_HOME = hermitHome;
     let currentTask = task({
       status: 'done',
       assignee: 'research-assistant',
       reviewState: 'review',
-      result: '# 最终报告\n\n结论内容。',
+      revisionCount: 2,
+      needsHumanIntervention: true,
+      deliveries: [
+        {
+          version: 1,
+          result: '# 正式交付\n\n已完成。',
+          deliveredAt: '2026-01-01T00:00:01.000Z',
+        },
+      ],
     });
     const readTasks = vi.fn(async () => [currentTask]);
     const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
@@ -246,19 +274,109 @@ describe('team task routes', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(currentTask).toMatchObject({ status: 'done', reviewState: 'approved' });
-    expect(currentTask.comments?.at(-1)).toMatchObject({
-      author: 'user',
-      type: 'review_approved',
+    expect(patchTask).toHaveBeenCalledWith('team-a', 'task-12345678', {
+      status: 'done',
+      reviewState: 'approved',
+      revisionCount: 0,
+      needsHumanIntervention: false,
     });
+    expect(harness.dependencies.appendTaskHistoryEvent).toHaveBeenCalledWith(
+      'team-a',
+      'task-12345678',
+      expect.objectContaining({ type: 'review_approved', to: 'approved', actor: 'reviewer' })
+    );
+    const body = response.json();
+    expect(body.ok).toBe(true);
+    expect(body.task).toEqual(
+      expect.objectContaining({ status: 'completed', reviewState: 'approved', revisionCount: 0 })
+    );
+    expect(body.task.historyEvents.at(-1)).toEqual(
+      expect.objectContaining({ type: 'review_approved', actor: 'reviewer' })
+    );
     const outputRoot = path.join(hermitHome, 'teams', 'team-a', 'outputs');
-    const [taskDir] = await readdir(outputRoot);
+    const folders = await readdir(outputRoot);
+    expect(folders).toHaveLength(1);
     const manifest = JSON.parse(
-      await readFile(path.join(outputRoot, taskDir, 'manifest.json'), 'utf8')
-    ) as { taskId: string; currentVersion: string; versions: unknown[] };
-    expect(manifest).toMatchObject({ taskId: 'task-12345678' });
-    expect(manifest.currentVersion).toBeTruthy();
-    expect(manifest.versions).toHaveLength(1);
+      await readFile(path.join(outputRoot, folders[0], 'manifest.json'), 'utf8')
+    ) as { versions: Array<{ deliveryVersion: number }> };
+    expect(manifest.versions).toEqual([expect.objectContaining({ deliveryVersion: 1 })]);
+    expect(patchTask.mock.calls[0][2]).not.toHaveProperty('comments');
+  });
+
+  it('restores review fields when deliverable archival fails', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'agentcli-approval-failure-'));
+    tempDirs.push(root);
+    const invalidHermitHome = path.join(root, 'not-a-directory');
+    await writeFile(invalidHermitHome, 'blocked');
+    process.env.HERMIT_HOME = invalidHermitHome;
+
+    let currentTask = task({
+      status: 'done',
+      reviewState: 'review',
+      revisionCount: 2,
+      needsHumanIntervention: true,
+      deliveries: [{ version: 1, result: '正式交付', deliveredAt: '2026-01-01T00:00:01.000Z' }],
+    });
+    const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
+      currentTask = { ...currentTask, ...patch };
+      return currentTask;
+    });
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [currentTask]),
+      patchTask,
+    });
+
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: { op: 'set_column', column: 'approved' },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(patchTask).toHaveBeenCalledTimes(2);
+    expect(currentTask).toMatchObject({
+      status: 'done',
+      reviewState: 'review',
+      revisionCount: 2,
+      needsHumanIntervention: true,
+    });
+    expect(harness.dependencies.appendTaskHistoryEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects approval when the task has no delivery or has open feedback', async () => {
+    const noDelivery = task({ status: 'done', reviewState: 'review' });
+    const noDeliveryHarness = createHarness({ readTasks: vi.fn(async () => [noDelivery]) });
+    const noDeliveryResponse = await noDeliveryHarness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: { op: 'set_column', column: 'approved' },
+    });
+    expect(noDeliveryResponse.statusCode).toBe(409);
+    expect(noDeliveryHarness.dependencies.patchTask).not.toHaveBeenCalled();
+
+    const openFeedback = task({
+      status: 'done',
+      reviewState: 'review',
+      deliveries: [{ version: 1, result: '交付', deliveredAt: '2026-01-01T00:00:01.000Z' }],
+      feedbackItems: [
+        {
+          id: 'f_open',
+          text: '仍需修改',
+          status: 'open',
+          createdAt: '2026-01-01T00:00:02.000Z',
+        },
+      ],
+    });
+    const openFeedbackHarness = createHarness({
+      readTasks: vi.fn(async () => [openFeedback]),
+    });
+    const openFeedbackResponse = await openFeedbackHarness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: { op: 'set_column', column: 'approved' },
+    });
+    expect(openFeedbackResponse.statusCode).toBe(409);
+    expect(openFeedbackHarness.dependencies.patchTask).not.toHaveBeenCalled();
   });
 
   it('sends requested changes back to the same task instead of creating another task', async () => {
@@ -266,7 +384,6 @@ describe('team task routes', () => {
       status: 'done',
       assignee: 'research-assistant',
       reviewState: 'review',
-      result: '# 第一版报告',
     });
     const readTasks = vi.fn(async () => [currentTask]);
     const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
@@ -282,16 +399,140 @@ describe('team task routes', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(currentTask).toMatchObject({ status: 'doing', reviewState: 'needsFix' });
-    expect(currentTask.comments?.at(-1)).toMatchObject({
-      author: 'user',
+    expect(response.json()).toEqual(
+      expect.objectContaining({ ok: true, revisionCount: 1, needsHumanIntervention: false })
+    );
+    expect(currentTask).toMatchObject({
+      status: 'doing',
+      reviewState: 'needsFix',
+      revisionCount: 1,
+      needsHumanIntervention: false,
+    });
+    // 反馈建成 open 的 FeedbackItem，不再写成评论
+    expect(harness.dependencies.addFeedbackItem).toHaveBeenCalledWith('team-a', 'task-12345678', {
       text: '请补充英国站费用。',
     });
+    expect(currentTask.comments).toBeUndefined();
+    expect(harness.dependencies.appendTaskHistoryEvent).toHaveBeenCalledWith(
+      'team-a',
+      'task-12345678',
+      expect.objectContaining({
+        type: 'review_changes_requested',
+        to: 'needsFix',
+        actor: 'reviewer',
+        note: '请补充英国站费用。',
+      })
+    );
     expect(harness.dependencies.dispatchTask).toHaveBeenCalledWith(
       'team-a',
       expect.objectContaining({ id: 'task-12345678', status: 'doing' })
     );
     expect(harness.dependencies.createTask).not.toHaveBeenCalled();
+  });
+
+  it('increments the revision count without a feedback item when request_changes has no comment', async () => {
+    let currentTask = task({
+      status: 'done',
+      assignee: 'research-assistant',
+      reviewState: 'review',
+      revisionCount: 2,
+    });
+    const readTasks = vi.fn(async () => [currentTask]);
+    const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
+      currentTask = { ...currentTask, ...patch };
+      return currentTask;
+    });
+    const harness = createHarness({ readTasks, patchTask });
+
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: { op: 'request_changes' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(
+      expect.objectContaining({ ok: true, revisionCount: 3, needsHumanIntervention: true })
+    );
+    expect(harness.dependencies.addFeedbackItem).not.toHaveBeenCalled();
+    expect(patchTask).toHaveBeenCalledWith('team-a', 'task-12345678', {
+      status: 'doing',
+      reviewState: 'needsFix',
+      needsClarification: undefined,
+      revisionCount: 3,
+      needsHumanIntervention: true,
+    });
+    const event = vi.mocked(harness.dependencies.appendTaskHistoryEvent).mock.calls[0][2];
+    expect(event).toMatchObject({
+      type: 'review_changes_requested',
+      to: 'needsFix',
+      actor: 'reviewer',
+    });
+    expect(event).not.toHaveProperty('note');
+  });
+
+  it('returns squad deliveries to the collaboration state machine for rework', async () => {
+    let currentTask = task({
+      status: 'done',
+      assignee: 'captain',
+      reviewState: 'review',
+      collaborationRunId: 'run-1',
+      taskKind: 'root',
+    });
+    const requestCollaborationChanges = vi.fn(
+      async (_runId: string, _feedback: string, beforeStart?: () => Promise<void>) => {
+        await beforeStart?.();
+      }
+    );
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [currentTask]),
+      patchTask: vi.fn(async (_teamName, _taskId, patch) => {
+        currentTask = { ...currentTask, ...patch };
+        return currentTask;
+      }),
+      requestCollaborationChanges,
+    });
+
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: { op: 'request_changes', comment: '请让全队补充风险分析。' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(requestCollaborationChanges).toHaveBeenCalledWith(
+      'run-1',
+      '请让全队补充风险分析。',
+      expect.any(Function)
+    );
+    expect(harness.dependencies.dispatchTask).not.toHaveBeenCalled();
+  });
+
+  it('does not mutate the root task when the collaboration orchestrator rejects rework', async () => {
+    const currentTask = task({
+      status: 'done',
+      assignee: 'captain',
+      reviewState: 'review',
+      collaborationRunId: 'run-1',
+      taskKind: 'root',
+    });
+    const patchTask = vi.fn();
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [currentTask]),
+      patchTask,
+      requestCollaborationChanges: vi.fn(async () => {
+        throw new Error('当前协作任务不能返工');
+      }),
+    });
+
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: { op: 'request_changes', comment: '请补充。' },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(patchTask).not.toHaveBeenCalled();
   });
 
   it('maps canonical patches and blocks manual exit or deletion while an agent is working', async () => {
@@ -341,17 +582,17 @@ describe('team task routes', () => {
     });
 
     expect(patched.statusCode).toBe(200);
+    // PATCH 不再接受 body.result
     expect(harness.dependencies.patchTask).toHaveBeenNthCalledWith(1, 'team-a', 'task-12345678', {
       title: 'Renamed',
       description: 'Changed',
       status: 'done',
       assignee: 'team-b',
-      result: 'done',
     });
     expect(deleted.json()).toEqual({ ok: true });
     expect(harness.dependencies.patchTask).toHaveBeenNthCalledWith(2, 'team-a', 'task-12345678', {
       status: 'done',
-      result: '__deleted__',
+      deletedAt: expect.any(String),
     });
   });
 
@@ -454,6 +695,16 @@ describe('team task routes', () => {
         task: expect.objectContaining({ status: 'in_progress' }),
       })
     );
+    expect(harness.dependencies.appendTaskHistoryEvent).toHaveBeenCalledWith(
+      'project-a',
+      stored.id,
+      expect.objectContaining({
+        type: 'status_changed',
+        from: 'pending',
+        to: 'in_progress',
+        actor: 'agent',
+      })
+    );
 
     const commented = await harness.app.inject({
       method: 'POST',
@@ -487,7 +738,21 @@ describe('team task routes', () => {
     expect(completed.json()).toEqual(
       expect.objectContaining({
         ok: true,
-        task: expect.objectContaining({ status: 'completed', result: '任务已完成' }),
+        task: expect.objectContaining({ status: 'completed', reviewState: 'review' }),
+      })
+    );
+    // 完成时的 result 记录为一条 delivery，不再写任务上的 result 字段
+    expect(harness.dependencies.addDelivery).toHaveBeenCalledWith('project-a', stored.id, {
+      result: '任务已完成',
+    });
+    expect(harness.dependencies.appendTaskHistoryEvent).toHaveBeenCalledWith(
+      'project-a',
+      stored.id,
+      expect.objectContaining({
+        type: 'status_changed',
+        from: 'in_progress',
+        to: 'completed',
+        actor: 'agent',
       })
     );
     expect(stored.status).toBe('done');
@@ -573,7 +838,7 @@ describe('team task routes', () => {
   it('preserves soft-delete, restore, and deleted-list contracts', async () => {
     const readTasks = vi.fn(async () => [
       task(),
-      task({ id: 'deleted-task', status: 'done', result: '__deleted__' }),
+      task({ id: 'deleted-task', status: 'done', deletedAt: '2026-01-02T00:00:00.000Z' }),
     ]);
     const harness = createHarness({ readTasks });
 
@@ -601,16 +866,20 @@ describe('team task routes', () => {
         })
       ).json()
     ).toEqual([
-      expect.objectContaining({ id: 'deleted-task', status: 'completed', result: '__deleted__' }),
+      expect.objectContaining({
+        id: 'deleted-task',
+        status: 'completed',
+        deletedAt: '2026-01-02T00:00:00.000Z',
+      }),
     ]);
 
     expect(harness.dependencies.patchTask).toHaveBeenNthCalledWith(1, 'team-a', 'task-12345678', {
       status: 'done',
-      result: '__deleted__',
+      deletedAt: expect.any(String),
     });
     expect(harness.dependencies.patchTask).toHaveBeenNthCalledWith(2, 'team-a', 'deleted-task', {
       status: 'todo',
-      result: null,
+      deletedAt: null,
     });
   });
 
@@ -726,7 +995,6 @@ describe('team task routes', () => {
       status: 'done',
       assignee: '测试',
       reviewState: 'review',
-      result: '旧交付',
     });
     const harness = createHarness({
       readTasks: vi.fn(async () => [stored]),
@@ -743,7 +1011,8 @@ describe('team task routes', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(stored).toMatchObject({ status: 'done', result: '__deleted__' });
+    expect(stored.status).toBe('done');
+    expect(stored.deletedAt).toEqual(expect.any(String));
     expect(stored.reviewState).toBeUndefined();
     expect(harness.dependencies.dispatchTask).not.toHaveBeenCalled();
     expect(harness.dependencies.broadcastTaskChange).toHaveBeenCalledWith(

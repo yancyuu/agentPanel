@@ -4,13 +4,13 @@
 // this complete URL. Repointing the product requires changing this value only.
 // Environment variables and explicit custom ~/.hermit settings still override it.
 
-// eslint-disable-next-line sonarjs/no-clear-text-protocols
-export const DEFAULT_OPENHERMIT_CLOUD_BASE_URL = 'http://47.112.24.153';
+export const DEFAULT_OPENHERMIT_CLOUD_BASE_URL = 'https://agentbus.skg.com';
 
 const LEGACY_OPENHERMIT_CLOUD_BASE_URLS = new Set([
-  'https://agentbus.skg.com',
   // Legacy defaults must stay http verbatim — they match values persisted in
   // existing user settings; rewriting them here would break the migration check.
+  // eslint-disable-next-line sonarjs/no-clear-text-protocols
+  'http://47.112.24.153',
   // eslint-disable-next-line sonarjs/no-clear-text-protocols
   'http://159.75.231.98:8088',
 ]);

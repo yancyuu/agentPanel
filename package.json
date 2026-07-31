@@ -3,7 +3,7 @@
   "desktopName": "AgentCLI.desktop",
   "type": "module",
   "main": "dist-desktop-main/main.cjs",
-  "version": "1.9.80",
+  "version": "1.10.1",
   "description": "AgentCLI：本地优先的 AI Agent 工作台与团队协作运行时。",
   "license": "AGPL-3.0",
   "publishConfig": {
@@ -265,11 +265,17 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     },
@@ -291,7 +297,10 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     },

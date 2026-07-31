@@ -1,3 +1,7 @@
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 import { EventEmitter } from 'events';
 import { describe, expect, it } from 'vitest';
 
@@ -12,11 +16,12 @@ import type { SpawnOptions } from 'child_process';
 /** Minimal fake ChildProcess: stdout/stderr/stdin as EventEmitters + kill. */
 interface FakeChild {
   pid: number;
-  stdout: EventEmitter;
-  stderr: EventEmitter;
-  stdin: { write: (data: string) => boolean; destroyed: boolean };
+  stdout: EventEmitter & { setEncoding: (encoding: string) => void };
+  stderr: EventEmitter & { setEncoding: (encoding: string) => void };
+  stdin: { write: (data: string) => boolean; end: (data?: string) => void; destroyed: boolean };
   kill: (signal?: string) => void;
   on: (event: string, cb: (...args: unknown[]) => void) => void;
+  once: (event: string, cb: (...args: unknown[]) => void) => void;
   emitExit: (code: number | null) => void;
 }
 
@@ -30,16 +35,21 @@ function deferred<T>() {
 
 function createFakeChild(): FakeChild {
   const bus = new EventEmitter();
+  const stdout = new EventEmitter() as FakeChild['stdout'];
+  const stderr = new EventEmitter() as FakeChild['stderr'];
+  stdout.setEncoding = () => undefined;
+  stderr.setEncoding = () => undefined;
   const child: FakeChild = {
     // A non-existent pid lets killProcessTree run its best-effort process.kill
     // path (ESRCH, ignored) instead of short-circuiting on !pid.
     pid: 999_999,
-    stdout: new EventEmitter(),
-    stderr: new EventEmitter(),
-    stdin: { write: () => true, destroyed: false },
+    stdout,
+    stderr,
+    stdin: { write: () => true, end: () => undefined, destroyed: false },
     kill: () => undefined,
     on: (event, cb) => bus.on(event, cb),
-    emitExit: (code) => bus.emit('exit', code),
+    once: (event, cb) => bus.once(event, cb),
+    emitExit: (code) => bus.emit('exit', code, null),
   };
   return child;
 }
@@ -216,6 +226,187 @@ describe('DirectCliSessionManager', () => {
       HERMIT_TEAM_SLUG: 'team-a',
       HERMIT_WORKBENCH_URL: 'http://127.0.0.1:5681',
     });
+  });
+
+  it('runs bundled Pi as a one-shot session and emits a normal complete event', async () => {
+    const child = createFakeChild();
+    let spawnArgs: string[] = [];
+    let stdin = '';
+    child.stdin.end = (data?: string) => {
+      stdin = data ?? '';
+    };
+    const manager = new DirectCliSessionManager({
+      spawnFn: (_binary, args) => {
+        spawnArgs = args;
+        return child as unknown as import('child_process').ChildProcess;
+      },
+      envResolver: async () => ({ env: { PATH: '/managed/bin' }, providerArgs: [] }),
+      oneShotBinaryResolver: async () => '/fake/pi',
+      store: new Map<string, string>() as never,
+    });
+    const events: { kind: string; text?: string }[] = [];
+    manager.on('event', (event) => events.push(event));
+
+    await manager.runOneShot('team-pi:task:1', {
+      harness: 'pi',
+      text: '完成任务',
+      messageId: 'pi-message',
+      workDir: '/proj',
+      teamSlug: 'team-pi',
+      workbenchUrl: 'http://127.0.0.1:5681',
+    });
+    child.stdout.emit('data', 'Pi 已完成交付');
+    child.emitExit(0);
+
+    expect(spawnArgs).toEqual(['--print', '--mode', 'text', '--no-session', '--no-approve']);
+    expect(stdin).toBe('完成任务');
+    expect(events).toContainEqual(
+      expect.objectContaining({ kind: 'complete', text: 'Pi 已完成交付' })
+    );
+  });
+
+  it('runs Codex in JSON mode and extracts the final agent message', async () => {
+    const child = createFakeChild();
+    let stdin = '';
+    child.stdin.end = (data?: string) => {
+      stdin = data ?? '';
+    };
+    const manager = new DirectCliSessionManager({
+      spawnFn: () => child as unknown as import('child_process').ChildProcess,
+      envResolver: async () => ({ env: {}, providerArgs: [] }),
+      oneShotBinaryResolver: async () => '/fake/codex',
+      store: new Map<string, string>() as never,
+    });
+    const events: { kind: string; text?: string }[] = [];
+    manager.on('event', (event) => events.push(event));
+
+    await manager.runOneShot('team-codex:task:1', {
+      harness: 'codex',
+      text: '分析任务',
+      messageId: 'codex-message',
+      workDir: '/proj',
+    });
+    child.stdout.emit(
+      'data',
+      `${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Codex 最终结果' } })}\n`
+    );
+    child.emitExit(0);
+
+    expect(stdin).toBe('分析任务');
+    expect(events).toContainEqual(
+      expect.objectContaining({ kind: 'complete', text: 'Codex 最终结果' })
+    );
+  });
+
+  it('materializes attachments inside the workspace for Codex/Pi one-shot prompts', async () => {
+    const workDir = await mkdtemp(path.join(os.tmpdir(), 'direct-cli-attachments-'));
+    const child = createFakeChild();
+    let stdin = '';
+    child.stdin.end = (data?: string) => {
+      stdin = data ?? '';
+    };
+    const manager = new DirectCliSessionManager({
+      spawnFn: () => child as unknown as import('child_process').ChildProcess,
+      envResolver: async () => ({ env: {}, providerArgs: [] }),
+      oneShotBinaryResolver: async () => '/fake/codex',
+      store: new Map<string, string>() as never,
+    });
+    try {
+      await manager.runOneShot('team-codex:attachments', {
+        harness: 'codex',
+        text: '阅读附件',
+        messageId: 'attachment-message',
+        workDir,
+        attachments: [
+          {
+            id: 'attachment-1',
+            filename: '资料.txt',
+            mimeType: 'text/plain',
+            size: Buffer.byteLength('附件正文'),
+            data: Buffer.from('附件正文', 'utf8').toString('base64'),
+          },
+        ],
+      });
+      expect(stdin).toContain('用户附带了以下本地输入文件');
+      const attachmentPath = /：([^\n]+)$/mu.exec(stdin)?.[1];
+      expect(attachmentPath).toBeTruthy();
+      expect(await readFile(attachmentPath ?? '', 'utf8')).toBe('附件正文');
+
+      child.stdout.emit('data', `${JSON.stringify({ text: '完成' })}\n`);
+      child.emitExit(0);
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        if (
+          await access(attachmentPath ?? '')
+            .then(() => false)
+            .catch(() => true)
+        )
+          break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await expect(access(attachmentPath ?? '')).rejects.toBeDefined();
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves Codex from the provider-aware PATH', async () => {
+    const child = createFakeChild();
+    child.stdin.end = () => undefined;
+    let resolverEnv: NodeJS.ProcessEnv | undefined;
+    const manager = new DirectCliSessionManager({
+      spawnFn: () => child as unknown as import('child_process').ChildProcess,
+      envResolver: async () => ({ env: { PATH: '/provider/bin' }, providerArgs: [] }),
+      oneShotBinaryResolver: async (_harness, env) => {
+        resolverEnv = env;
+        return '/provider/bin/codex';
+      },
+      store: new Map<string, string>() as never,
+    });
+
+    await manager.runOneShot('team-codex:path', {
+      harness: 'codex',
+      text: '分析任务',
+      messageId: 'codex-path-message',
+      workDir: '/proj',
+    });
+
+    expect(resolverEnv?.PATH).toBe('/provider/bin');
+  });
+
+  it('reserves one-shot session keys before asynchronous binary resolution', async () => {
+    const environment = deferred<{ env: NodeJS.ProcessEnv; providerArgs: string[] }>();
+    const child = createFakeChild();
+    child.stdin.end = () => undefined;
+    let spawnCount = 0;
+    const manager = new DirectCliSessionManager({
+      spawnFn: () => {
+        spawnCount += 1;
+        return child as unknown as import('child_process').ChildProcess;
+      },
+      envResolver: () => environment.promise,
+      oneShotBinaryResolver: async () => '/fake/codex',
+      store: new Map<string, string>() as never,
+    });
+    const first = manager.runOneShot('team-codex:dedupe', {
+      harness: 'codex',
+      text: '第一次',
+      messageId: 'one',
+      workDir: '/proj',
+    });
+    await Promise.resolve();
+
+    await expect(
+      manager.runOneShot('team-codex:dedupe', {
+        harness: 'codex',
+        text: '第二次',
+        messageId: 'two',
+        workDir: '/proj',
+      })
+    ).rejects.toThrow('上一条请求');
+
+    environment.resolve({ env: { PATH: '/provider/bin' }, providerArgs: [] });
+    await first;
+    expect(spawnCount).toBe(1);
   });
 
   it('does not spawn twice for the same session key (dedupes concurrent ensureSession)', async () => {

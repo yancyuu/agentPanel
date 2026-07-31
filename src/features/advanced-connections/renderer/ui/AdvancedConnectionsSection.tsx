@@ -14,6 +14,7 @@ import {
 
 import {
   type AdvancedConnectionSummary,
+  type AdvancedConnectionTokenCatalogSummary,
   ALL_DATA_PERMISSION_IDS,
   DATA_PERMISSION_LABELS,
   type DataPermissionId,
@@ -30,6 +31,7 @@ interface AdvancedConnectionsSectionProps {
   error: string | null;
   notice: string | null;
   catalogStatus: Record<string, string>;
+  catalogs: Record<string, AdvancedConnectionTokenCatalogSummary | undefined>;
   channelStatus: Record<string, string>;
   onHostChange: (value: string) => void;
   onDiscover: () => void;
@@ -45,6 +47,7 @@ interface AdvancedConnectionsSectionProps {
   onSyncConnection: (connectionId: string) => void;
   onPullRemoteTasks: (connectionId: string) => void;
   onCheckTokenCatalog: (connectionId: string) => void;
+  onClaimAndApplyToken: (connectionId: string) => void;
   onRefresh: () => void;
 }
 
@@ -58,6 +61,16 @@ const STATE_LABELS: Record<AdvancedConnectionSummary['state'], string> = {
   degraded: '部分能力异常',
   error: '连接异常',
 };
+
+function connectionAllowsSecrets(connection: AdvancedConnectionSummary): boolean {
+  if (connection.secure) return true;
+  try {
+    const hostname = new URL(connection.baseUrl).hostname.toLowerCase();
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
 
 function relevantPermissionIds(connection: AdvancedConnectionSummary): DataPermissionId[] {
   const capabilities = new Set(connection.capabilities.map((item) => item.id));
@@ -80,6 +93,7 @@ export function AdvancedConnectionsSection({
   error,
   notice,
   catalogStatus,
+  catalogs,
   channelStatus,
   onHostChange,
   onDiscover,
@@ -91,6 +105,7 @@ export function AdvancedConnectionsSection({
   onSyncConnection,
   onPullRemoteTasks,
   onCheckTokenCatalog,
+  onClaimAndApplyToken,
   onRefresh,
 }: Readonly<AdvancedConnectionsSectionProps>): React.JSX.Element {
   return (
@@ -143,10 +158,21 @@ export function AdvancedConnectionsSection({
               检测服务
             </button>
           </div>
-          <p className="text-[11px] leading-4 text-[var(--color-text-muted)]">
-            兼容服务应提供 <code>/.well-known/hermit-provider.json</code>。当前 AgentBus Host
-            会自动使用兼容模式。
-          </p>
+          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-[11px] leading-5 text-[var(--color-text-muted)]">
+            <p className="font-medium text-[var(--color-text-secondary)]">系统如何判定兼容服务</p>
+            <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+              <li>
+                先读取 <code>/.well-known/hermit-provider.json</code>；合法声明会识别为标准
+                Provider。
+              </li>
+              <li>
+                如果该地址返回 404、网页内容或无法解析的 JSON，系统会继续探测
+                <code>/api/v1/auth/me</code>。
+              </li>
+              <li>如果登录探测返回 401 或 403，会识别为“需要登录”的 AgentBus 兼容服务。</li>
+              <li>两种探测都失败时，系统会提示该地址暂不受支持。</li>
+            </ol>
+          </div>
 
           {preview ? (
             <div className="rounded-lg border border-[var(--color-accent-border)] bg-[var(--color-accent-soft)] p-3">
@@ -249,6 +275,8 @@ export function AdvancedConnectionsSection({
               connection.secretPresent &&
               ['authenticated', 'ready', 'connected'].includes(connection.state);
             const tokenPool = connection.capabilities.some((item) => item.id === 'token-pool');
+            const secretsAllowed = connectionAllowsSecrets(connection);
+            const catalog = catalogs[connection.id];
             const syncEnabled = permissions.some(
               (permissionId) =>
                 permissionId !== 'team.tasks.read' &&
@@ -316,6 +344,7 @@ export function AdvancedConnectionsSection({
                         type="button"
                         onClick={() => onStartAuth(connection)}
                         disabled={
+                          !secretsAllowed ||
                           busyAction === `auth:${connection.id}` ||
                           connection.state === 'authenticating'
                         }
@@ -327,7 +356,11 @@ export function AdvancedConnectionsSection({
                         ) : (
                           <KeyRound className="size-3.5" />
                         )}
-                        {connection.state === 'authenticating' ? '等待授权' : '登录授权'}
+                        {!secretsAllowed
+                          ? '需要 HTTPS'
+                          : connection.state === 'authenticating'
+                            ? '等待授权'
+                            : '登录授权'}
                       </button>
                     )}
                     <button
@@ -405,15 +438,49 @@ export function AdvancedConnectionsSection({
                     ) : null}
                     {tokenPool ? (
                       <div className="mt-4">
-                        <button
-                          type="button"
-                          disabled={!authenticated || busyAction === `catalog:${connection.id}`}
-                          onClick={() => onCheckTokenCatalog(connection.id)}
-                          className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 text-xs text-[var(--color-text-secondary)] disabled:opacity-45"
-                        >
-                          <ShieldCheck className="size-3.5" />
-                          检测 Token 池
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={
+                              !authenticated ||
+                              !secretsAllowed ||
+                              busyAction === `catalog:${connection.id}`
+                            }
+                            onClick={() => onCheckTokenCatalog(connection.id)}
+                            className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 text-xs text-[var(--color-text-secondary)] disabled:opacity-45"
+                          >
+                            {busyAction === `catalog:${connection.id}` ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <ShieldCheck className="size-3.5" />
+                            )}
+                            检测 Token 池
+                          </button>
+                          <button
+                            type="button"
+                            disabled={
+                              !authenticated ||
+                              !secretsAllowed ||
+                              !catalog?.discoveryId ||
+                              busyAction === `claim:${connection.id}`
+                            }
+                            onClick={() => onClaimAndApplyToken(connection.id)}
+                            className="flex h-8 items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 text-xs font-medium text-white disabled:opacity-45"
+                          >
+                            {busyAction === `claim:${connection.id}` ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <KeyRound className="size-3.5" />
+                            )}
+                            领取并应用
+                          </button>
+                        </div>
+                        {catalog?.defaultModelName ? (
+                          <p className="mt-2 text-[11px] leading-4 text-[var(--color-text-muted)]">
+                            默认模型：{catalog.defaultModelName}；将应用到 Claude Code、Codex 和
+                            Pi。
+                          </p>
+                        ) : null}
                         {catalogStatus[connection.id] ? (
                           <p className="mt-2 text-[11px] leading-4 text-[var(--color-text-muted)]">
                             {catalogStatus[connection.id]}
@@ -428,7 +495,7 @@ export function AdvancedConnectionsSection({
                       允许的数据范围
                     </p>
                     <p className="mt-1 text-[10px] leading-4 text-[var(--color-text-muted)]">
-                      全部默认关闭。这里设置的是本地授权上限；只有服务声明并建立对应数据通道后才会发送。
+                      登录后默认开启不含项目名称、成员或本地路径的聚合用量；其余范围默认关闭。你可以随时关闭聚合用量，只有服务声明并建立对应数据通道后才会发送。
                     </p>
                     <div className="mt-3 space-y-2">
                       {permissions.map((permissionId) => {

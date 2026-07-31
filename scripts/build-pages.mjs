@@ -1,11 +1,11 @@
-import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, '_site');
 
-const DESKTOP_VERSION = '1.9.80';
+const { version: DESKTOP_VERSION } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const RELEASE_BASE = `https://github.com/yancyuu/agentcli/releases/download/${DESKTOP_VERSION}`;
 const DOWNLOADS = {
   macArm: {
@@ -83,7 +83,11 @@ const html = `<!DOCTYPE html>
   <meta property="og:description" content="提交任务、查看进度、阅读结果，需要调整时直接继续回复。" />
   <meta property="og:type" content="website" />
   <meta name="theme-color" content="#1769aa" />
-  <link rel="icon" href="icon.png" />
+  <link rel="icon" type="image/png" sizes="1024x1024" href="icon.png?v=${DESKTOP_VERSION}" />
+  <link rel="apple-touch-icon" href="icon.png?v=${DESKTOP_VERSION}" />
+  <meta property="og:image" content="https://yancyuu.github.io/agentcli/icon.png?v=${DESKTOP_VERSION}" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:image" content="https://yancyuu.github.io/agentcli/icon.png?v=${DESKTOP_VERSION}" />
   <style>
     :root {
       --ink: #10233d;
@@ -389,7 +393,7 @@ const html = `<!DOCTYPE html>
   <header class="site-header">
     <nav class="nav" aria-label="主导航">
       <a class="brand" href="#top">
-        <img class="brand-mark" src="icon.png" alt="" />
+        <img class="brand-mark" src="icon.png?v=${DESKTOP_VERSION}" alt="" />
         <span>AgentCLI</span>
       </a>
       <div class="nav-links">
@@ -427,7 +431,7 @@ const html = `<!DOCTYPE html>
 
     <section class="trust-strip" aria-label="产品特点">
       <div class="trust-grid">
-        <div class="trust-item"><strong>像普通软件一样安装</strong><span>下载并打开，按页面提示完成首次设置</span></div>
+        <div class="trust-item"><strong>下载后按系统提示安装</strong><span>当前测试版尚未完成商业代码签名，安装时请确认系统安全提示</span></div>
         <div class="trust-item"><strong>任务资料默认保存在本机</strong><span>任务记录、参考文件和完成结果都留在这台电脑上</span></div>
         <div class="trust-item"><strong>修改不用重新开始</strong><span>在原任务里补充要求，之前的资料和结果都会保留</span></div>
       </div>
@@ -496,7 +500,7 @@ const html = `<!DOCTYPE html>
             <option value="linux">Linux x64</option>
             <option value="linuxArm">Linux ARM64</option>
           </select>
-          <p id="downloadNote" class="download-note">下载后打开 DMG，将 AgentCLI 拖入“应用程序”。</p>
+          <p id="downloadNote" class="download-note">下载后打开 DMG，将 AgentCLI 拖入“应用程序”。当前 macOS 构建尚未经过 Apple 公证；若首次打开被拦截，请在“应用程序”中右键 AgentCLI，选择“打开”并再次确认。无需关闭系统安全保护。</p>
         </div>
       </div>
       <div class="all-downloads">
@@ -544,14 +548,14 @@ const html = `<!DOCTYPE html>
       <details><summary>我的任务和文件保存在哪里？</summary><p>任务记录和文件默认保存在这台电脑上。使用外部 AI 服务处理任务时，完成任务所需的文字、文件或必要上下文可能会发送给该服务，具体范围取决于你选择的服务和设置。AgentBus 数据上报需要另外连接并授权。</p></details>
       <details><summary>安装后还需要其他软件吗？</summary><p>一般不需要。安装 AgentCLI 后，按首次启动页面的提示完成设置即可。使用 Claude Code、Codex 或 Pi 时，仍需登录或配置相应的模型服务；Pi 是随客户端提供的执行器，不包含免费模型。</p></details>
       <details><summary>什么时候用一个助手，什么时候用小队？</summary><p>日常整理、写作或检查任务通常选择一个助手即可。需要同时查资料、整理内容、撰写和复核时，可以选择小队。</p></details>
-      <details><summary>我应该下载哪个 Mac 版本？</summary><p>点击屏幕左上角的苹果菜单，选择“关于本机”。如果显示 Apple M 系列芯片，请选择 Apple 芯片版；如果显示 Intel 处理器，请选择 Intel 芯片版。</p></details>
+      <details><summary>我应该下载哪个 Mac 版本？</summary><p>点击屏幕左上角的苹果菜单，选择“关于本机”。如果显示 Apple M 系列芯片，请选择 Apple 芯片版；如果显示 Intel 处理器，请选择 Intel 芯片版。当前测试版尚未经过 Apple 公证；若系统阻止首次打开，请在“应用程序”中右键 AgentCLI，选择“打开”并确认，不要关闭 Gatekeeper 或系统安全保护。</p></details>
       <details><summary>当前有哪些版本？</summary><p>目前提供 macOS Apple Silicon、macOS Intel、Windows x64、Windows ARM64、Linux x64 和 Linux ARM64 版本。Mac 使用 DMG，Windows 使用安装程序，Linux 使用 AppImage；请按系统和芯片类型选择。</p></details>
     </section>
   </main>
 
   <footer class="footer">
     <div class="footer-inner">
-      <a class="brand" href="#top"><img class="brand-mark" src="icon.png" alt="" /><span>AgentCLI</span></a>
+      <a class="brand" href="#top"><img class="brand-mark" src="icon.png?v=${DESKTOP_VERSION}" alt="" /><span>AgentCLI</span></a>
       <div class="footer-links"><a href="#download">下载</a><a href="#advanced">高级用户</a><a href="https://github.com/yancyuu/agentcli">GitHub</a><span>© 2026 AgentCLI</span></div>
     </div>
   </footer>
@@ -567,9 +571,11 @@ const html = `<!DOCTYPE html>
       document.getElementById('recommendedDownload').href = item.href;
       document.getElementById('recommendedDownload').textContent = '下载' + item.label;
       document.getElementById('platformSelect').value = key;
-      document.getElementById('downloadNote').textContent = isDesktop
-        ? '下载后打开安装文件，并按系统提示完成安装。'
-        : '当前提供免 Node.js 的 ZIP 便携版；解压后按包内说明运行。';
+      document.getElementById('downloadNote').textContent = key === 'macArm' || key === 'macIntel'
+        ? '下载后打开 DMG，将 AgentCLI 拖入“应用程序”。当前构建尚未经过 Apple 公证；若首次打开被拦截，请右键 AgentCLI，选择“打开”并确认，无需关闭系统安全保护。'
+        : isDesktop
+          ? '下载后打开安装文件，并按系统提示完成安装。当前测试版尚未完成商业代码签名，请核对下载来源与系统提示。'
+          : '当前提供免 Node.js 的 ZIP 便携版；解压后按包内说明运行。';
       document.getElementById('heroDownload').href = item.href;
       document.getElementById('heroDownloadText').textContent = '下载' + item.label;
       document.getElementById('heroDownloadContext').textContent = '当前显示：' + item.shortLabel + ' · ' + item.detail + '。下载前请确认系统和芯片类型。';

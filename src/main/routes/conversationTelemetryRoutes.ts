@@ -1,9 +1,9 @@
-import type { FastifyInstance } from 'fastify';
-
 import {
   type ConversationTelemetryService,
   shouldIncludeContent,
 } from '../services/session-intelligence/ConversationTelemetryService';
+
+import type { FastifyInstance } from 'fastify';
 
 interface ConversationTelemetryRouteDependencies {
   conversationTelemetry: ConversationTelemetryService;

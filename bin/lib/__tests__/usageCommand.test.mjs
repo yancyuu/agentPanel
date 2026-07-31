@@ -15,9 +15,16 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 // Neutralize node:child_process so collectRunningUsageWorkerPids() (ps via
 // execSync) returns [] and no real process is spawned or signalled. Same
 // interop shape as daemon.test.mjs (CJS default export required).
-const mocks = vi.hoisted(() => ({ spawn: vi.fn(), spawnSync: vi.fn() }));
+const mocks = vi.hoisted(() => ({ spawn: vi.fn(), spawnSync: vi.fn(), execFileSync: vi.fn() }));
 vi.mock('node:child_process', () => {
-  const mocked = { spawn: mocks.spawn, spawnSync: mocks.spawnSync, execSync: () => '', exec: () => {}, fork: () => {} };
+  const mocked = {
+    spawn: mocks.spawn,
+    spawnSync: mocks.spawnSync,
+    execFileSync: mocks.execFileSync,
+    execSync: () => '',
+    exec: () => {},
+    fork: () => {},
+  };
   return { ...mocked, default: mocked };
 });
 
@@ -56,10 +63,39 @@ describe('enableConversationUploadWithProvider — toggle ON starts the worker',
 });
 
 describe('Windows usage worker task definition', () => {
+  let buildUsageLaunchdPlist;
   let buildUsageWindowsTaskXml;
+  let buildUsageWindowsWrapper;
+  let isUsageWorkerCommand;
+  let processListHasUsageWorkerPid;
 
   beforeAll(async () => {
-    ({ buildUsageWindowsTaskXml } = await import('../usageCommand.mjs'));
+    ({
+      buildUsageLaunchdPlist,
+      buildUsageWindowsTaskXml,
+      buildUsageWindowsWrapper,
+      isUsageWorkerCommand,
+      processListHasUsageWorkerPid,
+    } = await import('../usageCommand.mjs'));
+  });
+
+  it('recognizes packaged workers and rejects stale pid ownership', () => {
+    const processes = [
+      { pid: 100, command: 'node C:\\AgentCLI\\dist\\telemetry-worker.bundle.mjs' },
+      { pid: 101, command: 'node C:\\AgentCLI\\dist\\server.bundle.mjs' },
+    ];
+    expect(isUsageWorkerCommand(processes[0].command)).toBe(true);
+    expect(processListHasUsageWorkerPid(processes, 100)).toBe(true);
+    expect(processListHasUsageWorkerPid(processes, 101)).toBe(false);
+  });
+
+  it('runs packaged Electron as Node in launchd and Windows Task Scheduler', () => {
+    expect(buildUsageLaunchdPlist()).toContain(
+      '<key>ELECTRON_RUN_AS_NODE</key>\n\t\t<string>1</string>'
+    );
+    expect(buildUsageWindowsWrapper()).toContain(
+      '@echo off\r\nchcp 65001 >nul\r\nset "ELECTRON_RUN_AS_NODE=1"\r\n'
+    );
   });
 
   it('starts on login and restarts after failure', () => {
@@ -69,6 +105,26 @@ describe('Windows usage worker task definition', () => {
     expect(xml).toContain('<Interval>PT1M</Interval>');
     expect(xml).toContain('<Count>999</Count>');
     expect(xml).toContain('usage-worker.cmd');
+  });
+});
+
+describe('Lark startup reporting copy', () => {
+  let larkStartupStatusRow;
+  let usageStartupModeText;
+
+  beforeAll(async () => {
+    ({ larkStartupStatusRow, usageStartupModeText } = await import('../usageCommand.mjs'));
+  });
+
+  it('does not claim credentials were uploaded when high-risk export is disabled', () => {
+    const status = { ok: true, enabled: false, reason: 'config-disabled', accountCount: 0 };
+    expect(larkStartupStatusRow(status)).toEqual([
+      'Lark 授权',
+      '未启用（需要单独的高风险授权）',
+      'off',
+    ]);
+    expect(larkStartupStatusRow(status).join(' ')).not.toContain('已批量上报');
+    expect(usageStartupModeText(status)).toBe('启动即上报用量，之后后台增量上报');
   });
 });
 

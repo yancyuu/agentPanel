@@ -4,6 +4,8 @@ import {
   type AdvancedConnectionSummary,
   type AdvancedConnectionSyncResult,
   type AdvancedConnectionTokenCatalogResponse,
+  type AdvancedConnectionTokenClaimRequest,
+  type AdvancedConnectionTokenClaimResult,
   type CreateAdvancedConnectionRequest,
   type DiscoverAdvancedConnectionRequest,
   type DiscoverAdvancedConnectionResponse,
@@ -71,4 +73,12 @@ export const advancedConnectionsApi = {
     request(`/${encodeURIComponent(connectionId)}/team-bus/pull-tasks`, { method: 'POST' }),
   tokenCatalog: (connectionId: string): Promise<AdvancedConnectionTokenCatalogResponse> =>
     request(`/${encodeURIComponent(connectionId)}/token-pool/catalog`),
+  claimAndApplyToken: (
+    connectionId: string,
+    body: AdvancedConnectionTokenClaimRequest
+  ): Promise<AdvancedConnectionTokenClaimResult> =>
+    request(`/${encodeURIComponent(connectionId)}/token-pool/claim-apply`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 };

@@ -1,123 +1,154 @@
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
-
 import { archiveTaskDeliverable } from '@main/services/team-management/TaskDeliverableArchiveService';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Task } from '@main/services/team-management/TeamWorkspaceService';
 
-const tempDirs: string[] = [];
+const roots: string[] = [];
 
 async function tempTeamDir(): Promise<string> {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'agentcli-deliverable-'));
-  tempDirs.push(dir);
-  return dir;
+  const root = await mkdtemp(path.join(os.tmpdir(), 'agentcli-deliverable-'));
+  roots.push(root);
+  return root;
 }
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
-    id: 'task-123',
-    teamSlug: 'assistant-a',
-    title: '亚马逊开店流程调研',
+    id: 'task-1',
+    teamSlug: 'team-a',
+    title: '季度报告',
     status: 'done',
-    assignee: '调研助手',
-    reviewState: 'review',
-    result: '# 调研报告\n\n这是最终结论。',
-    createdAt: '2026-07-30T08:00:00.000Z',
-    updatedAt: '2026-07-30T09:00:00.000Z',
+    assignee: '研究助手',
+    deliveries: [
+      {
+        version: 1,
+        result: '# 完成结果\n\n这是正式交付内容。',
+        deliveredAt: '2026-01-02T03:04:05.000Z',
+      },
+    ],
+    createdAt: '2026-01-02T03:04:05.000Z',
+    updatedAt: '2026-01-02T03:04:05.000Z',
     order: 0,
     ...overrides,
   };
 }
 
 afterEach(async () => {
-  const { rm } = await import('node:fs/promises');
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe('archiveTaskDeliverable', () => {
-  it('writes an approved deliverable under the digital employee outputs folder', async () => {
+  it('writes the latest delivery and manifest under an append-only version directory', async () => {
     const teamDir = await tempTeamDir();
+    const approvedAt = new Date('2026-03-04T05:06:07.000Z');
+
     const archived = await archiveTaskDeliverable({
-      teamName: 'assistant-a',
-      teamDir,
+      teamName: 'team-a',
       task: task(),
-      approvedAt: new Date('2026-07-30T10:00:00.000Z'),
+      approvedAt,
+      teamDir,
     });
 
-    expect(archived.outputDir).toContain(path.join(teamDir, 'outputs', 'task-123-'));
-    expect(await readFile(archived.resultPath, 'utf8')).toContain('这是最终结论');
+    expect(archived.outputDir).toContain(path.join('outputs', 'task-1-季度报告'));
+    expect(await readFile(archived.resultPath, 'utf8')).toBe('# 完成结果\n\n这是正式交付内容。\n');
     const manifest = JSON.parse(await readFile(archived.manifestPath, 'utf8')) as {
-      taskId: string;
-      title: string;
-      assistant: string;
       currentVersion: string;
-      versions: { id: string; resultFile: string }[];
+      versions: Array<{ id: string; deliveryVersion: number; resultFile: string }>;
     };
-    expect(manifest).toMatchObject({
-      taskId: 'task-123',
-      title: '亚马逊开店流程调研',
-      assistant: '调研助手',
-      currentVersion: archived.versionId,
-    });
+    expect(manifest.currentVersion).toBe('20260304T050607Z');
     expect(manifest.versions).toEqual([
-      expect.objectContaining({ id: archived.versionId, resultFile: expect.stringMatching(/result\.md$/u) }),
+      {
+        id: '20260304T050607Z',
+        createdAt: '2026-03-04T05:06:07.000Z',
+        deliveryVersion: 1,
+        resultFile: path.join('versions', '20260304T050607Z', 'result.md'),
+        attachments: [],
+      },
     ]);
+    expect((await stat(archived.resultPath)).mode & 0o777).toBe(0o600);
   });
 
-  it('preserves approved versions and copies available task images', async () => {
+  it('appends later approvals without overwriting previous versions', async () => {
     const teamDir = await tempTeamDir();
-    const attachmentDir = path.join(teamDir, 'tasks', 'attachments', 'task-123');
-    await mkdir(attachmentDir, { recursive: true });
-    await writeFile(path.join(attachmentDir, 'image-1.data'), Buffer.from('png-data'));
-    const withImage = task({
-      attachments: [
-        {
-          id: 'image-1',
-          filename: '结果图.png',
-          mimeType: 'image/png',
-          size: 8,
-          addedAt: '2026-07-30T09:00:00.000Z',
-        },
-      ],
-    });
-
     await archiveTaskDeliverable({
-      teamName: 'assistant-a',
+      teamName: 'team-a',
+      task: task(),
+      approvedAt: new Date('2026-03-04T05:06:07.000Z'),
       teamDir,
-      task: withImage,
-      approvedAt: new Date('2026-07-30T10:00:00.000Z'),
     });
     const second = await archiveTaskDeliverable({
-      teamName: 'assistant-a',
+      teamName: 'team-a',
+      task: task({
+        deliveries: [
+          ...(task().deliveries ?? []),
+          {
+            version: 2,
+            result: '第二版结果',
+            summary: '根据反馈修改',
+            deliveredAt: '2026-03-05T05:06:07.000Z',
+          },
+        ],
+      }),
+      approvedAt: new Date('2026-03-05T05:06:07.000Z'),
       teamDir,
-      task: { ...withImage, result: '# 调研报告 v2' },
-      approvedAt: new Date('2026-07-30T11:00:00.000Z'),
     });
 
     const manifest = JSON.parse(await readFile(second.manifestPath, 'utf8')) as {
-      versions: { id: string; attachments: string[] }[];
+      versions: Array<{ id: string; deliveryVersion: number }>;
     };
-    expect(manifest.versions).toHaveLength(2);
-    const latestVersion = manifest.versions[1];
-    if (!latestVersion) throw new Error('latest version missing');
-    const archivedAttachment = latestVersion.attachments[0];
-    if (!archivedAttachment) throw new Error('archived attachment missing');
-    expect(archivedAttachment).toMatch(/结果图\.png$/u);
-    expect(await readFile(path.join(second.versionDir, archivedAttachment), 'utf8')).toBe(
-      'png-data'
-    );
+    expect(manifest.versions).toEqual([
+      expect.objectContaining({ id: '20260304T050607Z', deliveryVersion: 1 }),
+      expect.objectContaining({ id: '20260305T050607Z', deliveryVersion: 2 }),
+    ]);
+    expect(await readFile(second.resultPath, 'utf8')).toBe('第二版结果\n');
   });
 
-  it('refuses to archive a task without a deliverable', async () => {
+  it('copies available task attachments and tolerates stale blobs', async () => {
+    const teamDir = await tempTeamDir();
+    const attachmentDir = path.join(teamDir, 'tasks', 'attachments', 'task-1');
+    await mkdir(attachmentDir, { recursive: true });
+    await writeFile(path.join(attachmentDir, 'a1.data'), 'attachment-content');
+
+    const archived = await archiveTaskDeliverable({
+      teamName: 'team-a',
+      task: task({
+        attachments: [
+          {
+            id: 'a1',
+            filename: '证据.txt',
+            mimeType: 'text/plain',
+            size: 18,
+            addedAt: '2026-03-04T05:00:00.000Z',
+          },
+          {
+            id: 'missing',
+            filename: '缺失.png',
+            mimeType: 'image/png',
+            size: 20,
+            addedAt: '2026-03-04T05:00:00.000Z',
+          },
+        ],
+      }),
+      approvedAt: new Date('2026-03-04T05:06:07.000Z'),
+      teamDir,
+    });
+
+    const manifest = JSON.parse(await readFile(archived.manifestPath, 'utf8')) as {
+      versions: Array<{ attachments: string[] }>;
+    };
+    expect(manifest.versions[0]?.attachments).toEqual([path.join('attachments', '01-证据.txt')]);
+    expect(
+      await readFile(path.join(archived.versionDir, 'attachments', '01-证据.txt'), 'utf8')
+    ).toBe('attachment-content');
+  });
+
+  it('rejects tasks without a delivery', async () => {
+    const teamDir = await tempTeamDir();
     await expect(
-      archiveTaskDeliverable({
-        teamName: 'assistant-a',
-        teamDir: await tempTeamDir(),
-        task: task({ result: null }),
-      })
+      archiveTaskDeliverable({ teamName: 'team-a', task: task({ deliveries: [] }), teamDir })
     ).rejects.toThrow('no deliverable');
   });
 });

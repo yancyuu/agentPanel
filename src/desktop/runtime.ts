@@ -1,5 +1,7 @@
 import path from 'node:path';
 
+export const DESKTOP_TELEMETRY_RECONCILE_ARGS = ['usage', 'reconcile', '--json'] as const;
+
 export interface DesktopRuntimePaths {
   appRoot: string;
   runtimeRoot: string;

@@ -20,7 +20,8 @@ vi.mock('@renderer/components/team/MemberBadge', () => ({
   MemberBadge: ({ name }: { name: string }) => React.createElement('span', null, name),
 }));
 vi.mock('@renderer/components/team/TaskTooltip', () => ({
-  TaskTooltip: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
+  TaskTooltip: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
 }));
 vi.mock('@renderer/components/ui/ExpandableContent', () => ({
   ExpandableContent: ({ children }: { children: React.ReactNode }) =>
@@ -29,7 +30,8 @@ vi.mock('@renderer/components/ui/ExpandableContent', () => ({
 vi.mock('@renderer/components/ui/tooltip', () => ({
   TooltipProvider: ({ children }: { children: React.ReactNode }) =>
     React.createElement(React.Fragment, null, children),
-  Tooltip: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
+  Tooltip: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
   TooltipTrigger: ({ children }: { children: React.ReactNode }) =>
     React.createElement(React.Fragment, null, children),
   TooltipContent: ({ children }: { children: React.ReactNode }) =>
@@ -232,6 +234,36 @@ describe('ActivityItem compact header preview', () => {
     });
   });
 
+  it('does not show a routing arrow before the user recipient', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    const message: InboxMessage = {
+      from: '产品经理',
+      to: 'user',
+      text: '请确认本次交付结果。',
+      timestamp: new Date('2026-04-18T16:30:00.000Z').toISOString(),
+      read: true,
+      source: 'inbox',
+    };
+
+    await act(async () => {
+      root.render(React.createElement(ActivityItem, { message, teamName: 'my-team' }));
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('产品经理');
+    expect(host.textContent).toContain('user');
+    expect(host.querySelector('.lucide-move-right')).toBeNull();
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
   it('uses a two-line preview in collapsed wide mode, not inline one-line summary', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     const host = document.createElement('div');
@@ -380,7 +412,9 @@ describe('ActivityItem slash command rendering', () => {
 
 describe('ActivityItem legacy system message fallback', () => {
   it('recognizes historical assignment and review message wording', () => {
-    expect(getSystemMessageLabel('New task assigned to you: #abcd1234 "Implement feature".')).toBeTruthy();
+    expect(
+      getSystemMessageLabel('New task assigned to you: #abcd1234 "Implement feature".')
+    ).toBeTruthy();
     expect(getSystemMessageLabel('Task #abcd1234 approved by reviewer.')).toBeTruthy();
     expect(getSystemMessageLabel('Task #abcd1234 needs fixes before approval.')).toBeTruthy();
   });
@@ -504,7 +538,8 @@ describe('ActivityItem legacy system message fallback', () => {
     document.body.appendChild(host);
     const root = createRoot(host);
 
-    const text = '[跨团队任务已启动] "@资产创建 你能干啥" — team-opue 已从 TODO 点击启动并开始执行。';
+    const text =
+      '[跨团队任务已启动] "@资产创建 你能干啥" — team-opue 已从 TODO 点击启动并开始执行。';
     const message: InboxMessage = {
       from: 'system',
       to: 'team',

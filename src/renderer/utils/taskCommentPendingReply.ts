@@ -22,7 +22,7 @@ const NO_AWAITING: AwaitingReplyResult = {
  * 1. Find the latest comment authored by "user".
  * 2. Collect the set of expected responders (task owner + task creator), deduplicated.
  * 3. If ANY responder posted a comment AFTER the user's latest comment → not awaiting.
- *    Any comment type counts as a response (regular, review_approved, review_request).
+ *    评论区只保留 regular 类型，任何评论都算作一次回复。
  * 4. If NO responder has replied → isAwaiting = true, awaitingFrom lists all responders.
  *
  * Edge cases:

@@ -270,26 +270,17 @@ Note: renderer utils/hooks/types do NOT have barrel exports — import directly 
 
 ## Hermit Team Context
 
-Current team slug: `dasadsdadasdsad`
-
-Available teams:
-- saasdadsadadsad
-- saasasdad
-- assistant-1784173991537 (测试)
-- adsadsadsadasdas
-- temu-1kj5 (temu助手)
-- team-4 (产品经理团队)
-- team-2 (汇报)
-- team (爬虫)
-- my-project
-- system-manager (Helm Loop): 项目级 Claude Code Helm Loop，负责插件、MCP、Env、数字员工和统计数据的托管管理。
-- feishu:oc_efa2fbf5d5bd75da117eaebb6bbc730d:ou_82906a790206a1e6698714b2bae9e070
-- feishu:oc_efabb1d1fec43969e26a2ba3030fece2:ou_2958f97a00a467185404905b06e8016f
+The active team slug and AgentCLI port are runtime values. Never hardcode a test team, user, or port in operational instructions.
 
 Cross-team collaboration is handled through Hermit's team bus and task-pool surfaces.
 
-Do not call cross-team dispatch APIs yourself and do not invent dispatch IDs.
-You may use the team list only to understand which teams exist and when a user is referring to one.
+Use the supported read-only discovery command when task context is needed:
+
+```bash
+agentcli tasks list --team <team-slug> --port <agentcli-port>
+```
+
+Do not claim, comment on, clarify, complete, or dispatch cross-team tasks unless the installed CLI explicitly exposes that command and the user requested the mutation. Never invent task IDs, team slugs, dispatch IDs, or ports.
 
 <!-- hermit:ops-runbook-context:start -->
 

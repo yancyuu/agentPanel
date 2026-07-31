@@ -12,7 +12,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EventEmitter } from 'node:events';
 
-import { askMenuAction, askMenuMultiSelect, waitForContinue, parseMenuKeys, SUBMIT_ID } from '../navigation.mjs';
+import {
+  askMenuAction,
+  askMenuMultiSelect,
+  waitForContinue,
+  parseMenuKeys,
+  SUBMIT_ID,
+} from '../navigation.mjs';
 import { onlineGuideRows } from '../navigationCommand.mjs';
 import { NAV_ACTIONS } from '../menus.mjs';
 
@@ -43,7 +49,7 @@ describe('NAV_ACTIONS — token 池 menu wiring', () => {
     expect(pool.children[2].label).toBe('恢复配置快照');
     expect(pool.children[3].label).toBe('状态');
     expect(pool.label).toBe('token 池（Beta）');
-    expect(pool.children[0].description).toMatch(/运行时|Claude\/Codex/);
+    expect(pool.children[0].description).toMatch(/Codex|Claude Code|Pi/);
     expect(pool.children[1].description).toContain('在线说明书');
     expect(pool.children[1].description).toContain('本地脱敏配置');
     expect(pool.children[2].description).toContain('agentcli.env.bak');
@@ -59,10 +65,21 @@ describe('NAV_ACTIONS — token 池 menu wiring', () => {
 // process.stdout (write ANSI frames, read columns). Stub both so the menu loop
 // runs headless.
 class FakeStdin extends EventEmitter {
-  constructor() { super(); this.isTTY = true; this.rawMode = false; }
-  setRawMode(mode) { this.rawMode = Boolean(mode); return this; }
-  resume() { return this; }
-  pause() { return this; }
+  constructor() {
+    super();
+    this.isTTY = true;
+    this.rawMode = false;
+  }
+  setRawMode(mode) {
+    this.rawMode = Boolean(mode);
+    return this;
+  }
+  resume() {
+    return this;
+  }
+  pause() {
+    return this;
+  }
 }
 let fakeStdin;
 let realStdinDescriptor;
@@ -91,7 +108,11 @@ beforeEach(installTty);
 afterEach(restoreTty);
 
 describe('parseMenuKeys — one Enter = one choose', () => {
-  for (const [name, buf] of [['CR \\r', '\r'], ['LF \\n', '\n'], ['CRLF \\r\\n', '\r\n']]) {
+  for (const [name, buf] of [
+    ['CR \\r', '\r'],
+    ['LF \\n', '\n'],
+    ['CRLF \\r\\n', '\r\n'],
+  ]) {
     it(`${name} yields exactly one choose`, () => {
       const chooses = parseMenuKeys(buf).filter((k) => k.type === 'choose').length;
       expect(chooses).toBe(1);
@@ -107,8 +128,8 @@ describe('parseMenuKeys — one Enter = one choose', () => {
 
 describe('askMenuAction — accordion: parent expands inline, child runs', () => {
   it('Enter on a parent expands its children; ↓ + Enter then resolves the child', async () => {
-    const web = NAV_ACTIONS.find((a) => a.id === 'web');
-    expect(web.children.length).toBeGreaterThan(0); // guard: web is a parent
+    const dataSync = NAV_ACTIONS.find((a) => a.id === 'data-sync');
+    expect(dataSync.children.length).toBeGreaterThan(0); // guard: data-sync is a parent
 
     const promise = askMenuAction({
       title: 'HOME',
@@ -118,25 +139,24 @@ describe('askMenuAction — accordion: parent expands inline, child runs', () =>
       hasDeveloperModeEnabled: () => false,
       actionStateLabel: () => ({ text: '', state: 'info' }),
     });
-    await tick();               // let the loop attach the stdin listener
-    fakeStdin.emit('data', Buffer.from('\r'));    // Enter on index 0 (web) → expand
+    await tick(); // let the loop attach the stdin listener
+    fakeStdin.emit('data', Buffer.from('\r')); // Enter on index 0 (data-sync) → expand
     await tick();
-    fakeStdin.emit('data', Buffer.from('\x1b[B')); // ↓ → now on web's first child
+    fakeStdin.emit('data', Buffer.from('\x1b[B')); // ↓ → now on data-sync's first child
     await tick();
-    fakeStdin.emit('data', Buffer.from('\r'));    // Enter on child → resolve
+    fakeStdin.emit('data', Buffer.from('\r')); // Enter on child → resolve
     const resolved = await promise;
 
-    // If web had NOT expanded, ↓ would land on `data-sync` (also a parent) and
-    // Enter would toggle it instead of resolving — the await would hang. So
-    // resolving to the child id proves inline expansion happened.
-    expect(resolved).toBe(web.children[0].id);
+    // Resolving to the first child proves the parent expanded inline instead
+    // of moving focus to the next top-level action.
+    expect(resolved).toBe(dataSync.children[0].id);
   });
 
   it('← in a page with escapeAction "back" resolves to "back" in one press', async () => {
     const promise = askMenuAction({
       title: 'SUBMENU',
       subtitle: '',
-      actions: NAV_ACTIONS.find((a) => a.id === 'web').children,
+      actions: NAV_ACTIONS.find((a) => a.id === 'data-sync').children,
       escapeAction: 'back',
       hasDeveloperModeEnabled: () => false,
       actionStateLabel: () => ({ text: '', state: 'info' }),
@@ -174,7 +194,10 @@ describe('askMenuAction — terminal state survives an inline action', () => {
       escapeAction: 'back',
       hasDeveloperModeEnabled: () => false,
       actionStateLabel: () => ({ text: '', state: 'info' }),
-      onAction: async () => { await waitForContinue('pause'); return true; },
+      onAction: async () => {
+        await waitForContinue('pause');
+        return true;
+      },
     });
     await tick();
     fakeStdin.emit('data', Buffer.from('\r')); // Enter leaf → onAction → waitForContinue

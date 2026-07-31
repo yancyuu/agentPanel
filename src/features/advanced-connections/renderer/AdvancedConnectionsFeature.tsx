@@ -36,6 +36,7 @@ export function AdvancedConnectionsFeature(): React.JSX.Element {
       error={state.error}
       notice={state.notice}
       catalogStatus={state.catalogStatus}
+      catalogs={state.catalogs}
       channelStatus={state.channelStatus}
       onHostChange={state.setHost}
       onDiscover={() => void state.discover()}
@@ -51,6 +52,15 @@ export function AdvancedConnectionsFeature(): React.JSX.Element {
       onSyncConnection={(connectionId) => void state.syncConnection(connectionId)}
       onPullRemoteTasks={(connectionId) => void state.pullRemoteTasks(connectionId)}
       onCheckTokenCatalog={(connectionId) => void state.checkTokenCatalog(connectionId)}
+      onClaimAndApplyToken={(connectionId) => {
+        if (
+          window.confirm(
+            '确认从 Token 池领取凭证并写入本机 Claude Code、Codex 和 Pi 配置吗？\n\n明文 Token 只会在后端短暂处理，不会显示在页面中。'
+          )
+        ) {
+          void state.claimAndApplyToken(connectionId);
+        }
+      }}
       onRefresh={() => void state.refresh()}
     />
   );

@@ -437,17 +437,14 @@ describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
 
       expect(parsed.ok).toBe(true);
       expect(parsed.command).toBe('navigate');
-      expect(parsed.defaultAction).toBe('services');
+      expect(parsed.defaultAction).toBe('data-sync');
       expect(parsed.actions.map((action: { id: string }) => action.id)).toEqual([
-        'web',
         'data-sync',
         'account',
         'aikey',
         'exit',
       ]);
-      expect(
-        parsed.actions.find((action: { id: string; label: string }) => action.id === 'web')?.label
-      ).toBe('本地工作台');
+      expect(parsed.actions.map((action: { id: string }) => action.id)).not.toContain('web');
       expect(
         parsed.actions.find((action: { id: string; label: string }) => action.id === 'data-sync')
           ?.label
@@ -457,8 +454,8 @@ describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
           (action: { id: string; description: string }) => action.id === 'data-sync'
         )?.description
       ).toContain('消息上报');
-      expect(parsed.message).toContain('本地使用');
-      expect(parsed.message).toContain('本地/自托管团队协作无需登录');
+      expect(parsed.message).toContain('桌面客户端');
+      expect(parsed.message).toContain('消息总线');
       expect(JSON.stringify(parsed.actions)).not.toContain('选择用量来源');
       expect(JSON.stringify(parsed.actions)).not.toContain('开始上报');
       expect(JSON.stringify(parsed.actions)).not.toContain('远端上报');
@@ -715,6 +712,18 @@ describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
       const parsedStop = JSON.parse(stopped.stdout);
       expect(parsedStop).toMatchObject({ ok: true, command: 'usage stop' });
       expect(parsedStop.telemetry.localScanEnabled).toBe(false);
+
+      const reconciled = await runCli(hermitHome, ['usage', 'reconcile', '--json'], {
+        OPENHERMIT_USAGE_WORKER_MODE: 'test',
+        OPENHERMIT_SKIP_LAUNCHCTL: '1',
+      });
+      expect(JSON.parse(reconciled.stdout)).toMatchObject({
+        ok: true,
+        command: 'usage reconcile',
+        reconciled: false,
+        reason: 'upload disabled',
+      });
+      expect(existsSync(path.join(hermitHome, 'telemetry/worker.pid'))).toBe(false);
     });
   });
 
@@ -829,38 +838,38 @@ describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
   it.skipIf(process.platform !== 'darwin')(
     'manages usage worker autostart with a launchd plist that supervises the foreground worker (macOS launchd only)',
     async () => {
-    await withHermitHome(async (hermitHome) => {
+      await withHermitHome(async (hermitHome) => {
         const enabled = await runCli(hermitHome, ['usage', 'autostart', 'enable', '--json'], {
           HOME: hermitHome,
           OPENHERMIT_SKIP_LAUNCHCTL: '1',
         });
         const parsedEnabled = JSON.parse(enabled.stdout);
         const plistPath = path.join(
-        hermitHome,
+          hermitHome,
           'Library/LaunchAgents/com.openhermit.telemetry.plist'
-      );
-      const plist = await readFile(plistPath, 'utf-8');
+        );
+        const plist = await readFile(plistPath, 'utf-8');
 
-      expect(parsedEnabled).toMatchObject({
-        ok: true,
-        command: 'usage autostart enable',
-        autostart: { enabled: true, label: 'com.openhermit.telemetry' },
-      });
-      expect(plist).toContain('__telemetry-worker');
-      expect(plist).toContain(hermitHome);
-      expect(plist).not.toContain('--daemon');
+        expect(parsedEnabled).toMatchObject({
+          ok: true,
+          command: 'usage autostart enable',
+          autostart: { enabled: true, label: 'com.openhermit.telemetry' },
+        });
+        expect(plist).toContain('__telemetry-worker');
+        expect(plist).toContain(hermitHome);
+        expect(plist).not.toContain('--daemon');
 
         const disabled = await runCli(hermitHome, ['usage', 'autostart', 'disable', '--json'], {
           HOME: hermitHome,
           OPENHERMIT_SKIP_LAUNCHCTL: '1',
         });
-      const parsedDisabled = JSON.parse(disabled.stdout);
-      expect(parsedDisabled).toMatchObject({
-        ok: true,
-        command: 'usage autostart disable',
-        autostart: { enabled: false },
+        const parsedDisabled = JSON.parse(disabled.stdout);
+        expect(parsedDisabled).toMatchObject({
+          ok: true,
+          command: 'usage autostart disable',
+          autostart: { enabled: false },
+        });
       });
-    });
     }
   );
 
@@ -917,7 +926,7 @@ describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
     });
   });
 
-  it('exposes a terminal service menu and starts local services without auth', async () => {
+  it('hides Web service actions from the menu but keeps direct local commands compatible', async () => {
     await withHermitHome(async (hermitHome) => {
       const menu = await runCli(hermitHome, ['--port', '5999', 'services', '--json']);
       const parsedMenu = JSON.parse(menu.stdout);
@@ -929,8 +938,8 @@ describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
         auth: { authorized: false },
       });
       expect(typeof parsedMenu.web.running).toBe('boolean');
-      expect(parsedMenu.actions.map((action: { id: string }) => action.id)).toContain(
-        'start-local'
+      expect(parsedMenu.actions.map((action: { id: string }) => action.id)).not.toEqual(
+        expect.arrayContaining(['start-local', 'start-web', 'stop-web'])
       );
       expect(parsedMenu.actions.map((action: { id: string }) => action.id)).not.toContain(
         'start-usage-upload'
@@ -1001,8 +1010,8 @@ describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
         process.execPath,
         [cliPath, 'auth', 'dev-login', 'wrong', '--json'],
         {
-        cwd: repoRoot,
-        env: { ...process.env, HERMIT_HOME: hermitHome },
+          cwd: repoRoot,
+          env: { ...process.env, HERMIT_HOME: hermitHome },
         }
       ).catch((error: { stdout: string; stderr: string }) => error);
       const parsedFailed = JSON.parse(failed.stdout);
@@ -1152,8 +1161,8 @@ describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
       const oauth = await startFakeDeviceAuthServer();
       try {
         const { stdout, stderr } = await runCli(hermitHome, ['auth', 'login', '--json'], {
-            OPENHERMIT_AUTH_BASE_URL: oauth.baseUrl,
-            OPENHERMIT_AUTH_OPEN_BROWSER: 'fetch',
+          OPENHERMIT_AUTH_BASE_URL: oauth.baseUrl,
+          OPENHERMIT_AUTH_OPEN_BROWSER: 'fetch',
         });
         const parsed = JSON.parse(stdout);
         const authPath = path.join(hermitHome, 'auth/openhermit.json');
@@ -1258,10 +1267,10 @@ describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
       const oauth = await startFakeOAuthServer();
       try {
         const { stdout, stderr } = await runCli(hermitHome, ['auth', 'login', '--json'], {
-            OPENHERMIT_OAUTH_AUTHORIZE_URL: `${oauth.baseUrl}/authorize`,
-            OPENHERMIT_OAUTH_TOKEN_URL: `${oauth.baseUrl}/token`,
-            OPENHERMIT_OAUTH_USERINFO_URL: `${oauth.baseUrl}/userinfo`,
-            OPENHERMIT_OAUTH_OPEN_BROWSER: 'fetch',
+          OPENHERMIT_OAUTH_AUTHORIZE_URL: `${oauth.baseUrl}/authorize`,
+          OPENHERMIT_OAUTH_TOKEN_URL: `${oauth.baseUrl}/token`,
+          OPENHERMIT_OAUTH_USERINFO_URL: `${oauth.baseUrl}/userinfo`,
+          OPENHERMIT_OAUTH_OPEN_BROWSER: 'fetch',
         });
         const parsed = JSON.parse(stdout);
         const authPath = path.join(hermitHome, 'auth/openhermit.json');
@@ -1306,7 +1315,7 @@ describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
               id: 'task-deleted-123',
               title: 'Deleted task',
               status: 'todo',
-              result: '__deleted__',
+              deletedAt: '2026-01-01T00:00:00.000Z',
             },
           ],
         })

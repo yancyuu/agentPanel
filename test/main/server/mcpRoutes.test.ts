@@ -4,21 +4,81 @@ import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { openMcpStream, registerMcpRoutes } from '../../../src/main/routes/mcpRoutes';
+import type {
+  AddDeliveryInput,
+  AddFeedbackItemInput,
+  Task,
+} from '../../../src/main/services/team-management/TeamWorkspaceService';
+
+import type { Delivery, FeedbackItem, TaskHistoryEvent } from '@shared/types/team';
 
 const apps: Array<ReturnType<typeof Fastify>> = [];
+
+function makeTask(overrides: Partial<Task> = {}): Task {
+  return {
+    id: 'task-1',
+    teamSlug: 'team-a',
+    title: 'Task 1',
+    status: 'todo',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    order: 0,
+    ...overrides,
+  };
+}
 
 function createHarness() {
   const app = Fastify({ logger: false });
   apps.push(app);
-  const readTasks = vi.fn(async () => [{ id: 'task-1', status: 'todo' }]);
-  const patchTask = vi.fn(
-    async (_team: string, taskId: string, patch: Record<string, unknown>) => ({
-      id: taskId,
-      ...patch,
+  let stored = makeTask();
+  const readTasks = vi.fn(async () => [stored]);
+  const createTask = vi.fn(async (_team: string, payload: { title: string }) =>
+    makeTask({ id: 'task-new', title: payload.title })
+  );
+  const patchTask = vi.fn(async (_team: string, taskId: string, patch: Partial<Task>) => {
+    stored = { ...stored, ...patch, id: taskId };
+    return stored;
+  });
+  const addDelivery = vi.fn(async (_team: string, _taskId: string, input: AddDeliveryInput) => {
+    const delivery: Delivery = {
+      version: (stored.deliveries?.length ?? 0) + 1,
+      result: input.result,
+      deliveredAt: '2026-01-01T00:00:01.000Z',
+    };
+    stored = { ...stored, deliveries: [...(stored.deliveries ?? []), delivery] };
+    return { task: stored, delivery, skippedFeedbackIds: [] as string[] };
+  });
+  const addFeedbackItem = vi.fn(
+    async (_team: string, _taskId: string, input: AddFeedbackItemInput): Promise<FeedbackItem> => ({
+      id: 'f_test',
+      text: input.text,
+      status: 'open',
+      createdAt: '2026-01-01T00:00:01.000Z',
     })
   );
-  registerMcpRoutes(app, { readTasks, patchTask });
-  return { app, patchTask, readTasks };
+  const appendTaskHistoryEvent = vi.fn(
+    async (_team: string, _taskId: string, event: TaskHistoryEvent) => {
+      stored = { ...stored, historyEvents: [...(stored.historyEvents ?? []), event] };
+      return stored;
+    }
+  );
+  registerMcpRoutes(app, {
+    readTasks,
+    createTask,
+    patchTask,
+    addDelivery,
+    addFeedbackItem,
+    appendTaskHistoryEvent,
+  });
+  return {
+    app,
+    readTasks,
+    createTask,
+    patchTask,
+    addDelivery,
+    addFeedbackItem,
+    appendTaskHistoryEvent,
+  };
 }
 
 afterEach(async () => {
@@ -91,18 +151,23 @@ describe('MCP routes', () => {
       },
     });
 
-    expect(JSON.parse(list.json().result.content[0].text)).toEqual([
-      { id: 'task-1', status: 'todo' },
+    expect(JSON.parse(list.json().result.content[0].text)).toEqual([makeTask()]);
+    const completed = JSON.parse(complete.json().result.content[0].text);
+    expect(completed).toMatchObject({ id: 'task-1', status: 'done' });
+    // 带 result 时记录为一条 delivery，不再写 patchTask 的 result 字段
+    expect(completed.deliveries).toEqual([
+      expect.objectContaining({ version: 1, result: 'done' }),
     ]);
-    expect(JSON.parse(complete.json().result.content[0].text)).toEqual({
-      id: 'task-1',
-      status: 'done',
-      result: 'done',
-    });
-    expect(harness.patchTask).toHaveBeenCalledWith('team-a', 'task-1', {
-      status: 'done',
-      result: 'done',
-    });
+    expect(completed.historyEvents).toEqual([
+      expect.objectContaining({
+        type: 'status_changed',
+        from: 'in_progress',
+        to: 'completed',
+        actor: 'agent',
+      }),
+    ]);
+    expect(harness.addDelivery).toHaveBeenCalledWith('team-a', 'task-1', { result: 'done' });
+    expect(harness.patchTask).toHaveBeenCalledWith('team-a', 'task-1', { status: 'done' });
   });
 
   it('preserves unknown tool, notification and method responses', async () => {

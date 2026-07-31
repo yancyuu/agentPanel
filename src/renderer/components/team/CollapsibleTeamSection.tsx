@@ -85,12 +85,7 @@ export const CollapsibleTeamSection = ({
 
   return (
     <section ref={sectionRef} data-section-id={sectionId} className="min-w-0">
-      <div
-        className={cn(
-          'flex min-h-7 items-center gap-2',
-          headerClassName
-        )}
-      >
+      <div className={cn('flex min-h-7 items-center gap-2', headerClassName)}>
         <button
           type="button"
           className={cn(
@@ -112,7 +107,9 @@ export const CollapsibleTeamSection = ({
             size={12}
             className={`shrink-0 text-[var(--color-text-muted)] opacity-50 transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}
           />
-          {icon ? <span className="shrink-0 text-[var(--color-text-muted)] opacity-60">{icon}</span> : null}
+          {icon ? (
+            <span className="shrink-0 text-[var(--color-text-muted)] opacity-60">{icon}</span>
+          ) : null}
           <span className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">
             {title}
           </span>
@@ -122,21 +119,22 @@ export const CollapsibleTeamSection = ({
             </span>
           )}
           {secondaryBadge != null && secondaryBadge > 0 && (
-            <span className="text-[10px] tabular-nums text-indigo-400 opacity-70" title={`${secondaryBadge} unread`}>
+            <span
+              className="text-[10px] tabular-nums text-indigo-400 opacity-70"
+              title={`${secondaryBadge} unread`}
+            >
               +{secondaryBadge}
             </span>
           )}
           {afterBadge}
           {headerExtra}
         </button>
-        {action && (
-          <div className="flex shrink-0 items-center">{action}</div>
-        )}
+        {action && <div className="flex shrink-0 items-center">{action}</div>}
       </div>
       {keepMounted ? (
         <div
           className={cn(
-            'min-w-0 overflow-x-clip pt-1 pb-2',
+            'min-w-0 overflow-x-clip pb-2 pt-1',
             contentWrapperClassName,
             contentClassName
           )}
@@ -148,7 +146,7 @@ export const CollapsibleTeamSection = ({
         isOpen && (
           <div
             className={cn(
-              'min-w-0 overflow-x-clip pt-1 pb-2',
+              'min-w-0 overflow-x-clip pb-2 pt-1',
               contentWrapperClassName,
               contentClassName
             )}

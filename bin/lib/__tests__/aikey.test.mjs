@@ -11,7 +11,9 @@
 //   2. the written value is the REAL key (aikey's own `--direct` mode does this when
 //      there is no proxy), not a proxy sentinel token,
 //   3. *_BASE_URL is written only when a base url is actually provided.
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -77,6 +79,38 @@ describe('aikey renderActiveEnv (ported from write_active_env; REAL key, no prox
     expect(content).toContain('export OPENHERMIT_ACTIVE_KEY="work-key"');
   });
 
+  it('shell-quotes remote values without executing command substitutions', async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), 'aikey-shell-quote-'));
+    const marker = path.join(home, 'executed');
+    const key = `sk-live-$(touch ${marker})-\`touch ${marker}\`-"-$-\\`;
+    const envPath = path.join(home, 'aikey.env');
+    try {
+      await writeFile(
+        envPath,
+        renderActiveEnv({
+          displayName: 'remote " key $()',
+          providers: { openai: { apiKey: key, baseUrl: 'https://api.example.test/$()' } },
+        })
+      );
+      const sourced = execFileSync(
+        'sh',
+        ['-c', '. "$1"; printf "%s" "$OPENAI_API_KEY"', 'sh', envPath],
+        { encoding: 'utf8' }
+      );
+      expect(sourced).toBe(key);
+      expect(existsSync(marker)).toBe(false);
+      expect(parseActiveEnv(await readFile(envPath, 'utf8')).vars.OPENAI_API_KEY).toBe(key);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects multiline values instead of emitting executable shell lines', () => {
+    expect(() =>
+      renderActiveEnv({ providers: { openai: { apiKey: 'sk-safe\nmalicious' } } })
+    ).toThrow('控制字符');
+  });
+
   it('ignores providers that have no key value', () => {
     const content = renderActiveEnv({
       displayName: 'x',
@@ -117,8 +151,6 @@ describe('aikey parseActiveEnv (inverse of renderActiveEnv)', () => {
   });
 });
 
-
-
 describe('aikey mock key source', () => {
   let tmpHome;
 
@@ -153,7 +185,10 @@ describe('aikey mock key source', () => {
     expect(bundle).not.toBeNull();
     expect(bundle.displayName).toBe('demo');
     // "claude" alias normalized to canonical "anthropic".
-    expect(bundle.providers.anthropic).toEqual({ apiKey: 'sk-ant', baseUrl: 'https://api.anthropic.com' });
+    expect(bundle.providers.anthropic).toEqual({
+      apiKey: 'sk-ant',
+      baseUrl: 'https://api.anthropic.com',
+    });
   });
 
   it('readMockBundle returns null on a malformed file', async () => {

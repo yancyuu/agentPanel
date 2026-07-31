@@ -1,5 +1,6 @@
 import {
   type AdvancedConnectionLocalSnapshot,
+  type AdvancedConnectionTokenClaimRequest,
   type CreateAdvancedConnectionRequest,
   type DiscoverAdvancedConnectionRequest,
   type StartAdvancedConnectionAuthRequest,
@@ -141,4 +142,25 @@ export function registerAdvancedConnectionRoutes(
       }
     }
   );
+
+  app.post<{
+    Params: { connectionId: string };
+    Body: AdvancedConnectionTokenClaimRequest;
+  }>('/api/advanced-connections/:connectionId/token-pool/claim-apply', async (request, reply) => {
+    try {
+      return await dependencies.service.claimAndApplyToken(request.params.connectionId, {
+        discoveryId: request.body?.discoveryId ?? '',
+        regionId: request.body?.regionId,
+        gatewayId: request.body?.gatewayId,
+        modelApiIds: Array.isArray(request.body?.modelApiIds) ? request.body.modelApiIds : [],
+        runtimes: Array.isArray(request.body?.runtimes) ? request.body.runtimes : [],
+        model: request.body?.model,
+        wireApi: request.body?.wireApi,
+      });
+    } catch (error) {
+      const message = errorMessage(error, 'Token 认领与应用失败');
+      const status = message.includes('正在执行') ? 409 : 400;
+      return reply.code(status).send({ ok: false, error: message });
+    }
+  });
 }

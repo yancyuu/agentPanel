@@ -59,6 +59,15 @@ describe('AdvancedConnectionsSection', () => {
         error={null}
         notice={null}
         catalogStatus={{}}
+        catalogs={{
+          [connection.id]: {
+            modelCount: 1,
+            discoveryId: 'discovery-1',
+            defaultModelName: 'Claude Sonnet',
+            defaultModelApiIds: ['model-1'],
+            models: [{ id: 'model-1', name: 'Claude Sonnet' }],
+          },
+        }}
         channelStatus={{}}
         onHostChange={noop}
         onDiscover={noop}
@@ -70,11 +79,18 @@ describe('AdvancedConnectionsSection', () => {
         onSyncConnection={noop}
         onPullRemoteTasks={noop}
         onCheckTokenCatalog={noop}
+        onClaimAndApplyToken={noop}
         onRefresh={noop}
       />
     );
 
     expect(html).toContain('开放连接');
+    expect(html).toContain('系统如何判定兼容服务');
+    expect(html).toContain('/.well-known/hermit-provider.json');
+    expect(html).toContain('/api/v1/auth/me');
+    expect(html).toContain('返回 404、网页内容或无法解析的 JSON');
+    expect(html).toContain('返回 401 或 403');
+    expect(html).toContain('暂不受支持');
     expect(html).toContain('公司 AgentBus');
     expect(html).toContain('当前账号：测试用户');
     expect(html).toContain('Usage 汇总');
@@ -83,5 +99,7 @@ describe('AdvancedConnectionsSection', () => {
     expect(html).toContain('同步已授权数据');
     expect(html).toContain('检查远程任务');
     expect(html).toContain('检测 Token 池');
+    expect(html).toContain('领取并应用');
+    expect(html).toContain('默认模型：Claude Sonnet');
   });
 });

@@ -306,9 +306,19 @@ export const SystemManagerView = ({
         title="诊断"
         description="一键检查数字员工和工作区，有问题再处理。"
         actions={
-          <span className="text-xs text-[var(--color-text-muted)]">
-            {loading ? '正在连接' : localReady ? '诊断可用' : '诊断异常'}
-          </span>
+          loading || localReady ? (
+            <span className="text-xs text-[var(--color-text-muted)]">
+              {loading ? '正在连接' : '诊断可用'}
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/10 dark:text-amber-400"
+            >
+              诊断异常 · 重新检测
+            </button>
+          )
         }
       />
 

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -55,6 +55,23 @@ describe('SystemManagerConfigService.adminInitialized', () => {
 });
 
 describe('SystemManagerConfigService.getStatus', () => {
+  it('uses the bundled Pi fallback when Claude Code and Codex are unavailable', async () => {
+    const previousPath = process.env.PATH;
+    const binDir = path.join(workdir, 'runtime-bin');
+    await mkdir(binDir, { recursive: true });
+    await writeFile(path.join(binDir, 'pi'), '#!/bin/sh\n');
+    process.env.PATH = binDir;
+    try {
+      const status = await new SystemManagerConfigService().getStatus();
+      expect(status.localStatus).toBe('ready');
+      expect(status.runtimeHarness).toBe('pi');
+      expect(status.error).toBeUndefined();
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
+  });
+
   it('reports the 诊断 identity and the canonical ~/.hermit workspace', async () => {
     const svc = new SystemManagerConfigService();
     const status = await svc.getStatus();

@@ -11,6 +11,7 @@ import { DESKTOP_RUNTIME_METADATA_FILE, DESKTOP_SESSION_HEADER } from '../shared
 
 import {
   buildDesktopServerEnvironment,
+  DESKTOP_TELEMETRY_RECONCILE_ARGS,
   isAllowedExternalUrl,
   isAllowedWorkbenchNavigation,
   resolveDesktopRuntimePaths,
@@ -28,11 +29,15 @@ interface RunningServer {
   port: number;
   sessionToken: string;
   metadataFile: string;
+  runtimeRoot: string;
+  cliEntry: string;
+  hermitHome: string;
   logs: string[];
 }
 
 let mainWindow: BrowserWindow | null = null;
 let runningServer: RunningServer | null = null;
+let bootPromise: Promise<void> | null = null;
 let shutdownStarted = false;
 let allowQuit = false;
 
@@ -166,6 +171,9 @@ async function startServer(): Promise<RunningServer> {
       port,
       sessionToken,
       metadataFile,
+      runtimeRoot: paths.runtimeRoot,
+      cliEntry: paths.cliEntry,
+      hermitHome,
       logs,
     };
     child.stdout?.on('data', (chunk: Buffer) => appendLog(logs, chunk, sessionToken));
@@ -180,6 +188,31 @@ async function startServer(): Promise<RunningServer> {
     }
   }
   throw new Error(lastError instanceof Error ? lastError.message : '本地服务启动失败');
+}
+
+async function reconcileTelemetryOwnership(server: RunningServer): Promise<void> {
+  if (!app.isPackaged) return;
+  const managedBinDir = path.join(server.hermitHome, 'bin');
+  const telemetryBootstrap = spawn(
+    process.execPath,
+    [server.cliEntry, ...DESKTOP_TELEMETRY_RECONCILE_ARGS],
+    {
+      cwd: server.runtimeRoot,
+      env: {
+        ...process.env,
+        PATH: [managedBinDir, process.env.PATH].filter(Boolean).join(path.delimiter),
+        ELECTRON_RUN_AS_NODE: '1',
+        AGENTCLI_PACKAGE_ROOT: server.runtimeRoot,
+        HERMIT_HOME: server.hermitHome,
+      },
+      stdio: ['ignore', 'ignore', 'ignore'],
+      windowsHide: true,
+    }
+  );
+  await new Promise<number | null>((resolve) => {
+    telemetryBootstrap.once('error', () => resolve(null));
+    telemetryBootstrap.once('close', resolve);
+  });
 }
 
 function installSessionSecurity(server: RunningServer): void {
@@ -263,8 +296,8 @@ function createFailureWindow(error: unknown, logs: string[]): BrowserWindow {
   window.webContents.on('will-navigate', (event, targetUrl) => {
     if (targetUrl === 'agentcli://retry') {
       event.preventDefault();
+      window.once('closed', () => void bootDesktop());
       window.close();
-      void bootDesktop();
     } else if (targetUrl === 'agentcli://quit') {
       event.preventDefault();
       app.quit();
@@ -276,21 +309,45 @@ function createFailureWindow(error: unknown, logs: string[]): BrowserWindow {
   return window;
 }
 
-async function bootDesktop(): Promise<void> {
+function trackMainWindow(window: BrowserWindow): void {
+  mainWindow = window;
+  window.once('closed', () => {
+    if (mainWindow === window) mainWindow = null;
+  });
+}
+
+function usableMainWindow(): BrowserWindow | null {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = null;
+    return null;
+  }
+  return mainWindow;
+}
+
+async function bootDesktopOnce(): Promise<void> {
+  if (usableMainWindow()) return;
   try {
     runningServer = await startServer();
     installSessionSecurity(runningServer);
-    mainWindow = createWorkbenchWindow(runningServer);
+    trackMainWindow(createWorkbenchWindow(runningServer));
+    void reconcileTelemetryOwnership(runningServer);
   } catch (error) {
     console.error('[AgentCLI desktop] boot failed', error);
     const logs = runningServer?.logs ?? [];
     runningServer = null;
     try {
-      mainWindow = createFailureWindow(error, logs);
+      trackMainWindow(createFailureWindow(error, logs));
     } catch (failureWindowError) {
       console.error('[AgentCLI desktop] failure window creation failed', failureWindowError);
     }
   }
+}
+
+function bootDesktop(): Promise<void> {
+  bootPromise ??= bootDesktopOnce().finally(() => {
+    bootPromise = null;
+  });
+  return bootPromise;
 }
 
 async function shutdown(): Promise<void> {
@@ -306,10 +363,14 @@ if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
+    const window = usableMainWindow();
+    if (!window) {
+      void bootDesktop();
+      return;
+    }
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
   });
 
   app.on('before-quit', (event) => {
@@ -323,8 +384,9 @@ if (!hasSingleInstanceLock) {
 
   app.on('window-all-closed', () => app.quit());
   app.on('activate', () => {
-    if (mainWindow) {
-      mainWindow.show();
+    const window = usableMainWindow();
+    if (window) {
+      window.show();
       return;
     }
     void bootDesktop();

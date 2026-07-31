@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseOtherUsageWorkerPids } from '../workerSingleton';
+import {
+  isUsageWorkerCommand,
+  parseOtherUsageWorkerPids,
+  parseWindowsUsageWorkerPids,
+} from '../workerSingleton';
 
 // Sample `ps -axo pid=,command=` output covering every case the reaper must
 // distinguish: the self daemon, a peer daemon, a transient --scan-once child,
@@ -12,6 +16,8 @@ const PS_OUTPUT = [
   ' 99998 node src/main/telemetry/worker.ts --startup-once',
   ' 99997 node src/main/telemetry/worker.ts --report-lark-credentials-once',
   ' 50001 /usr/local/bin/node ~/.npm-global/.../openhermit/src/main/telemetry/worker.ts',
+  ' 50002 /opt/AgentCLI/resources/agentcli/dist/telemetry-worker.bundle.mjs',
+  ' 50003 /opt/AgentCLI/resources/agentcli/dist/telemetry-worker.bundle.mjs --startup-once',
   ' 12345 /usr/local/bin/node src/main/server.ts',
   '',
 ].join('\n');
@@ -25,7 +31,33 @@ describe('parseOtherUsageWorkerPids', () => {
     expect(pids).not.toContain(99999);
     expect(pids).not.toContain(99998);
     expect(pids).not.toContain(99997);
-    expect(pids).toEqual([14726, 50001]);
+    expect(pids).toEqual([14726, 50001, 50002]);
+  });
+
+  it('matches source and packaged worker entry points across slash styles', () => {
+    expect(isUsageWorkerCommand('node C:\\AgentCLI\\dist\\telemetry-worker.bundle.mjs')).toBe(true);
+    expect(isUsageWorkerCommand('node /app/src/main/telemetry/worker.ts')).toBe(true);
+    expect(isUsageWorkerCommand('node /app/src/main/server.ts')).toBe(false);
+  });
+
+  it('parses Windows process JSON and excludes transient or unrelated processes', () => {
+    const output = JSON.stringify([
+      {
+        ProcessId: 7001,
+        CommandLine: 'node C:\\AgentCLI\\dist\\telemetry-worker.bundle.mjs',
+      },
+      {
+        ProcessId: 7002,
+        CommandLine: 'node C:\\AgentCLI\\dist\\telemetry-worker.bundle.mjs --scan-once',
+      },
+      { ProcessId: 7003, CommandLine: 'node C:\\AgentCLI\\dist\\server.bundle.mjs' },
+      {
+        ProcessId: 7004,
+        CommandLine: 'node C:\\AgentCLI\\src\\main\\telemetry\\worker.ts',
+      },
+    ]);
+
+    expect(parseWindowsUsageWorkerPids(output, 7004)).toEqual([7001]);
   });
 
   it('matches a global-package install path worker (orphan with no pidfile entry)', () => {

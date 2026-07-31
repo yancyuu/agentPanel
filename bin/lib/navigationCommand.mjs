@@ -30,13 +30,8 @@ import {
   createPromptInterface,
   withSpinner,
 } from './terminal.mjs';
-import {
-  describeUploadToggle,
-} from './uploadState.mjs';
-import {
-  formatUploadProviders,
-  normalizeUploadProviders,
-} from './usageRemote.mjs';
+import { describeUploadToggle } from './uploadState.mjs';
+import { formatUploadProviders, normalizeUploadProviders } from './usageRemote.mjs';
 import { BRAND, brandLogPrefix } from '../branding.mjs';
 import { rethrowIfExitSentinel } from './exitGuard.mjs';
 import {
@@ -46,12 +41,7 @@ import {
   waitForContinue,
   parseMenuKeys,
 } from './navigation.mjs';
-import {
-  printDaemonStatus,
-  stopDaemon,
-  startDaemon,
-  collectDaemonStatus,
-} from './daemon.mjs';
+import { printDaemonStatus, stopDaemon, startDaemon, collectDaemonStatus } from './daemon.mjs';
 import {
   currentFeatureStates,
   refreshWebRunningState,
@@ -101,14 +91,18 @@ import {
 import { ensureLarkCliDigitalWorkerAuth, personalLarkProfileName } from './larkCli.mjs';
 import { reportAllLarkCredentials } from './larkSecrets.mjs';
 import { provisionDigitalWorker } from './digitalWorkerCommand.mjs';
-import { fetchDefaults, provisionRun, pollRun, claimSecret, discoverCatalog, pickHighestVersionModel, selectModelApiIds, mapTierModels } from './tokenDistribution.mjs';
-import { DEFAULT_WIRE_API, runAikeyManual } from './aikey.mjs';
 import {
-  printDoctor,
-  printTeamsList,
-  printTeamsCreate,
-  printTasksList,
-} from './teams.mjs';
+  fetchDefaults,
+  provisionRun,
+  pollRun,
+  claimSecret,
+  discoverCatalog,
+  pickHighestVersionModel,
+  selectModelApiIds,
+  mapTierModels,
+} from './tokenDistribution.mjs';
+import { DEFAULT_WIRE_API, runAikeyManual } from './aikey.mjs';
+import { printDoctor, printTeamsList, printTeamsCreate, printTasksList } from './teams.mjs';
 import {
   NAV_ACTIONS,
   LOCAL_USE_ACTIONS,
@@ -120,17 +114,20 @@ import {
   ACCOUNT_ACTIONS,
   findMenuAction,
 } from './menus.mjs';
+import { printDeveloperUploadLogs, readLogTail } from './runtime.mjs';
+import { waitForOpenHermitServerReady } from './daemon.mjs';
+import { safeReadJson } from './settings.mjs';
 import {
-  printDeveloperUploadLogs,
-  readLogTail,
-} from './runtime.mjs';
-import {
-  waitForOpenHermitServerReady,
-} from './daemon.mjs';
-import {
-  safeReadJson,
-} from './settings.mjs';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, openSync, closeSync, statSync, readSync } from 'node:fs';
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  unlinkSync,
+  openSync,
+  closeSync,
+  statSync,
+  readSync,
+} from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -166,16 +163,22 @@ export function onlineGuideRows() {
 }
 
 function printOnlineGuide() {
-  printCliRows('在线说明书', onlineGuideRows(), '复制「交给 Claude Code」这一行给其他 AI 助手即可。');
+  printCliRows(
+    '在线说明书',
+    onlineGuideRows(),
+    '复制「交给 Claude Code」这一行给其他 AI 助手即可。'
+  );
 }
 
 function inlineBusyMessage(action) {
   if (action.id === 'toggle-web') {
-    return currentFeatureStates().webRunning ? '正在关闭 AgentCLI 工作台...' : '正在启动 AgentCLI 工作台...';
+    return currentFeatureStates().webRunning
+      ? '正在关闭 AgentCLI 工作台...'
+      : '正在启动 AgentCLI 工作台...';
   }
   if (action.id === 'toggle-message-upload') {
     const s = currentFeatureStates();
-    return (s.conversationUploadEnabled && s.usageRunning)
+    return s.conversationUploadEnabled && s.usageRunning
       ? '正在关闭消息上报...'
       : '正在开启消息上报...';
   }
@@ -196,11 +199,18 @@ function hasDeveloperModeEnabled() {
 // --- Status bar items --------------------------------------------------------
 
 function currentMenuStatusItems(states = currentFeatureStates()) {
-  const upload = describeUploadToggle({ enabled: states.conversationUploadEnabled, running: states.usageRunning });
+  const upload = describeUploadToggle({
+    enabled: states.conversationUploadEnabled,
+    running: states.usageRunning,
+  });
   return [
     { label: `${BRAND.stylizedName} v${currentVersion}`, state: 'info' },
-    { label: states.auth.authorized ? `已登录 ${states.auth.account?.name || BRAND.authProviderName}` : '未登录', state: states.auth.authorized ? 'ok' : 'off' },
-    { label: states.webRunning ? 'Web 运行中' : 'Web 未启动', state: states.webRunning ? 'ok' : 'off' },
+    {
+      label: states.auth.authorized
+        ? `已登录 ${states.auth.account?.name || BRAND.authProviderName}`
+        : '未登录',
+      state: states.auth.authorized ? 'ok' : 'off',
+    },
     { label: upload.rowLabel, state: upload.rowState },
   ];
 }
@@ -210,24 +220,60 @@ function currentMenuStatusItems(states = currentFeatureStates()) {
 function actionStateLabel(action, states) {
   if (action.id === 'web') {
     if (action.children?.length) {
-      return { text: states.webRunning ? '运行中' : '未启动', state: states.webRunning ? 'ok' : 'error' };
+      return {
+        text: states.webRunning ? '运行中' : '未启动',
+        state: states.webRunning ? 'ok' : 'error',
+      };
     }
-    return { text: states.webRunning ? '运行中' : '未启动', state: states.webRunning ? 'ok' : 'error' };
+    return {
+      text: states.webRunning ? '运行中' : '未启动',
+      state: states.webRunning ? 'ok' : 'error',
+    };
   }
-  if (action.id === 'start-web' || action.id === 'toggle-web') return { text: states.webRunning ? '运行中' : '未启动', state: states.webRunning ? 'ok' : 'error' };
+  if (action.id === 'start-web' || action.id === 'toggle-web')
+    return {
+      text: states.webRunning ? '运行中' : '未启动',
+      state: states.webRunning ? 'ok' : 'error',
+    };
   if (action.toggle === 'conversation-upload' || action.id === 'toggle-message-upload') {
-    const upload = describeUploadToggle({ enabled: states.conversationUploadEnabled, running: states.usageRunning });
-    return { text: states.usageRunning ? formatUploadProviders(states.uploadProviders) : upload.badge, state: upload.badgeState };
+    const upload = describeUploadToggle({
+      enabled: states.conversationUploadEnabled,
+      running: states.usageRunning,
+    });
+    return {
+      text: states.usageRunning ? formatUploadProviders(states.uploadProviders) : upload.badge,
+      state: upload.badgeState,
+    };
   }
-  if (action.id === 'choose-upload-provider') return { text: formatUploadProviders(states.uploadProviders), state: states.uploadProviders.length ? 'info' : 'warn' };
-  if (['toggle-background', 'start-usage', 'start-background'].includes(action.id)) return { text: states.usageRunning ? '运行中' : '未启动', state: states.usageRunning ? 'ok' : 'error' };
+  if (action.id === 'choose-upload-provider')
+    return {
+      text: formatUploadProviders(states.uploadProviders),
+      state: states.uploadProviders.length ? 'info' : 'warn',
+    };
+  if (['toggle-background', 'start-usage', 'start-background'].includes(action.id))
+    return {
+      text: states.usageRunning ? '运行中' : '未启动',
+      state: states.usageRunning ? 'ok' : 'error',
+    };
   if (['data-sync', 'local-collection'].includes(action.id)) {
-    const upload = describeUploadToggle({ enabled: states.conversationUploadEnabled, running: states.usageRunning });
+    const upload = describeUploadToggle({
+      enabled: states.conversationUploadEnabled,
+      running: states.usageRunning,
+    });
     return { text: upload.badge, state: upload.badgeState };
   }
-  if (action.id === 'aikey' || action.id === 'aikey-status') return { text: states.aikeyClaimed ? '已认领' : '未认领', state: states.aikeyClaimed ? 'ok' : 'off' };
-  if (action.id === 'stop-web' || action.id === 'stop-usage' || action.id === 'stop-background') return { text: '停止', state: 'warn' };
-  if (['account', 'login', 'status'].includes(action.id)) return { text: states.auth.authorized ? '已登录' : '未登录', state: states.auth.authorized ? 'ok' : 'off' };
+  if (action.id === 'aikey' || action.id === 'aikey-status')
+    return {
+      text: states.aikeyClaimed ? '已认领' : '未认领',
+      state: states.aikeyClaimed ? 'ok' : 'off',
+    };
+  if (action.id === 'stop-web' || action.id === 'stop-usage' || action.id === 'stop-background')
+    return { text: '停止', state: 'warn' };
+  if (['account', 'login', 'status'].includes(action.id))
+    return {
+      text: states.auth.authorized ? '已登录' : '未登录',
+      state: states.auth.authorized ? 'ok' : 'off',
+    };
   if (action.id === 'back') return { text: '返回', state: 'off' };
   if (action.id === 'exit') return { text: '', state: 'off' };
   if (action.recommended) return { text: '推荐', state: 'ok' };
@@ -299,7 +345,15 @@ function menuRenderState() {
 // --- Menu-driven action subroutines ------------------------------------------
 
 async function runLocalCollectionAction() {
-  const { printScanOnceResult, printUsageStart, printUsageStop, printUsageStatus, isUsageAuthUnavailable, loginAfterUsageAuthExpired, enableConversationUploadWithProvider } = await import('./usageCommand.mjs');
+  const {
+    printScanOnceResult,
+    printUsageStart,
+    printUsageStop,
+    printUsageStatus,
+    isUsageAuthUnavailable,
+    loginAfterUsageAuthExpired,
+    enableConversationUploadWithProvider,
+  } = await import('./usageCommand.mjs');
 
   while (true) {
     const renderState = menuRenderState();
@@ -331,33 +385,47 @@ async function runLocalCollectionAction() {
 async function printTaskBusStatus() {
   try {
     const server = await fetchLocalJson('/api/status').catch(() => ({ running: false }));
-  } catch { /* server unreachable */ }
+  } catch {
+    /* server unreachable */
+  }
 
   try {
     const [config, telemetry] = await Promise.all([
       fetchLocalJson('/api/settings/task-bus'),
       fetchLocalJson('/api/telemetry/status').catch(() => null),
     ]);
-    printCliRows('团队总线状态', [
-      ['团队总线', formatStatusToggle(config.enabled)],
-      ['IM', telemetry?.connected ? '已连接' : config.enabled ? '未连接/未知' : '未启用'],
-      ['Usage 统计', config.telemetry?.enabled ? '本地扫描开启' : '关闭'],
-      ['分布式协作', formatStatusToggle(config.collaboration)],
-      ['边界', '团队总线为企业版开放（agentbus），Usage 统计不上传'],
-    ], 'IM 协作入口：Web 会话 → IM。');
+    printCliRows(
+      '团队总线状态',
+      [
+        ['团队总线', formatStatusToggle(config.enabled)],
+        ['IM', telemetry?.connected ? '已连接' : config.enabled ? '未连接/未知' : '未启用'],
+        ['Usage 统计', config.telemetry?.enabled ? '本地扫描开启' : '关闭'],
+        ['分布式协作', formatStatusToggle(config.collaboration)],
+        ['边界', '团队总线为企业版开放（agentbus），Usage 统计不上传'],
+      ],
+      'IM 协作请在 AgentCLI 桌面客户端的高级连接中管理。'
+    );
   } catch (err) {
-    printCliRows('团队总线状态', [
-      ['状态', '读取失败'],
-      ['原因', err instanceof Error ? err.message : String(err)],
-    ], '团队总线为企业版开放（agentbus）；开源版无需配置。');
+    printCliRows(
+      '团队总线状态',
+      [
+        ['状态', '读取失败'],
+        ['原因', err instanceof Error ? err.message : String(err)],
+      ],
+      '团队总线为企业版开放（agentbus）；开源版无需配置。'
+    );
   }
 }
 
 async function openWebSettingsTaskBus() {
-  printCliRows('团队总线配置', [
-    ['地址', `http://127.0.0.1:${port}`],
-    ['进入', '会话 → IM'],
-  ], 'IM/协作配置在 Web 会话页面管理。');
+  printCliRows(
+    '团队总线配置',
+    [
+      ['地址', `http://127.0.0.1:${port}`],
+      ['进入', '会话 → IM'],
+    ],
+    'IM/协作配置请在 AgentCLI 桌面客户端的高级连接中管理。'
+  );
 }
 
 async function runTaskBusAction() {
@@ -488,9 +556,18 @@ async function pickModel(modelIds) {
  * `envFilePath` / `backupRootPath` / `maskedKey` are pre-resolved strings so
  * this function touches no fs/env; the caller resolves them.
  */
-export function buildClaimResultRows({ apply, choices, runtimes, envFilePath, backupRootPath, backupCreated, maskedKey, envApply }) {
+export function buildClaimResultRows({
+  apply,
+  choices,
+  runtimes,
+  envFilePath,
+  backupRootPath,
+  backupCreated,
+  maskedKey,
+  envApply,
+}) {
   const runtimeLabel = runtimes
-    .map((r) => (r === 'claude' ? 'Claude Code' : 'Codex'))
+    .map((runtime) => ({ claude: 'Claude Code', codex: 'Codex', pi: 'Pi' })[runtime] || runtime)
     .join(' + ');
   const rows = [['写入运行时', runtimeLabel, 'ok']];
   // List each config file that was actually written (its absolute path), so the
@@ -530,7 +607,7 @@ export function buildClaimResultRows({ apply, choices, runtimes, envFilePath, ba
       backupCreated ? `${backupRootPath}（本次新建）` : `${backupRootPath}（已存在，未覆盖）`,
       'info',
     ],
-    ['key', `${maskedKey}  (即焚，已写入配置，不会再显示)`, 'warn'],
+    ['key', `${maskedKey}  (即焚，已写入配置，不会再显示)`, 'warn']
   );
   // System env surfaces (shell rc / launchctl / Windows user env) — shown per
   // surface so a silent env-write failure is visible. Skipped surfaces (e.g. a
@@ -540,7 +617,7 @@ export function buildClaimResultRows({ apply, choices, runtimes, envFilePath, ba
     rows.push(
       surface.ok
         ? ['环境变量', `${surface.surface}（已写入）`, 'ok']
-        : ['环境变量', `${surface.surface} 写入失败：${surface.message || '未知错误'}`, 'warn'],
+        : ['环境变量', `${surface.surface} 写入失败：${surface.message || '未知错误'}`, 'warn']
     );
   }
   return rows;
@@ -557,10 +634,14 @@ function renderClaimResult({ apply, secret, choices, runtimes, snapshot, envAppl
     maskedKey: maskKey(secret.key),
     envApply,
   });
-  printCliRows('认领 token 完成', rows, [
-    '已按所选运行时直接写入 Claude/Codex 配置文件，新开终端即可生效。',
-    '认领前配置已快照到 ~/.hermit/agentcli.env.bak，可在「token 池 → 恢复原始配置」一键回退到最近一次认领前的状态。',
-  ].join('\n'));
+  printCliRows(
+    '认领 token 完成',
+    rows,
+    [
+      '已按所选运行时直接写入 Claude/Codex 配置文件，新开终端即可生效。',
+      '认领前配置已快照到 ~/.hermit/agentcli.env.bak，可在「token 池 → 恢复原始配置」一键回退到最近一次认领前的状态。',
+    ].join('\n')
+  );
 }
 
 function printClaimError(err) {
@@ -583,7 +664,11 @@ function printClaimError(err) {
     }
   }
 
-  printCliRows('认领 token 失败', rows, '请检查登录状态与网络后重试；若持续失败，服务端 token 分发接口可能尚未就绪。');
+  printCliRows(
+    '认领 token 失败',
+    rows,
+    '请检查登录状态与网络后重试；若持续失败，服务端 token 分发接口可能尚未就绪。'
+  );
 }
 
 // Redact no secrets (server responses here are not credential-bearing) but keep
@@ -592,7 +677,9 @@ function safeErrorBody(body) {
   try {
     const json = JSON.stringify(body);
     if (json && json !== '{}') return json.length > 800 ? `${json.slice(0, 800)}…` : json;
-  } catch { /* fall through */ }
+  } catch {
+    /* fall through */
+  }
   return '';
 }
 
@@ -694,7 +781,11 @@ async function runTokenClaimFlow() {
   //     writing those would brick the working config. Bail with config untouched.
   const claimCheck = validateClaimedSecret(secret);
   if (!claimCheck.ok) {
-    printCliRows('认领 token', [['状态', '已放弃（凭证不可用）', 'warn']], `服务端返回的凭证不可用：${claimCheck.reason}\n未修改任何 Claude / Codex 配置。token 池后端可能没有可发的真实 key，请稍后重试或联系后端。`);
+    printCliRows(
+      '认领 token',
+      [['状态', '已放弃（凭证不可用）', 'warn']],
+      `服务端返回的凭证不可用：${claimCheck.reason}\n未修改任何 Claude / Codex 配置。token 池后端可能没有可发的真实 key，请稍后重试或联系后端。`
+    );
     return;
   }
 
@@ -823,10 +914,14 @@ async function runRestoreOriginalsFlow() {
     if (r.action === 'deleted') return [r.runtime, `删除 ${r.path}（token 池新建）`, 'ok'];
     return [r.runtime, `跳过（${r.reason}）`, 'off'];
   });
-  printCliRows('恢复原始配置完成', rows, [
-    '已回到所选快照对应的本地配置。',
-    `快照保留在 ${originalEnvBackupRoot()}，后续仍可选择其他时间点继续恢复。`,
-  ].join('\n'));
+  printCliRows(
+    '恢复原始配置完成',
+    rows,
+    [
+      '已回到所选快照对应的本地配置。',
+      `快照保留在 ${originalEnvBackupRoot()}，后续仍可选择其他时间点继续恢复。`,
+    ].join('\n')
+  );
   console.log('');
   return waitForContinue(ACTION_DONE_MSG);
 }
@@ -838,10 +933,18 @@ function assistantStageRow(label, result, successText) {
 }
 
 async function confirmAssistantWizardStart() {
-  printCliRows('数字员工向导', [
-    ['创建', '填写名称和描述 → 绑定渠道 → 可选完成飞书个人授权', 'info'],
-    ['重新授权', '选择已有数字员工 → 重新扫码绑定渠道 → 可选完成个人授权；不改动团队与会话数据', 'info'],
-  ], '本向导只做最小化快速开通与重新授权；复杂配置（成员、权限、高级参数等）建议在 Web 工作台修改。');
+  printCliRows(
+    '数字员工向导',
+    [
+      ['创建', '填写名称和描述 → 绑定渠道 → 可选完成飞书个人授权', 'info'],
+      [
+        '重新授权',
+        '选择已有数字员工 → 重新扫码绑定渠道 → 可选完成个人授权；不改动团队与会话数据',
+        'info',
+      ],
+    ],
+    '本向导只做最小化快速开通与重新授权；复杂配置（成员、权限、高级参数等）请在 AgentCLI 桌面客户端修改。'
+  );
   return (await waitForContinue('按 Enter 开始 | ←/Esc 取消')) === 'continue';
 }
 
@@ -891,13 +994,21 @@ function createLarkAuthQrRenderer() {
     const rendered = renderTerminalQr(url);
     console.log('');
     const browser = await openExternalUrl(url).catch(() => ({ opened: false }));
-    printCliRows(title, [
-      ...(rendered ? [] : [['二维码', '当前终端无法渲染，请用浏览器或下方链接', 'warn']]),
-      ['应用来源', '本次渠道绑定的飞书应用', 'ok'],
-      ['授权对象', '创建者个人飞书身份', 'info'],
-      ...(authInit?.user_code ? [['验证码', authInit.user_code, 'ok']] : []),
-      ['浏览器', browser.opened ? '已自动打开授权页面' : '未自动打开，请复制下方完整链接', browser.opened ? 'ok' : 'warn'],
-    ], '请扫码或在浏览器完成授权；CLI 会在下方等待确认。');
+    printCliRows(
+      title,
+      [
+        ...(rendered ? [] : [['二维码', '当前终端无法渲染，请用浏览器或下方链接', 'warn']]),
+        ['应用来源', '本次渠道绑定的飞书应用', 'ok'],
+        ['授权对象', '创建者个人飞书身份', 'info'],
+        ...(authInit?.user_code ? [['验证码', authInit.user_code, 'ok']] : []),
+        [
+          '浏览器',
+          browser.opened ? '已自动打开授权页面' : '未自动打开，请复制下方完整链接',
+          browser.opened ? 'ok' : 'warn',
+        ],
+      ],
+      '请扫码或在浏览器完成授权；CLI 会在下方等待确认。'
+    );
     console.log('');
     console.log(ui.dim('完整授权链接：'));
     console.log(url);
@@ -926,24 +1037,38 @@ async function ensureFeishuDigitalWorkerPrerequisites(options = {}) {
   // now skip straight to binding.
   const result = await ensureLarkCliDigitalWorkerAuth(renderAuthQr, { ...options, force: false });
   if (!result.ok) {
-    const missingScopes = Array.isArray(result.auth?.missingScopes) ? result.auth.missingScopes : [];
-    printCliRows('飞书个人身份授权不完整', [
-      ['lark-cli', result.installed?.message || result.message || '未就绪', result.installed?.ok ? 'ok' : 'error'],
-      ['绑定对象', '创建数字员工的飞书个人身份', 'info'],
-      ['原因', result.message || '授权失败', 'error'],
-      ...(missingScopes.length > 0 ? [['缺少权限', missingScopes.join('\n'), 'warn']] : []),
-      ...(result.detail ? [['详情', result.detail, 'warn']] : []),
-    ], '请更新 lark-cli，并在飞书应用与租户后台启用/审批上述权限后重试；仅有 basic_profile 不能创建数字员工。');
+    const missingScopes = Array.isArray(result.auth?.missingScopes)
+      ? result.auth.missingScopes
+      : [];
+    printCliRows(
+      '飞书个人身份授权不完整',
+      [
+        [
+          'lark-cli',
+          result.installed?.message || result.message || '未就绪',
+          result.installed?.ok ? 'ok' : 'error',
+        ],
+        ['绑定对象', '创建数字员工的飞书个人身份', 'info'],
+        ['原因', result.message || '授权失败', 'error'],
+        ...(missingScopes.length > 0 ? [['缺少权限', missingScopes.join('\n'), 'warn']] : []),
+        ...(result.detail ? [['详情', result.detail, 'warn']] : []),
+      ],
+      '请更新 lark-cli，并在飞书应用与租户后台启用/审批上述权限后重试；仅有 basic_profile 不能创建数字员工。'
+    );
     return null;
   }
   // Deliberately detached: credential synchronization is silent and must never
   // delay or change a successful local Digital Worker authorization.
   void reportAllLarkCredentials().catch(() => {});
-  printCliRows('飞书个人身份已绑定', [
-    ['lark-cli', result.installed?.message || '已安装', 'ok'],
-    ['个人身份', result.message || '已完成', 'ok'],
-    ['能力', '飞书文档读写、消息读取/发送、通讯录和用户信息', 'ok'],
-  ], '接下来绑定飞书应用渠道。');
+  printCliRows(
+    '飞书个人身份已绑定',
+    [
+      ['lark-cli', result.installed?.message || '已安装', 'ok'],
+      ['个人身份', result.message || '已完成', 'ok'],
+      ['能力', '飞书文档读写、消息读取/发送、通讯录和用户信息', 'ok'],
+    ],
+    '接下来绑定飞书应用渠道。'
+  );
   return result;
 }
 
@@ -957,7 +1082,10 @@ async function ensureFeishuDigitalWorkerPrerequisites(options = {}) {
  * Never throws: a failure here must not affect the already-created worker.
  */
 async function runLarkPersonalAuthWithApp({ appId, appSecret, brand }) {
-  renderBusyScreen('绑定飞书个人授权', '正在准备 lark-cli 个人授权（申请数字员工所需的完整权限）...');
+  renderBusyScreen(
+    '绑定飞书个人授权',
+    '正在准备 lark-cli 个人授权（申请数字员工所需的完整权限）...'
+  );
   const result = await ensureLarkCliDigitalWorkerAuth(createLarkAuthQrRenderer(), {
     profile: personalLarkProfileName(appId),
     appId,
@@ -966,24 +1094,38 @@ async function runLarkPersonalAuthWithApp({ appId, appSecret, brand }) {
     force: false,
   });
   if (!result.ok) {
-    const missingScopes = Array.isArray(result.auth?.missingScopes) ? result.auth.missingScopes : [];
-    printCliRows('飞书个人身份授权不完整', [
-      ['lark-cli', result.installed?.message || result.message || '未就绪', result.installed?.ok ? 'ok' : 'error'],
-      ['原因', result.message || '授权失败', 'error'],
-      ...(missingScopes.length > 0 ? [['缺少权限', missingScopes.join('\n'), 'warn']] : []),
-      ...(result.detail ? [['详情', result.detail, 'warn']] : []),
-    ], '数字员工已创建成功，授权可稍后重试；请确认飞书应用已启用上述权限并完成租户审批。');
+    const missingScopes = Array.isArray(result.auth?.missingScopes)
+      ? result.auth.missingScopes
+      : [];
+    printCliRows(
+      '飞书个人身份授权不完整',
+      [
+        [
+          'lark-cli',
+          result.installed?.message || result.message || '未就绪',
+          result.installed?.ok ? 'ok' : 'error',
+        ],
+        ['原因', result.message || '授权失败', 'error'],
+        ...(missingScopes.length > 0 ? [['缺少权限', missingScopes.join('\n'), 'warn']] : []),
+        ...(result.detail ? [['详情', result.detail, 'warn']] : []),
+      ],
+      '数字员工已创建成功，授权可稍后重试；请确认飞书应用已启用上述权限并完成租户审批。'
+    );
     return result;
   }
   // Deliberately detached: credential synchronization is silent and must never
   // delay or change a successful authorization.
   void reportAllLarkCredentials().catch(() => {});
-  printCliRows('飞书个人身份已绑定', [
-    ['lark-cli', result.installed?.message || '已安装', 'ok'],
-    ['lark-cli profile', result.profile || personalLarkProfileName(appId), 'ok'],
-    ['个人身份', result.message || '已完成', 'ok'],
-    ['能力', '飞书文档读写、消息读取/发送、通讯录和用户信息', 'ok'],
-  ], '个人授权凭证已可用于数字员工和用量上报。');
+  printCliRows(
+    '飞书个人身份已绑定',
+    [
+      ['lark-cli', result.installed?.message || '已安装', 'ok'],
+      ['lark-cli profile', result.profile || personalLarkProfileName(appId), 'ok'],
+      ['个人身份', result.message || '已完成', 'ok'],
+      ['能力', '飞书文档读写、消息读取/发送、通讯录和用户信息', 'ok'],
+    ],
+    '个人授权凭证已可用于数字员工和用量上报。'
+  );
   return result;
 }
 
@@ -995,7 +1137,9 @@ async function collectAssistantManualOptions(meta) {
       `${field.label}${field.required ? ' *' : advancedOptional ? '（可选，留空跳过）' : ''}`,
       field.placeholder ? `示例：${field.placeholder}` : '',
       field.hint ? `说明：${field.hint}` : '',
-    ].filter(Boolean).join(' · ');
+    ]
+      .filter(Boolean)
+      .join(' · ');
     let value;
     if (field.type === 'boolean') {
       value = await promptBoolean(label);
@@ -1020,8 +1164,16 @@ async function runQuickCreateAssistantFlow() {
     title: '数字员工 · 选择模式',
     subtitle: '新建数字员工，或对已有数字员工重新进行渠道授权和个人授权',
     actions: [
-      { id: 'create', label: '创建新数字员工', description: '填写名称、工作目录、运行时，绑定渠道后可选择性完成个人授权' },
-      { id: 'reauth', label: '重新授权已有数字员工', description: '选择已有数字员工，重新扫码绑定渠道并可选完成个人授权；不改动团队与会话数据' },
+      {
+        id: 'create',
+        label: '创建新数字员工',
+        description: '填写名称、工作目录、运行时，绑定渠道后可选择性完成个人授权',
+      },
+      {
+        id: 'reauth',
+        label: '重新授权已有数字员工',
+        description: '选择已有数字员工，重新扫码绑定渠道并可选完成个人授权；不改动团队与会话数据',
+      },
     ],
     escapeAction: 'back',
     statusItems: currentMenuStatusItems(),
@@ -1043,18 +1195,22 @@ async function runQuickCreateAssistantFlow() {
     try {
       teams = await fetchLocalJson('/api/teams');
     } catch {
-      printCliRows('重新授权数字员工', [
-        ['原因', '无法获取数字员工列表：AgentCLI 工作台未启动或尚未就绪', 'error'],
-      ], '请先运行 agentcli web 或在菜单中开启 AgentCLI 工作台后重试。');
+      printCliRows(
+        '重新授权数字员工',
+        [['原因', '无法获取数字员工列表：AgentCLI 工作台未启动或尚未就绪', 'error']],
+        '请先打开 AgentCLI 桌面客户端；独立 CLI 环境可运行 agentcli web 后重试。'
+      );
       return;
     }
     const candidates = (Array.isArray(teams) ? teams : []).filter(
       (team) => team && team.bindProject && !team.deletedAt && !team.pendingDelete
     );
     if (candidates.length === 0) {
-      printCliRows('重新授权数字员工', [
-        ['状态', '没有可重新授权的数字员工', 'warn'],
-      ], '请先使用"创建新数字员工"完成创建。');
+      printCliRows(
+        '重新授权数字员工',
+        [['状态', '没有可重新授权的数字员工', 'warn']],
+        '请先使用"创建新数字员工"完成创建。'
+      );
       return;
     }
     const picked = await askMenuAction({
@@ -1107,22 +1263,37 @@ async function runQuickCreateAssistantFlow() {
       printCliRows('开通数字员工失败', [['原因', `未找到 ${platform} 的渠道字段定义`, 'error']]);
       return;
     }
-    printCliRows('手动绑定渠道', [
-      ['渠道', meta.label || labelForAssistantPlatform(platform), 'info'],
-      ['字段来源', '与外部端共享 assistantCreationOptions.json', 'ok'],
-    ], '按提示填写该渠道凭据；高级可选字段可直接回车跳过。');
+    printCliRows(
+      '手动绑定渠道',
+      [
+        ['渠道', meta.label || labelForAssistantPlatform(platform), 'info'],
+        ['字段来源', '与外部端共享 assistantCreationOptions.json', 'ok'],
+      ],
+      '按提示填写该渠道凭据；高级可选字段可直接回车跳过。'
+    );
     platformOptions = await collectAssistantManualOptions(meta);
   }
 
   let lastQrStatus = null;
   const result = await provisionDigitalWorker(
     port,
-    { name, bindProject, description, workDir, agentType, platform, platformOptions, existingTeam: Boolean(existingBindProject) },
+    {
+      name,
+      bindProject,
+      description,
+      workDir,
+      agentType,
+      platform,
+      platformOptions,
+      existingTeam: Boolean(existingBindProject),
+    },
     {
       onStage(stage) {
         const messages = {
-          server: '阶段 1/5：正在启动本地工作台 API...',
-          team: existingBindProject ? '阶段 2/5：正在确认已有数字员工...' : '阶段 2/5：正在创建数字员工团队元数据...',
+          server: '阶段 1/5：正在启动本地服务 API...',
+          team: existingBindProject
+            ? '阶段 2/5：正在确认已有数字员工...'
+            : '阶段 2/5：正在创建数字员工团队元数据...',
           runtime: '阶段 3/5：正在准备渠道连接...',
           binding: '阶段 4/5：正在绑定渠道...',
         };
@@ -1135,11 +1306,19 @@ async function runQuickCreateAssistantFlow() {
         console.log('');
         const rendered = renderTerminalQr(qrUrl);
         console.log('');
-        printCliRows('扫码绑定渠道', [
-          ['渠道', labelForAssistantPlatform(platform), 'info'],
-          ['二维码', rendered ? '已显示在终端' : '当前终端无法渲染二维码，请复制链接扫码', rendered ? 'ok' : 'warn'],
-          ['备用链接', qrUrl, 'info'],
-        ], '请用手机扫码；CLI 会在下方等待确认。');
+        printCliRows(
+          '扫码绑定渠道',
+          [
+            ['渠道', labelForAssistantPlatform(platform), 'info'],
+            [
+              '二维码',
+              rendered ? '已显示在终端' : '当前终端无法渲染二维码，请复制链接扫码',
+              rendered ? 'ok' : 'warn',
+            ],
+            ['备用链接', qrUrl, 'info'],
+          ],
+          '请用手机扫码；CLI 会在下方等待确认。'
+        );
       },
       onQrStatus(status) {
         if (status === lastQrStatus) return;
@@ -1159,44 +1338,58 @@ async function runQuickCreateAssistantFlow() {
   );
 
   if (!result.ok) {
-    printCliRows('开通数字员工失败', [
-      ['数字员工名称', name, 'info'],
-      ['项目标识', bindProject, 'info'],
-      ['运行时', labelForAssistantAgentType(agentType), 'info'],
-      ['渠道', labelForAssistantPlatform(platform), 'info'],
-      ['阶段', result.failedStage || '准备参数', 'error'],
-      ['原因', result.message, 'error'],
-      ...(result.rollback?.attempted
-        ? [[
-            '未完成资源清理',
-            result.rollback.ok ? result.rollback.message : `清理失败：${result.rollback.message}`,
-            result.rollback.ok ? 'ok' : 'warn',
-          ]]
-        : []),
-    ], '创建未完成；如已产生团队或渠道项目，系统已按上方结果执行完整回滚。');
+    printCliRows(
+      '开通数字员工失败',
+      [
+        ['数字员工名称', name, 'info'],
+        ['项目标识', bindProject, 'info'],
+        ['运行时', labelForAssistantAgentType(agentType), 'info'],
+        ['渠道', labelForAssistantPlatform(platform), 'info'],
+        ['阶段', result.failedStage || '准备参数', 'error'],
+        ['原因', result.message, 'error'],
+        ...(result.rollback?.attempted
+          ? [
+              [
+                '未完成资源清理',
+                result.rollback.ok
+                  ? result.rollback.message
+                  : `清理失败：${result.rollback.message}`,
+                result.rollback.ok ? 'ok' : 'warn',
+              ],
+            ]
+          : []),
+      ],
+      '创建未完成；如已产生团队或渠道项目，系统已按上方结果执行完整回滚。'
+    );
     return;
   }
 
   const postBinding = result.binding?.postBinding;
   renderBusyScreen('开通数字员工', '阶段 5/5：正在汇总创建结果...');
-  printCliRows(existingBindProject ? '数字员工已重新授权' : '数字员工已创建', [
-    ['数字员工名称', name, 'ok'],
-    ['项目标识', bindProject, 'ok'],
-    ['运行时', labelForAssistantAgentType(agentType), 'ok'],
-    ['渠道', labelForAssistantPlatform(platform), 'ok'],
-    ...(existingBindProject
-      ? [['团队数据', result.team?.message || '使用已有数字员工，未做改动', 'ok']]
-      : [assistantStageRow('创建团队', result.team, result.team?.message)]),
-    ['绑定渠道', result.binding?.message || '已绑定', 'ok'],
-    ...(postBinding?.profile ? [['lark-cli profile', postBinding.profile, 'ok']] : []),
-    ['连接服务',
-      result.binding?.restartHandled
-        ? '已自动重启并接入新渠道'
-        : result.binding?.restartRequired === false
-          ? '配置已生效，无需额外重启'
-          : '连接状态未确认',
-      result.binding?.restartHandled || result.binding?.restartRequired === false ? 'ok' : 'warn'],
-  ], '下一步：在已绑定的外部渠道里给这个数字员工发消息。');
+  printCliRows(
+    existingBindProject ? '数字员工已重新授权' : '数字员工已创建',
+    [
+      ['数字员工名称', name, 'ok'],
+      ['项目标识', bindProject, 'ok'],
+      ['运行时', labelForAssistantAgentType(agentType), 'ok'],
+      ['渠道', labelForAssistantPlatform(platform), 'ok'],
+      ...(existingBindProject
+        ? [['团队数据', result.team?.message || '使用已有数字员工，未做改动', 'ok']]
+        : [assistantStageRow('创建团队', result.team, result.team?.message)]),
+      ['绑定渠道', result.binding?.message || '已绑定', 'ok'],
+      ...(postBinding?.profile ? [['lark-cli profile', postBinding.profile, 'ok']] : []),
+      [
+        '连接服务',
+        result.binding?.restartHandled
+          ? '已自动重启并接入新渠道'
+          : result.binding?.restartRequired === false
+            ? '配置已生效，无需额外重启'
+            : '连接状态未确认',
+        result.binding?.restartHandled || result.binding?.restartRequired === false ? 'ok' : 'warn',
+      ],
+    ],
+    '下一步：在已绑定的外部渠道里给这个数字员工发消息。'
+  );
 
   // Optional personal-auth step (feishu/lark only). Runs AFTER creation has
   // fully succeeded, so it can never block, roll back, or fail the worker —
@@ -1207,7 +1400,9 @@ async function runQuickCreateAssistantFlow() {
     const boundAppId = result.binding?.appId || String(platformOptions.app_id || '');
     const boundAppSecret = result.binding?.appSecret || String(platformOptions.app_secret || '');
     if (boundAppId && boundAppSecret) {
-      const wantAuth = await promptBoolean('现在完成飞书个人授权（扫码，数字员工以你的身份读写文档/发消息需要）');
+      const wantAuth = await promptBoolean(
+        '现在完成飞书个人授权（扫码，数字员工以你的身份读写文档/发消息需要）'
+      );
       if (wantAuth) {
         await runLarkPersonalAuthWithApp({
           appId: boundAppId,
@@ -1215,9 +1410,17 @@ async function runQuickCreateAssistantFlow() {
           brand: platform === 'lark' ? 'lark' : 'feishu',
         });
       } else {
-        printCliRows('已跳过个人授权', [
-          ['影响', '数字员工无法以你的个人身份读写飞书文档/发消息，凭证上报也没有可上报的授权', 'warn'],
-        ], '可重新运行创建向导，或在终端手动执行 lark-cli auth login 完成授权。');
+        printCliRows(
+          '已跳过个人授权',
+          [
+            [
+              '影响',
+              '数字员工无法以你的个人身份读写飞书文档/发消息，凭证上报也没有可上报的授权',
+              'warn',
+            ],
+          ],
+          '可重新运行创建向导，或在终端手动执行 lark-cli auth login 完成授权。'
+        );
       }
     }
   }
@@ -1252,7 +1455,7 @@ async function runLocalUseAction() {
     const renderState = menuRenderState();
     const actionId = await askMenuAction({
       title: '本地使用',
-      subtitle: '无需登录 | 本机 Web、数字员工、本地采集和运行时',
+      subtitle: '无需登录 | 数字员工、本地采集和运行时',
       actions: LOCAL_USE_ACTIONS,
       escapeAction: 'back',
       statusItems: renderState.statusItems,
@@ -1284,11 +1487,15 @@ export async function printCollaborationStart({ exitOnDone = true } = {}) {
     auth: { authorized: auth.authorized },
   };
   if (jsonRequested) printJson(result);
-  printCliRows('团队协作已准备好', [
-    ['用户', auth.authorized ? `已登录 ${BRAND.authProviderName}` : '未登录（企业版协作需登录）'],
-    ['IM', `${taskBus.redis.host}:${taskBus.redis.port}`],
-    ['配置入口', 'Web 会话 → IM'],
-  ], '团队总线为企业版开放（agentbus）；Usage 统计不会上传。');
+  printCliRows(
+    '团队协作已准备好',
+    [
+      ['用户', auth.authorized ? `已登录 ${BRAND.authProviderName}` : '未登录（企业版协作需登录）'],
+      ['IM', `${taskBus.redis.host}:${taskBus.redis.port}`],
+      ['配置入口', 'AgentCLI 桌面客户端 → 高级连接'],
+    ],
+    '团队总线为企业版开放（agentbus）；Usage 统计不会上传。'
+  );
   if (exitOnDone) process.exit(0);
   return result;
 }
@@ -1296,14 +1503,18 @@ export async function printCollaborationStart({ exitOnDone = true } = {}) {
 async function runTeamCollaborationAction() {
   const result = await printCollaborationStart({ exitOnDone: false });
   const auth = result.auth;
-  const nextAction = await waitForContinue('按 Enter/→ 进入团队协作菜单 | ← 返回首页 | Esc/Ctrl+C 退出');
+  const nextAction = await waitForContinue(
+    '按 Enter/→ 进入团队协作菜单 | ← 返回首页 | Esc/Ctrl+C 退出'
+  );
   if (nextAction === 'back') return;
 
   while (true) {
     const renderState = menuRenderState();
     const actionId = await askMenuAction({
       title: '团队协作',
-      subtitle: auth.authorized ? '已登录 | 企业版协作配置已写入本机设置' : '未登录 | 企业版协作需登录授权',
+      subtitle: auth.authorized
+        ? '已登录 | 企业版协作配置已写入本机设置'
+        : '未登录 | 企业版协作需登录授权',
       actions: TEAM_COLLAB_ACTIONS,
       escapeAction: 'back',
       statusItems: renderState.statusItems,
@@ -1348,7 +1559,7 @@ async function runRuntimeAction() {
     const renderState = menuRenderState();
     const actionId = await askMenuAction({
       title: '本地运行时',
-      subtitle: 'Web / daemon / runtime 生命周期管理',
+      subtitle: 'daemon / runtime 生命周期管理',
       actions: RUNTIME_ACTIONS,
       escapeAction: 'back',
       statusItems: renderState.statusItems,
@@ -1383,7 +1594,11 @@ const ACTION_DONE_MSG = '按 Enter / ← 返回菜单  |  Esc/Ctrl+C 退出';
 // "正在处理" line for up to 30s. No-op if the file can't be read.
 function streamLogWhile(logPath, wait) {
   let cursor = 0;
-  try { cursor = statSync(logPath).size; } catch { /* file may not exist yet */ }
+  try {
+    cursor = statSync(logPath).size;
+  } catch {
+    /* file may not exist yet */
+  }
   let stopped = false;
   const flush = () => {
     if (stopped) return;
@@ -1393,14 +1608,33 @@ function streamLogWhile(logPath, wait) {
       const len = size - cursor;
       const buf = Buffer.allocUnsafe(len);
       const fd = openSync(logPath, 'r');
-      try { readSync(fd, buf, 0, len, cursor); } finally { closeSync(fd); }
+      try {
+        readSync(fd, buf, 0, len, cursor);
+      } finally {
+        closeSync(fd);
+      }
       process.stdout.write(buf);
       cursor = size;
-    } catch { /* log rotated/deleted — skip this tick */ }
+    } catch {
+      /* log rotated/deleted — skip this tick */
+    }
   };
   const timer = setInterval(flush, 300);
-  const stop = () => { stopped = true; clearInterval(timer); flush(); };
-  return wait.then((v) => { stop(); return v; }, (e) => { stop(); throw e; });
+  const stop = () => {
+    stopped = true;
+    clearInterval(timer);
+    flush();
+  };
+  return wait.then(
+    (v) => {
+      stop();
+      return v;
+    },
+    (e) => {
+      stop();
+      throw e;
+    }
+  );
 }
 
 // --- Main action dispatcher -------------------------------------------------
@@ -1414,10 +1648,17 @@ export async function runNavigationAction(action) {
     return runNavigationAction({ id: states.webRunning ? 'stop-web' : 'start-web' });
   }
   if (action.id === 'toggle-background') {
-    return runNavigationAction({ id: states.usageRunning ? 'stop-background' : 'start-background' });
+    return runNavigationAction({
+      id: states.usageRunning ? 'stop-background' : 'start-background',
+    });
   }
   if (action.id === 'toggle-message-upload') {
-    const { stopTelemetryWorker, clearStaleConversationUploadLock, markTelemetryWorkerRestarting, setConversationUploadEnabled } = await import('./usageCommand.mjs');
+    const {
+      stopTelemetryWorker,
+      clearStaleConversationUploadLock,
+      markTelemetryWorkerRestarting,
+      setConversationUploadEnabled,
+    } = await import('./usageCommand.mjs');
     const newStates = currentFeatureStates();
     if (!newStates.conversationUploadEnabled || !newStates.usageRunning) {
       const { enableConversationUploadWithProvider } = await import('./usageCommand.mjs');
@@ -1425,11 +1666,19 @@ export async function runNavigationAction(action) {
       const updatedStates = currentFeatureStates();
       // Explicit success panel — without it the busy screen's "正在处理…" was
       // the only visible text and the toggle looked hung even though it finished.
-      printCliRows('消息上报', [
-        ['状态', '已开启', 'ok'],
-        ['来源', formatUploadProviders(result.providers), 'info'],
-        ['后台', updatedStates.usageRunning ? 'worker 运行中' : '稍后由后台增量扫描启动', updatedStates.usageRunning ? 'ok' : 'info'],
-      ], '默认扫描 Claude Code + Codex，按批次增量上传最近 7 天；服务端按 eventId 自动去重。');
+      printCliRows(
+        '消息上报',
+        [
+          ['状态', '已开启', 'ok'],
+          ['来源', formatUploadProviders(result.providers), 'info'],
+          [
+            '后台',
+            updatedStates.usageRunning ? 'worker 运行中' : '稍后由后台增量扫描启动',
+            updatedStates.usageRunning ? 'ok' : 'info',
+          ],
+        ],
+        '默认扫描 Claude Code + Codex，按批次增量上传最近 7 天；服务端按 eventId 自动去重。'
+      );
       console.log('');
       return waitForContinue(ACTION_DONE_MSG);
     }
@@ -1438,13 +1687,21 @@ export async function runNavigationAction(action) {
     await clearStaleConversationUploadLock();
     markTelemetryWorkerRestarting('消息上报已关闭，worker 已停止');
     const updatedStates = currentFeatureStates();
-    printCliRows('消息上报', [
-      ['状态', '已关闭，worker 已重启/停止', 'off'],
-      ['菜单显示', updatedStates.conversationUploadEnabled ? '仍显示开启，请刷新状态' : '已更新为关闭', updatedStates.conversationUploadEnabled ? 'warn' : 'ok'],
-      ['worker', worker.stopped ? `已停止 pid ${worker.pid}` : '未运行', 'info'],
-      ['来源', formatUploadProviders(newStates.uploadProviders), 'info'],
-      ['说明', '关闭消息上报会停止 worker 并清理上报锁', 'info'],
-    ], '再次开启会重新启动 worker，并从服务端 /report/usage/status 读取 cursor。');
+    printCliRows(
+      '消息上报',
+      [
+        ['状态', '已关闭，worker 已重启/停止', 'off'],
+        [
+          '菜单显示',
+          updatedStates.conversationUploadEnabled ? '仍显示开启，请刷新状态' : '已更新为关闭',
+          updatedStates.conversationUploadEnabled ? 'warn' : 'ok',
+        ],
+        ['worker', worker.stopped ? `已停止 pid ${worker.pid}` : '未运行', 'info'],
+        ['来源', formatUploadProviders(newStates.uploadProviders), 'info'],
+        ['说明', '关闭消息上报会停止 worker 并清理上报锁', 'info'],
+      ],
+      '再次开启会重新启动 worker，并从服务端 /report/usage/status 读取 cursor。'
+    );
     console.log('');
     return waitForContinue(ACTION_DONE_MSG);
   }
@@ -1454,7 +1711,10 @@ export async function runNavigationAction(action) {
     // Stream the daemon's startup log while we wait for readiness, so the user
     // sees live progress (Starting… Launching… bound to port…) instead of a
     // blank busy screen.
-    const ready = await streamLogWhile(daemon.logPath, waitForOpenHermitServerReady(daemon.pid, 120_000));
+    const ready = await streamLogWhile(
+      daemon.logPath,
+      waitForOpenHermitServerReady(daemon.pid, 120_000)
+    );
     if (ready.ready || ready.stillBooting) {
       const url = ready.url || daemon.url;
       await openExternalUrl(url).catch(() => {});
@@ -1470,21 +1730,29 @@ export async function runNavigationAction(action) {
         // workbench WILL come up — open the browser and tell the user to
         // refresh, instead of the old false "启动失败" for a workbench that
         // actually opened.
-        printCliRows('本地数字员工工作台', [
-          ['状态', '仍在启动中（冷启动较慢），已打开浏览器', 'warn'],
-          ['地址', url, 'info'],
-          ['提示', '服务进程正在启动，等待几秒后刷新页面即可', 'info'],
-        ], '冷启动首次编译较慢；浏览器已打开，稍后刷新即可进入工作台。');
+        printCliRows(
+          '本地数字员工工作台',
+          [
+            ['状态', '仍在启动中（冷启动较慢），已打开浏览器', 'warn'],
+            ['地址', url, 'info'],
+            ['提示', '服务进程正在启动，等待几秒后刷新页面即可', 'info'],
+          ],
+          '冷启动首次编译较慢；浏览器已打开，稍后刷新即可进入工作台。'
+        );
       }
       console.log('');
       return waitForContinue(ACTION_DONE_MSG);
     }
-    printCliRows('本地数字员工工作台', [
-      ['状态', '启动失败', 'error'],
-      ['地址', daemon.url, 'info'],
-      ['日志', daemon.logPath, 'info'],
-      ['原因', ready.reason, 'warn'],
-    ], '已打印最近日志，按提示处理后再重试。');
+    printCliRows(
+      '本地数字员工工作台',
+      [
+        ['状态', '启动失败', 'error'],
+        ['地址', daemon.url, 'info'],
+        ['日志', daemon.logPath, 'info'],
+        ['原因', ready.reason, 'warn'],
+      ],
+      '已打印最近日志，按提示处理后再重试。'
+    );
     readLogTail(BRAND.stylizedName, daemon.logPath);
     console.log('');
     return waitForContinue(ACTION_DONE_MSG);
@@ -1516,17 +1784,32 @@ export async function runNavigationAction(action) {
     } else {
       statusText = '未运行';
     }
-    printCliRows('AgentCLI 工作台', [
-      ['状态', statusText, ds.running ? 'ok' : 'warn'],
-      ['地址', ds.running ? `${ds.url}（token 自动携带，仅本机）` : '未运行', ds.running ? 'info' : 'off'],
-    ], '本机 AgentCLI Web daemon：用于本地 CC/Codex session → IM 的配置与管理');
+    printCliRows(
+      'AgentCLI 工作台',
+      [
+        ['状态', statusText, ds.running ? 'ok' : 'warn'],
+        [
+          '地址',
+          ds.running ? `${ds.url}（token 自动携带，仅本机）` : '未运行',
+          ds.running ? 'info' : 'off',
+        ],
+      ],
+      '本机 AgentCLI Web daemon：用于本地 CC/Codex session → IM 的配置与管理'
+    );
     console.log('');
     return waitForContinue(ACTION_DONE_MSG);
   }
-  if (action.id === 'overview' || action.id === 'scan' || action.id === 'start-background' || action.id === 'stop-background') {
-    const { printUsageStatus, printScanOnceResult, printUsageStart, printUsageStop } = await import('./usageCommand.mjs');
+  if (
+    action.id === 'overview' ||
+    action.id === 'scan' ||
+    action.id === 'start-background' ||
+    action.id === 'stop-background'
+  ) {
+    const { printUsageStatus, printScanOnceResult, printUsageStart, printUsageStop } =
+      await import('./usageCommand.mjs');
     if (action.id === 'overview') await printUsageStatus({ exitOnDone: false });
-    else if (action.id === 'scan') await printScanOnceResult({ exitOnDone: false, fullRescan: true });
+    else if (action.id === 'scan')
+      await printScanOnceResult({ exitOnDone: false, fullRescan: true });
     else if (action.id === 'start-background') await printUsageStart({ exitOnDone: false });
     else await printUsageStop({ exitOnDone: false });
     console.log('');
@@ -1537,7 +1820,10 @@ export async function runNavigationAction(action) {
     console.log('');
     return waitForContinue(ACTION_DONE_MSG);
   }
-  if (action.id === 'exit') { cancelCli(); return; }
+  if (action.id === 'exit') {
+    cancelCli();
+    return;
+  }
   // Auth transitions re-probe /api/v1/auth/me and cache the server-confirmed
   // state BEFORE the pause screen repaints. /me is authoritative for "logged in
   // right now" — the local store can lag a login write — so awaiting it means
@@ -1560,10 +1846,26 @@ export async function runNavigationAction(action) {
     console.log('');
     return waitForContinue(ACTION_DONE_MSG);
   }
-  if (action.id === 'status') { await printAuthStatus({ exitOnDone: false }); console.log(''); return waitForContinue(ACTION_DONE_MSG); }
-  if (action.id === 'quick-create-assistant') { await runQuickCreateAssistantFlow(); console.log(''); return waitForContinue(ACTION_DONE_MSG); }
-  if (action.id === 'aikey-claim') { await runTokenClaimFlow(); console.log(''); return waitForContinue(ACTION_DONE_MSG); }
-  if (action.id === 'aikey-status') { await runAikeyStatus({ exitOnDone: false }); console.log(''); return waitForContinue(ACTION_DONE_MSG); }
+  if (action.id === 'status') {
+    await printAuthStatus({ exitOnDone: false });
+    console.log('');
+    return waitForContinue(ACTION_DONE_MSG);
+  }
+  if (action.id === 'quick-create-assistant') {
+    await runQuickCreateAssistantFlow();
+    console.log('');
+    return waitForContinue(ACTION_DONE_MSG);
+  }
+  if (action.id === 'aikey-claim') {
+    await runTokenClaimFlow();
+    console.log('');
+    return waitForContinue(ACTION_DONE_MSG);
+  }
+  if (action.id === 'aikey-status') {
+    await runAikeyStatus({ exitOnDone: false });
+    console.log('');
+    return waitForContinue(ACTION_DONE_MSG);
+  }
   if (action.id === 'aikey-manual') {
     printOnlineGuide();
     console.log('');
@@ -1571,17 +1873,38 @@ export async function runNavigationAction(action) {
     console.log('');
     return waitForContinue(ACTION_DONE_MSG);
   }
-  if (action.id === 'aikey-restore') { return runRestoreOriginalsFlow(); }
+  if (action.id === 'aikey-restore') {
+    return runRestoreOriginalsFlow();
+  }
   // Dedicated submenu pages (reached from nested menus, not home navigation).
-  if (action.id === 'local-use') { return runLocalUseAction(); }
-  if (action.id === 'data-sync') { return runLocalCollectionAction(); }
-  if (action.id === 'services') { const { runServicesMenu } = await import('./servicesCommand.mjs'); return runServicesMenu(); }
-  if (action.id === 'team-collaboration') { return runTeamCollaborationAction(); }
-  if (action.id === 'local-collection') { return runLocalCollectionAction(); }
-  if (action.id === 'task-bus') { return runTaskBusAction(); }
-  if (action.id === 'account') { return runAccountAction(); }
-  if (action.id === 'employees') { return runEmployeeAction(); }
-  if (action.id === 'runtime') { return runRuntimeAction(); }
+  if (action.id === 'local-use') {
+    return runLocalUseAction();
+  }
+  if (action.id === 'data-sync') {
+    return runLocalCollectionAction();
+  }
+  if (action.id === 'services') {
+    const { runServicesMenu } = await import('./servicesCommand.mjs');
+    return runServicesMenu();
+  }
+  if (action.id === 'team-collaboration') {
+    return runTeamCollaborationAction();
+  }
+  if (action.id === 'local-collection') {
+    return runLocalCollectionAction();
+  }
+  if (action.id === 'task-bus') {
+    return runTaskBusAction();
+  }
+  if (action.id === 'account') {
+    return runAccountAction();
+  }
+  if (action.id === 'employees') {
+    return runEmployeeAction();
+  }
+  if (action.id === 'runtime') {
+    return runRuntimeAction();
+  }
 }
 
 // --- Top-level navigation loop ----------------------------------------------
@@ -1590,14 +1913,14 @@ function printNavigationActions() {
   const result = {
     ok: true,
     command: 'navigate',
-    message: `${BRAND.stylizedName} 入口按意图分为本地使用和团队协作；本地使用和本地/自托管团队协作无需登录，云端上传/托管能力需要登录。`,
-    defaultAction: 'services',
+    message: `${BRAND.stylizedName} CLI 提供消息总线、用户授权和 token 池自动化；数字员工的可视化管理统一使用桌面客户端。`,
+    defaultAction: 'data-sync',
     actions: NAV_ACTIONS,
   };
   if (jsonRequested) printJson(result);
 
   printCliRows(BRAND.stylizedName, [
-    ['本地使用', '无需登录，本机 Web / 数字员工 / 本地采集'],
+    ['本地使用', '无需登录，数字员工命令 / 本地采集 / 运行时诊断'],
     ['团队协作', '无需登录，本地/自托管协作先启用；上传/托管稍后登录开启'],
     ['CLI 职责', '本地控制面状态和生命周期'],
   ]);
@@ -1605,7 +1928,9 @@ function printNavigationActions() {
     console.log(`- ${action.id}: ${action.label}`);
     console.log(`  ${action.description}`);
   }
-  console.log('\n也可以直接运行：openhermit teams create | teams list | tasks list | usage status | usage today | usage report | doctor | status | auth status | stop');
+  console.log(
+    '\n也可以直接运行：openhermit teams create | teams list | tasks list | usage status | usage today | usage report | doctor | status | auth status | stop'
+  );
   process.exit(0);
 }
 

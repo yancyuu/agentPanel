@@ -47,11 +47,13 @@ vi.mock('@renderer/components/team/CollapsibleTeamSection', () => ({
   CollapsibleTeamSection: ({
     title,
     children,
+    headerExtra,
     defaultOpen = true,
     onOpenChange,
   }: {
     title: string;
     children: React.ReactNode;
+    headerExtra?: React.ReactNode;
     defaultOpen?: boolean;
     onOpenChange?: (isOpen: boolean) => void;
   }) => {
@@ -70,7 +72,9 @@ vi.mock('@renderer/components/team/CollapsibleTeamSection', () => ({
         },
         title
       ),
-      (title === 'Changes' || title === '变更' || title === '文件变更') && open
+      headerExtra ?? null,
+      (title === 'Changes' || title === '变更' || title === '文件变更' || title === '交付成果') &&
+        open
         ? React.createElement('div', null, children)
         : null
     );
@@ -307,7 +311,13 @@ describe('TaskDetailPanel presentations', () => {
   it('prioritizes a readable deliverable and hides empty technical sections in inbox mode', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     const task = makeTask('task-delivery');
-    task.result = '# 调研报告\n\n这是助手提交的最终结论。';
+    task.deliveries = [
+      {
+        version: 1,
+        result: '# 调研报告\n\n这是助手提交的最终结论。',
+        deliveredAt: '2026-01-02T00:00:00.000Z',
+      },
+    ];
     task.reviewState = 'review';
     task.needsClarification = 'user';
     task.comments = [
@@ -340,7 +350,7 @@ describe('TaskDetailPanel presentations', () => {
       await Promise.resolve();
     });
 
-    expect(host.textContent).toContain('交付结果');
+    expect(host.textContent).toContain('交付成果');
     expect(host.textContent).toContain('调研报告');
     expect(host.textContent).toContain('请检查结果');
     expect(host.textContent).toContain('复制');

@@ -54,6 +54,13 @@ describe('buildClaimResultRows — Codex model row', () => {
   });
 });
 
+describe('buildClaimResultRows — runtime summary', () => {
+  it('labels a Pi-only write as Pi instead of Codex', () => {
+    const rows = rowsFor({ runtimes: ['pi'], model: 'glm-5.2' });
+    expect(rows).toContainEqual(['写入运行时', 'Pi', 'ok']);
+  });
+});
+
 describe('buildClaimResultRows — written config file paths', () => {
   // Regression: the panel claimed "已写入 Claude/Codex 配置" but never showed the
   // file paths, so a silent write failure (notably on Windows) was invisible.

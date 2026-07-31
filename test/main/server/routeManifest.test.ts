@@ -24,10 +24,10 @@ describe('server route manifest baseline', () => {
       ])
     );
 
-    expect(routes).toHaveLength(267);
+    expect(routes).toHaveLength(269);
     expect(methodCounts).toEqual({
       GET: 108,
-      POST: 124,
+      POST: 126,
       PUT: 6,
       PATCH: 14,
       DELETE: 12,
@@ -52,7 +52,7 @@ describe('server route manifest baseline', () => {
 
     expect(keys).toEqual(
       expect.objectContaining({
-        size: 267,
+        size: 269,
       })
     );
     expect(keys.has('ALL /api/v1/*')).toBe(true);
@@ -70,6 +70,10 @@ describe('server route manifest baseline', () => {
     expect(keys.has('GET /api/telemetry/conversations/:sessionId')).toBe(true);
     expect(keys.has('GET /api/events')).toBe(true);
     expect(keys.has('GET /api/extensions/skills/:skillId')).toBe(true);
+    expect(keys.has('POST /api/advanced-connections/:connectionId/token-pool/claim-apply')).toBe(
+      true
+    );
+    expect(keys.has('POST /api/collaboration/runs/:runId/request-changes')).toBe(true);
   });
 
   it('constructs Fastify before event wiring and keeps process startup explicit', () => {

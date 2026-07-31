@@ -33,6 +33,24 @@ export function getFileReviewKey(file: Pick<FileChangeSummary, 'filePath' | 'cha
   return file.changeKey ?? file.filePath;
 }
 
+/**
+ * Extract a displayable/selectable file path from a changeKey (reviewKey).
+ * changeKey may carry a relation prefix (`rename:old->new`, `path:...`,
+ * `create:...`, `delete:...`); falls back to the raw key when none matches.
+ */
+export function extractFilePathFromChangeKey(changeKey: string): string {
+  const slashNormalized = changeKey.replace(/\\/g, '/');
+  const relationMatch = /^(?:rename|copy):.+->(.+)$/.exec(slashNormalized);
+  if (relationMatch) {
+    return relationMatch[1] ?? changeKey;
+  }
+  const pathKeyMatch = /^(?:path|create|delete):(.+)$/.exec(slashNormalized);
+  if (pathKeyMatch) {
+    return pathKeyMatch[1] ?? changeKey;
+  }
+  return changeKey;
+}
+
 export function getReviewKeyForFilePath(
   files: readonly Pick<FileChangeSummary, 'filePath' | 'changeKey'>[] | null | undefined,
   filePath: string

@@ -1,57 +1,24 @@
 /**
- * Tests: MCP Server tools (executeMcpTool logic via TeamWorkspaceService)
+ * Tests: MCP Server tools (executeMcpTool via TeamWorkspaceService + TeamProvisioningService)
  *
- * MCP 工具的逻辑直接依赖 svc.readTasks / patchTask / createTask，
- * 这里通过 in-process 调用来测试 MCP 工具语义，不需要起 HTTP server。
+ * 直接调用 mcpTaskTools.executeMcpTool 的真实实现（in-process，不起 HTTP server），
+ * 基建沿用 TeamWorkspaceService + TeamProvisioningService + 临时 HERMIT_HOME。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import { executeMcpTool } from '@main/services/team-management/mcpTaskTools';
 import { TeamProvisioningService } from '@main/services/team-management/TeamProvisioningService';
 import { TeamWorkspaceService } from '@main/services/team-management/TeamWorkspaceService';
-
-// ---------------------------------------------------------------------------
-// 内联 executeMcpTool 逻辑（复制自 server.ts 的同名函数，以便独立测试）
-// ---------------------------------------------------------------------------
-
-function makeMcpExecutor(svc: TeamProvisioningService) {
-  return async function executeMcpTool(
-    toolName: string,
-    args: Record<string, string>
-  ): Promise<{ type: string; text: string }[]> {
-    const text = (result: unknown) => [{ type: 'text', text: JSON.stringify(result, null, 2) }];
-
-    if (toolName === 'list_tasks') {
-      return text(await svc.readTasks(args.team_slug));
-    }
-    if (toolName === 'claim_task') {
-      return text(await svc.patchTask(args.team_slug, args.task_id, { status: 'doing' }));
-    }
-    if (toolName === 'complete_task') {
-      const patch: Record<string, unknown> = { status: 'done' };
-      if (args.result) patch.result = args.result;
-      return text(await svc.patchTask(args.team_slug, args.task_id, patch));
-    }
-    if (toolName === 'create_task') {
-      const task = await svc.createTask(args.team_slug, {
-        title: args.title,
-        description: args.description,
-        assignee: args.assignee ?? null,
-      });
-      return text(task);
-    }
-    throw new Error(`Unknown tool: ${toolName}`);
-  };
-}
 
 // ---------------------------------------------------------------------------
 
 let tmpDir: string;
 let workspace: TeamWorkspaceService;
 let svc: TeamProvisioningService;
-let exec: ReturnType<typeof makeMcpExecutor>;
+let exec: (toolName: string, args: Record<string, unknown>) => ReturnType<typeof executeMcpTool>;
 let teamSlug: string;
 
 beforeEach(async () => {
@@ -63,7 +30,7 @@ beforeEach(async () => {
     { sendUserMessage: vi.fn() } as never,
     workspace
   );
-  exec = makeMcpExecutor(svc);
+  exec = (toolName, args) => executeMcpTool(svc, toolName, args);
 
   const { slug } = await svc.createTeam({
     displayName: 'mcp-test',
@@ -100,30 +67,44 @@ describe('MCP tool: list_tasks', () => {
 
 // ---------------------------------------------------------------------------
 describe('MCP tool: claim_task', () => {
-  it('sets status to doing', async () => {
+  it('sets status to doing and records a status_changed event', async () => {
     const task = await svc.createTask(teamSlug, { title: 'claimable' });
     const [result] = await exec('claim_task', { team_slug: teamSlug, task_id: task.id });
     const claimed = JSON.parse(result.text);
     expect(claimed.status).toBe('doing');
     expect(claimed.id).toBe(task.id);
+    expect(claimed.historyEvents.at(-1)).toMatchObject({
+      type: 'status_changed',
+      from: 'pending',
+      to: 'in_progress',
+      actor: 'agent',
+    });
   });
 
   it('throws for non-existent task id', async () => {
-    await expect(exec('claim_task', { team_slug: teamSlug, task_id: 'bad-id' })).rejects.toThrow();
+    await expect(exec('claim_task', { team_slug: teamSlug, task_id: 'bad-id' })).rejects.toThrow(
+      'task not found: bad-id'
+    );
   });
 });
 
 // ---------------------------------------------------------------------------
 describe('MCP tool: complete_task', () => {
-  it('sets status to done', async () => {
+  it('sets status to done without a delivery when no result is given', async () => {
     const task = await svc.createTask(teamSlug, { title: 'completable' });
     const [result] = await exec('complete_task', { team_slug: teamSlug, task_id: task.id });
     const done = JSON.parse(result.text);
     expect(done.status).toBe('done');
-    expect(done.result).toBeNull();
+    expect(done.deliveries).toBeUndefined();
+    expect(done.historyEvents.at(-1)).toMatchObject({
+      type: 'status_changed',
+      from: 'in_progress',
+      to: 'completed',
+      actor: 'agent',
+    });
   });
 
-  it('stores result string', async () => {
+  it('records the result as a delivery instead of a result field', async () => {
     const task = await svc.createTask(teamSlug, { title: 'with result' });
     const [result] = await exec('complete_task', {
       team_slug: teamSlug,
@@ -131,8 +112,9 @@ describe('MCP tool: complete_task', () => {
       result: 'PR #99 merged',
     });
     const done = JSON.parse(result.text);
-    expect(done.result).toBe('PR #99 merged');
     expect(done.status).toBe('done');
+    expect(done.deliveries).toHaveLength(1);
+    expect(done.deliveries[0]).toMatchObject({ version: 1, result: 'PR #99 merged' });
   });
 });
 
@@ -165,6 +147,209 @@ describe('MCP tool: create_task', () => {
     const task = JSON.parse(result.text);
     expect(task.assignee).toBe('backend');
     expect(task.description).toBe('需要后端处理');
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('MCP tool: deliver_task', () => {
+  it('first delivery gets version=1, moves the task to review and echoes dispatch_id', async () => {
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    const [result] = await exec('deliver_task', {
+      team_slug: teamSlug,
+      dispatch_id: task.id,
+      result: '# 第一版报告',
+    });
+    const payload = JSON.parse(result.text);
+    expect(payload.dispatch_id).toBe(task.id);
+    expect(payload.delivery).toMatchObject({ version: 1, result: '# 第一版报告' });
+    expect(payload.status).toBe('done');
+    expect(payload.reviewState).toBe('review');
+    expect(payload.needsHumanIntervention).toBe(false);
+    expect(payload.historyEvents.at(-1)).toMatchObject({
+      type: 'review_requested',
+      to: 'review',
+      actor: 'agent',
+    });
+    expect(payload.skippedFeedbackIds).toBeUndefined();
+  });
+
+  it('requires a summary when the task already has deliveries', async () => {
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    await exec('deliver_task', { team_slug: teamSlug, dispatch_id: task.id, result: 'v1' });
+    await expect(
+      exec('deliver_task', { team_slug: teamSlug, dispatch_id: task.id, result: 'v2' })
+    ).rejects.toThrow('该任务已有历史交付，再次交付时必须提供 summary（本轮变更摘要）。');
+  });
+
+  it('accepts a follow-up delivery with summary as version=2', async () => {
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    await exec('deliver_task', { team_slug: teamSlug, dispatch_id: task.id, result: 'v1' });
+    const [result] = await exec('deliver_task', {
+      team_slug: teamSlug,
+      dispatch_id: task.id,
+      result: 'v2',
+      summary: '补充风险分析',
+    });
+    const payload = JSON.parse(result.text);
+    expect(payload.delivery).toMatchObject({ version: 2, result: 'v2', summary: '补充风险分析' });
+    expect(payload.historyEvents.at(-1)).toMatchObject({
+      type: 'review_requested',
+      note: '补充风险分析',
+    });
+  });
+
+  it('resolves addressed open feedback and reports skipped ids', async () => {
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    const item = await svc.addFeedbackItem(teamSlug, task.id, { text: '请补充数据来源' });
+    const [result] = await exec('deliver_task', {
+      team_slug: teamSlug,
+      dispatch_id: task.id,
+      result: 'v1',
+      addressed_feedback_ids: [item.id, 'f_missing'],
+    });
+    const payload = JSON.parse(result.text);
+    expect(payload.skippedFeedbackIds).toEqual(['f_missing']);
+    expect(payload.feedbackItems).toEqual([
+      expect.objectContaining({ id: item.id, status: 'resolved', resolvedAt: expect.any(String) }),
+    ]);
+  });
+
+  it('clears needsHumanIntervention on a new delivery', async () => {
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    for (let round = 1; round <= 3; round += 1) {
+      await exec('reject_result', {
+        team_slug: teamSlug,
+        dispatch_id: task.id,
+        feedback: `第 ${round} 次退回`,
+      });
+    }
+    let stored = (await svc.readTasks(teamSlug)).find((entry) => entry.id === task.id);
+    expect(stored?.needsHumanIntervention).toBe(true);
+
+    const [result] = await exec('deliver_task', {
+      team_slug: teamSlug,
+      dispatch_id: task.id,
+      result: '修复版',
+      summary: '一次性处理三条反馈',
+    });
+    const payload = JSON.parse(result.text);
+    expect(payload.needsHumanIntervention).toBe(false);
+    stored = (await svc.readTasks(teamSlug)).find((entry) => entry.id === task.id);
+    expect(stored?.needsHumanIntervention).toBe(false);
+  });
+
+  it('throws for unknown dispatch id', async () => {
+    await expect(
+      exec('deliver_task', { team_slug: teamSlug, dispatch_id: 'missing', result: 'x' })
+    ).rejects.toThrow('task not found: missing');
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('MCP tool: approve_task', () => {
+  it('rejects approval while open feedback remains and does not patch the task', async () => {
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    await exec('deliver_task', { team_slug: teamSlug, dispatch_id: task.id, result: 'v1' });
+    await exec('reject_result', {
+      team_slug: teamSlug,
+      dispatch_id: task.id,
+      feedback: '请补充数据来源',
+    });
+
+    await expect(
+      exec('approve_task', { team_slug: teamSlug, dispatch_id: task.id })
+    ).rejects.toThrow(/仍有 1 条未处理的反馈，不能审核通过/);
+
+    const stored = (await svc.readTasks(teamSlug)).find((entry) => entry.id === task.id);
+    expect(stored).toMatchObject({ status: 'doing', reviewState: 'needsFix', revisionCount: 1 });
+  });
+
+  it('approves when no open feedback remains, resetting counters and recording review_approved', async () => {
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    await exec('deliver_task', { team_slug: teamSlug, dispatch_id: task.id, result: 'v1' });
+    await exec('reject_result', {
+      team_slug: teamSlug,
+      dispatch_id: task.id,
+      feedback: '改一版',
+    });
+    const openId = (await svc.readTasks(teamSlug)).find((entry) => entry.id === task.id)
+      ?.feedbackItems?.[0]?.id as string;
+    await exec('deliver_task', {
+      team_slug: teamSlug,
+      dispatch_id: task.id,
+      result: 'v2',
+      summary: '处理反馈',
+      addressed_feedback_ids: [openId],
+    });
+
+    const [result] = await exec('approve_task', { team_slug: teamSlug, dispatch_id: task.id });
+    const payload = JSON.parse(result.text);
+    expect(payload.dispatch_id).toBe(task.id);
+    expect(payload.revisionCount).toBe(0);
+    expect(payload.needsHumanIntervention).toBe(false);
+    expect(payload.reviewState).toBe('approved');
+    expect(payload.historyEvents.at(-1)).toMatchObject({
+      type: 'review_approved',
+      to: 'approved',
+      actor: 'reviewer',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('MCP tool: reject_result', () => {
+  it('creates an open feedback item with anchor and sends the task back to doing', async () => {
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    await exec('deliver_task', { team_slug: teamSlug, dispatch_id: task.id, result: 'v1' });
+
+    const [result] = await exec('reject_result', {
+      team_slug: teamSlug,
+      dispatch_id: task.id,
+      feedback: '第三段结论需要数据支撑',
+      anchor: { kind: 'quote', quote: '第三段结论' },
+    });
+    const payload = JSON.parse(result.text);
+    expect(payload.dispatch_id).toBe(task.id);
+    expect(payload.feedbackItem).toMatchObject({
+      text: '第三段结论需要数据支撑',
+      status: 'open',
+      anchor: { kind: 'quote', quote: '第三段结论' },
+    });
+    expect(payload.feedbackItem.id).toMatch(/^f_/);
+    expect(payload.status).toBe('doing');
+    expect(payload.revisionCount).toBe(1);
+    expect(payload.reviewState).toBe('needsFix');
+    expect(payload.humanInterventionRequired).toBeUndefined();
+    expect(payload.historyEvents.at(-1)).toMatchObject({
+      type: 'review_changes_requested',
+      to: 'needsFix',
+      actor: 'reviewer',
+      note: '第三段结论需要数据支撑',
+    });
+  });
+
+  it('flags human intervention after three rejections', async () => {
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    let payload: Record<string, unknown> = {};
+    for (let round = 1; round <= 3; round += 1) {
+      const [result] = await exec('reject_result', {
+        team_slug: teamSlug,
+        dispatch_id: task.id,
+        feedback: `第 ${round} 次退回`,
+      });
+      payload = JSON.parse(result.text) as Record<string, unknown>;
+    }
+    expect(payload.revisionCount).toBe(3);
+    expect(payload.needsHumanIntervention).toBe(true);
+    expect(payload.humanInterventionRequired).toBe(true);
+    expect(payload.note).toBe('该任务交付已退回 3 次（>= 3），需要人工介入处理。');
+  });
+
+  it('rejects empty feedback', async () => {
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    await expect(
+      exec('reject_result', { team_slug: teamSlug, dispatch_id: task.id, feedback: '  ' })
+    ).rejects.toThrow('feedback is required');
   });
 });
 

@@ -20,7 +20,10 @@ interface ScheduleStatusBadgeProps {
 }
 
 export const ScheduleStatusBadge = ({ status }: ScheduleStatusBadgeProps): React.JSX.Element => {
-  const config = SCHEDULE_STATUS_CONFIG[status] ?? { label: status, className: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/20' };
+  const config = SCHEDULE_STATUS_CONFIG[status] ?? {
+    label: status,
+    className: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/20',
+  };
   return (
     <span
       className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${config.className}`}

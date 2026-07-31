@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { createDashboardRecentProjectsLoader } from '@features/recent-projects/main';
+import { DEFAULT_OPENHERMIT_CLOUD_BASE_URL } from '@shared/constants/cloudConfig.mjs';
 import {
   SYSTEM_MANAGER_BIND_PROJECT,
   SYSTEM_MANAGER_DISPLAY_NAME,
@@ -24,7 +25,10 @@ import {
   CURRENT_AGENTCLI_OPERATIONS_GUIDE,
   ensureAdminLoopInitialized as runAdminLoopInit,
 } from './services/system-manager/AdminLoopInitializer';
-import { adminWorkDir } from './services/system-manager/SystemManagerConfigService';
+import {
+  adminWorkDir,
+  resolveSystemManagerHarness,
+} from './services/system-manager/SystemManagerConfigService';
 import { getUsageTelemetryWorkerPaths, isUsageTelemetryWorkerPidRunning } from './telemetry/worker';
 import {
   isExternalPlatformSessionKey,
@@ -118,6 +122,8 @@ export function createServerOperations({
   let systemManagerEnsurePromise: Promise<SystemManagerSummary> | null = null;
   const ensureSystemManagerUncached = async (): Promise<SystemManagerSummary> => {
     const workDir = await getSystemManagerWorkDir();
+    const availableHarness = await resolveSystemManagerHarness();
+    const preferredHarness = availableHarness ?? 'claudecode';
     let ccConnectProjectStatus: SystemManagerSummary['ccConnectProjectStatus'] = 'bound';
     try {
       await cc.getProject(SYSTEM_MANAGER_BIND_PROJECT);
@@ -132,7 +138,7 @@ export function createServerOperations({
       const created = await svc.createTeam({
         displayName: SYSTEM_MANAGER_TEAM_NAME,
         bindProject: SYSTEM_MANAGER_BIND_PROJECT,
-        harness: 'claudecode',
+        harness: preferredHarness,
         workDir,
         color: 'slate',
         description: SYSTEM_MANAGER_DESCRIPTION,
@@ -149,7 +155,8 @@ export function createServerOperations({
       manifest.description !== SYSTEM_MANAGER_DESCRIPTION ||
       manifest.color !== 'slate' ||
       manifest.collaboration !== false ||
-      manifest.workDir !== workDir
+      manifest.workDir !== workDir ||
+      (availableHarness !== null && manifest.harness !== availableHarness)
     ) {
       manifest = await svc.updateTeam(manifest.slug, {
         displayName: SYSTEM_MANAGER_DISPLAY_NAME,
@@ -157,6 +164,7 @@ export function createServerOperations({
         color: 'slate',
         description: SYSTEM_MANAGER_DESCRIPTION,
         collaboration: false,
+        harness: preferredHarness,
         workDir,
       });
     }
@@ -555,8 +563,37 @@ export function createServerOperations({
   };
 
   const initializeTelemetryFromSettings = async (): Promise<void> => {
-    const config = await readSavedTelemetryConfig();
-    if (!config?.telemetry?.enabled) return;
+    let config = await readSavedTelemetryConfig();
+    if (!config) {
+      config = {
+        enabled: false,
+        telemetry: {
+          enabled: true,
+          platform: 'claudecode',
+          uploadProviders: ['claudecode', 'codex'],
+          conversationUploadEnabled: false,
+          conversations: {
+            uploadEnabled: false,
+            baseUrl: DEFAULT_OPENHERMIT_CLOUD_BASE_URL,
+          },
+        },
+      };
+      let settings: Record<string, unknown> = {};
+      try {
+        settings = JSON.parse(await fs.readFile(environment.hermitSettingsFile, 'utf8')) as Record<
+          string,
+          unknown
+        >;
+      } catch {
+        // Fresh desktop profile.
+      }
+      settings.taskBus = config;
+      await fs.mkdir(path.dirname(environment.hermitSettingsFile), { recursive: true });
+      await fs.writeFile(environment.hermitSettingsFile, JSON.stringify(settings, null, 2), {
+        mode: 0o600,
+      });
+    }
+    if (!config.telemetry?.enabled) return;
     if (await isExternalTelemetryWorkerRunning()) {
       logger.info('usage telemetry worker already running — server telemetry interval skipped');
       return;

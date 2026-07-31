@@ -68,6 +68,8 @@ ${programArguments.map(stringEntry).join('\n')}
 \t</array>
 \t<key>EnvironmentVariables</key>
 \t<dict>
+\t\t<key>ELECTRON_RUN_AS_NODE</key>
+\t\t<string>1</string>
 \t\t<key>HERMIT_HOME</key>
 \t\t<string>${xmlEscape(options.hermitHome)}</string>
 \t\t<key>PATH</key>
@@ -124,13 +126,13 @@ export function buildUsageTelemetryWindowsTaskXml(
 `;
 }
 
-function buildUsageTelemetryWindowsWrapper(
+export function buildUsageTelemetryWindowsWrapper(
   options: Required<UsageTelemetryAutostartOptions>
 ): string {
   const paths = getUsageTelemetryWorkerPaths(options.hermitHome);
   const safePath = process.env.PATH ?? '';
   const escapeBatch = (value: string): string => value.replace(/%/g, '%%').replace(/"/g, '""');
-  return `@echo off\r\nset "HERMIT_HOME=${escapeBatch(options.hermitHome)}"\r\nset "PATH=${escapeBatch(safePath)}"\r\n"${escapeBatch(options.nodePath)}" "${escapeBatch(options.cliPath)}" __telemetry-worker >> "${escapeBatch(paths.logPath)}" 2>> "${escapeBatch(paths.errorLogPath)}"\r\n`;
+  return `@echo off\r\nchcp 65001 >nul\r\nset "ELECTRON_RUN_AS_NODE=1"\r\nset "HERMIT_HOME=${escapeBatch(options.hermitHome)}"\r\nset "PATH=${escapeBatch(safePath)}"\r\n"${escapeBatch(options.nodePath)}" "${escapeBatch(options.cliPath)}" __telemetry-worker >> "${escapeBatch(paths.logPath)}" 2>> "${escapeBatch(paths.errorLogPath)}"\r\n`;
 }
 
 function normalizeOptions(

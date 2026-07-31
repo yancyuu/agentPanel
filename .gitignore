@@ -33,6 +33,9 @@ logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+codex-wire-capture-*.jsonl
+codex-wire-proxy-*.out
+codex-real-success-*.jsonl
 
 # Environment
 .env

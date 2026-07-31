@@ -1,16 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
   type AdvancedConnectionAccountSummary,
   type AdvancedConnectionLocalSnapshot,
   type AdvancedConnectionPullTasksResult,
+  type AdvancedConnectionRuntimeApplyResult,
+  type AdvancedConnectionRuntimeId,
   type AdvancedConnectionState,
   type AdvancedConnectionSummary,
   type AdvancedConnectionSyncResult,
   type AdvancedConnectionTokenCatalogResponse,
   type AdvancedConnectionTokenCatalogSummary,
+  type AdvancedConnectionTokenClaimRequest,
+  type AdvancedConnectionTokenClaimResult,
   type CreateAdvancedConnectionRequest,
   type DataPermissionId,
   type DiscoverAdvancedConnectionResponse,
@@ -34,6 +40,9 @@ const CONNECTION_SCHEMA_VERSION = 1;
 const DISCOVERY_TIMEOUT_MS = 10_000;
 const AUTH_REQUEST_TIMEOUT_MS = 30_000;
 const TOKEN_CATALOG_TIMEOUT_MS = 45_000;
+const TOKEN_PROVISION_TIMEOUT_MS = 120_000;
+const TOKEN_POLL_FALLBACK_MS = 2_000;
+const TOKEN_POLL_MAX_MS = 15_000;
 // eslint-disable-next-line sonarjs/no-hardcoded-ip -- explicit cloud metadata blocklist
 const CLOUD_METADATA_IPV4 = '169.254.169.254';
 
@@ -44,6 +53,8 @@ interface StoredConnectionRecord {
   baseUrl: string;
   secure: boolean;
   compatibilityMode: boolean;
+  /** 由桌面工作台托管的默认 AgentBus；仅该连接在登录后自动开启聚合用量同步。 */
+  managedDefault?: boolean;
   manifest: ProviderManifestV1;
   state: AdvancedConnectionState;
   account?: AdvancedConnectionAccountSummary;
@@ -102,11 +113,52 @@ interface TokenPayload {
   account?: AdvancedConnectionAccountSummary;
 }
 
+export interface RuntimeCredentialApplyInput {
+  secret: Record<string, unknown>;
+  choices: { model?: string; wireApi?: 'responses' | 'chat' };
+  runtimes: AdvancedConnectionRuntimeId[];
+  home: string;
+}
+
+export interface RuntimeCredentialApplyOutput {
+  ok: boolean;
+  runtimes?: { runtime?: string; ok?: boolean; path?: string; error?: string }[];
+}
+
+export type RuntimeCredentialApplier = (
+  input: RuntimeCredentialApplyInput
+) => Promise<RuntimeCredentialApplyOutput>;
+
+interface AikeyRuntimeModule {
+  validateClaimedSecret(secret: Record<string, unknown>): { ok: boolean; reason?: string };
+  applyClaimedSecret(input: RuntimeCredentialApplyInput): RuntimeCredentialApplyOutput;
+  maskKey(key: string): string;
+}
+
+let aikeyRuntimeModule: Promise<AikeyRuntimeModule> | undefined;
+
+function loadAikeyRuntime(): Promise<AikeyRuntimeModule> {
+  aikeyRuntimeModule ??= import(
+    pathToFileURL(
+      path.join(
+        process.env.AGENTCLI_PACKAGE_ROOT?.trim() || process.cwd(),
+        'bin',
+        'lib',
+        'aikey.mjs'
+      )
+    ).href
+  ) as Promise<AikeyRuntimeModule>;
+  return aikeyRuntimeModule;
+}
+
 export interface AdvancedConnectionServiceOptions {
   hermitHome: string;
   fetchImpl?: typeof fetch;
   now?: () => Date;
   secretStore?: ConnectionSecretStore;
+  runtimeHome?: string;
+  runtimeCredentialApplier?: RuntimeCredentialApplier;
+  onAuthenticated?: (connectionId: string) => Promise<void> | void;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -188,15 +240,60 @@ function validateAuthorizationUrl(value: string): string {
     throw new Error('授权页面只支持 HTTP 或 HTTPS');
   }
   if (url.username || url.password) throw new Error('授权页面地址不能包含用户名或密码');
-  if (url.hostname === CLOUD_METADATA_IPV4) throw new Error('授权页面地址无效');
+  const hostname = url.hostname.toLowerCase();
+  if (hostname === CLOUD_METADATA_IPV4 || hostname.endsWith('.internal.metadata')) {
+    throw new Error('授权页面地址无效');
+  }
+  const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  if (url.protocol === 'http:' && !isLoopback) {
+    throw new Error('远程授权页面必须使用 HTTPS');
+  }
   return url.toString();
 }
 
-function sanitizeRemoteMessage(value: string): string {
-  return value
-    .replace(/(?:access|refresh)[_-]?token\s*[:=]\s*[^\s,;]+/giu, '[redacted token]')
-    .replace(/app[_-]?secret\s*[:=]\s*[^\s,;]+/giu, '[redacted secret]')
+function sanitizeRemoteMessage(value: string, exactSecrets: string[] = []): string {
+  let sanitized = value;
+  for (const secret of exactSecrets) {
+    if (secret) sanitized = sanitized.split(secret).join('[redacted key]');
+  }
+  return sanitized
+    .replace(/(?:access|refresh)[_-]?token\s*[:=]\s*["']?[^\s,"';}]+["']?/giu, '[redacted token]')
+    .replace(
+      /(?:plaintext[_-]?key|api[_-]?key|key)\s*[:=]\s*["']?[^\s,"';}]+["']?/giu,
+      '[redacted key]'
+    )
+    .replace(/app[_-]?secret\s*[:=]\s*["']?[^\s,"';}]+["']?/giu, '[redacted secret]')
     .slice(0, 300);
+}
+
+const USAGE_AGGREGATE_FIELDS = [
+  'connected',
+  'lastScan',
+  'sessions',
+  'messages',
+  'imMessages',
+  'imTokensTotal',
+  'tokensIn',
+  'tokensOut',
+  'cacheRead',
+  'cacheCreation',
+  'totalTokens',
+  'recentMessages',
+  'recentTokensTotal',
+  'recentByProvider',
+  'activeDays',
+  'hourly',
+  'workSecondsByDay',
+  'daily',
+  'byProvider',
+] as const;
+
+function usageAggregatePayload(usage: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    USAGE_AGGREGATE_FIELDS.flatMap((field) =>
+      Object.prototype.hasOwnProperty.call(usage, field) ? [[field, usage[field]]] : []
+    )
+  );
 }
 
 function endpointUrl(baseUrl: string, endpoint: string | undefined, label: string): string {
@@ -240,8 +337,8 @@ function compatibilityManifest(): ProviderManifestV1 {
       reportMessages: '/api/v1/report/messages',
       tokenCatalog: '/api/v1/token-distribution-v3/aliyun/discover',
       tokenProvision: '/api/v1/token-distribution-v3/aliyun/auto-provision',
-      tokenOperation: '/api/v1/token-distribution-v3/aliyun/provisioning-runs',
-      tokenClaim: '/api/v1/token-distribution-v3/aliyun/receipt',
+      tokenOperation: '/api/v1/token-distribution-v3/aliyun/provisioning-runs/{operationId}',
+      tokenClaim: '/api/v1/token-distribution-v3/aliyun/provisioning-runs/{operationId}/receipt',
     },
   };
 }
@@ -281,12 +378,56 @@ function tokenCatalogSummary(value: unknown): AdvancedConnectionTokenCatalogSumm
       stringValue(item.provider) ?? stringValue(item.vendor) ?? stringValue(item.upstream_provider);
     return [{ id, name, provider }];
   });
+  const defaultModelApiIds = Array.isArray(payload.default_model_api_ids)
+    ? payload.default_model_api_ids
+        .map((id) => stringValue(id))
+        .filter((id): id is string => Boolean(id))
+    : [];
   return {
     modelCount: models.length,
+    discoveryId: stringValue(payload.discovery_id) ?? stringValue(payload.discoveryId),
+    regionId: stringValue(payload.region_id) ?? stringValue(payload.regionId),
+    gatewayId: stringValue(payload.gateway_id) ?? stringValue(payload.gatewayId),
     defaultModelName:
       stringValue(payload.default_api_name) ?? stringValue(payload.default_model_name),
+    defaultModelApiIds,
     models,
   };
+}
+
+function isLoopbackUrl(baseUrl: string): boolean {
+  const hostname = new URL(baseUrl).hostname.toLowerCase();
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
+
+function operationEndpoint(
+  baseUrl: string,
+  endpoint: string | undefined,
+  operationId: string
+): string {
+  if (!endpoint) throw new Error('服务未声明 Token 池操作接口');
+  const encoded = encodeURIComponent(operationId);
+  const template = endpoint.includes('{operationId}')
+    ? endpoint.replaceAll('{operationId}', encoded)
+    : `${endpoint.replace(/\/$/u, '')}/${encoded}`;
+  return endpointUrl(baseUrl, template, 'Token 池操作');
+}
+
+function boundedPollDelay(value: unknown): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric)
+    ? Math.min(TOKEN_POLL_MAX_MS, Math.max(500, numeric))
+    : TOKEN_POLL_FALLBACK_MS;
+}
+
+function providerErrorMessage(payload: Record<string, unknown>, fallback: string): string {
+  return sanitizeRemoteMessage(
+    stringValue(payload.message) ??
+      stringValue(payload.error_description) ??
+      stringValue(payload.error) ??
+      stringValue(payload.status) ??
+      fallback
+  );
 }
 
 export class AdvancedConnectionService {
@@ -295,7 +436,11 @@ export class AdvancedConnectionService {
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;
   private readonly secretStore: ConnectionSecretStore;
+  private readonly runtimeHome: string;
+  private readonly runtimeCredentialApplier: RuntimeCredentialApplier;
+  private readonly onAuthenticated?: (connectionId: string) => Promise<void> | void;
   private readonly attempts = new Map<string, AuthAttempt>();
+  private readonly activeTokenClaims = new Set<string>();
   private mutationQueue: Promise<void> = Promise.resolve();
 
   constructor(options: AdvancedConnectionServiceOptions) {
@@ -304,6 +449,43 @@ export class AdvancedConnectionService {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? (() => new Date());
     this.secretStore = options.secretStore ?? new SystemCredentialSecretStore();
+    this.runtimeHome = options.runtimeHome ?? os.homedir();
+    this.runtimeCredentialApplier =
+      options.runtimeCredentialApplier ??
+      (async (input) => (await loadAikeyRuntime()).applyClaimedSecret(input));
+    this.onAuthenticated = options.onAuthenticated;
+  }
+
+  async ensureDefaultConnection(baseUrl: string): Promise<AdvancedConnectionSummary> {
+    const normalized = normalizeBaseUrl(baseUrl);
+    const timestamp = this.now().toISOString();
+    const fallbackRecord: StoredConnectionRecord = {
+      schemaVersion: 1,
+      id: `connection_${randomUUID().replace(/-/gu, '').slice(0, 16)}`,
+      label: 'AgentBus',
+      baseUrl: normalized.baseUrl,
+      secure: normalized.secure,
+      compatibilityMode: true,
+      managedDefault: true,
+      manifest: compatibilityManifest(),
+      state: 'auth_required',
+      grantedScopes: [],
+      permissions: defaultPermissionDecisions(),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    let stored = fallbackRecord;
+    await this.mutateIndex((index) => {
+      const duplicate = index.connections.find((item) => item.baseUrl === normalized.baseUrl);
+      if (duplicate) {
+        duplicate.managedDefault = true;
+        duplicate.updatedAt = timestamp;
+        stored = duplicate;
+        return;
+      }
+      index.connections.push(fallbackRecord);
+    });
+    return this.toSummary(stored);
   }
 
   async discover(baseUrlInput: string): Promise<DiscoverAdvancedConnectionResponse> {
@@ -443,6 +625,7 @@ export class AdvancedConnectionService {
     methodId: string
   ): Promise<StartAdvancedConnectionAuthResponse> {
     const record = await this.requireRecord(connectionId);
+    this.assertAuthorizedTransport(record);
     if ([...this.attempts.values()].some((attempt) => attempt.connectionId === connectionId)) {
       throw new Error('该连接已经在等待授权');
     }
@@ -529,6 +712,7 @@ export class AdvancedConnectionService {
 
   async tokenCatalog(connectionId: string): Promise<AdvancedConnectionTokenCatalogResponse> {
     const record = await this.requireRecord(connectionId);
+    this.assertAuthorizedTransport(record);
     const secret = await this.getValidSecret(record);
     if (!record.manifest.capabilities.some((item) => item.id === 'token-pool')) {
       return { ok: true, available: false };
@@ -560,11 +744,234 @@ export class AdvancedConnectionService {
     }
   }
 
+  async claimAndApplyToken(
+    connectionId: string,
+    request: AdvancedConnectionTokenClaimRequest
+  ): Promise<AdvancedConnectionTokenClaimResult> {
+    const record = await this.requireRecord(connectionId);
+    this.assertAuthorizedTransport(record);
+    if (!record.manifest.capabilities.some((item) => item.id === 'token-pool')) {
+      throw new Error('该服务未提供 Token 池');
+    }
+    if (this.activeTokenClaims.has(connectionId)) {
+      throw new Error('该连接已有 Token 认领任务正在执行');
+    }
+    const discoveryId = request.discoveryId?.trim();
+    const modelApiIds = [...new Set(request.modelApiIds.map((id) => id.trim()).filter(Boolean))];
+    const runtimes = [...new Set(request.runtimes)].filter(
+      (runtime): runtime is AdvancedConnectionRuntimeId =>
+        runtime === 'claude' || runtime === 'codex' || runtime === 'pi'
+    );
+    if (!discoveryId) throw new Error('缺少 Token 池 discoveryId，请先读取目录');
+    if (modelApiIds.length === 0) throw new Error('请至少选择一个模型');
+    if (runtimes.length === 0) throw new Error('请至少选择一个本地运行时');
+
+    this.activeTokenClaims.add(connectionId);
+    try {
+      const secret = await this.getValidSecret(record);
+      if (!secret) throw new Error('请先完成用户授权');
+      const authorization = `${secret.tokenType} ${secret.accessToken}`;
+      const provisionUrl = endpointUrl(
+        record.baseUrl,
+        record.manifest.endpoints.tokenProvision,
+        'Token 池认领'
+      );
+      const provisionResponse = await this.fetchImpl(provisionUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: authorization,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'Idempotency-Key': randomUUID(),
+        },
+        body: JSON.stringify({
+          discovery_id: discoveryId,
+          region_id: request.regionId?.trim() || 'cn-beijing',
+          ...(request.gatewayId?.trim() ? { gateway_id: request.gatewayId.trim() } : {}),
+          model_api_ids: modelApiIds,
+        }),
+        signal: AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS),
+        redirect: 'error',
+      });
+      const provisionPayload = asRecord(await provisionResponse.json().catch(() => null));
+      if (!provisionResponse.ok) {
+        throw new Error(
+          providerErrorMessage(
+            provisionPayload,
+            `Token 池认领启动失败（HTTP ${provisionResponse.status}）`
+          )
+        );
+      }
+      const operationId =
+        stringValue(provisionPayload.run_id) ?? stringValue(provisionPayload.operation_id);
+      if (!operationId) throw new Error('Token 池服务没有返回操作 ID');
+
+      const startedAt = Date.now();
+      let operationPayload: Record<string, unknown> = {};
+      while (Date.now() - startedAt < TOKEN_PROVISION_TIMEOUT_MS) {
+        const pollUrl = operationEndpoint(
+          record.baseUrl,
+          record.manifest.endpoints.tokenOperation,
+          operationId
+        );
+        const pollResponse = await this.fetchImpl(pollUrl, {
+          headers: { Authorization: authorization, Accept: 'application/json' },
+          signal: AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS),
+          redirect: 'error',
+        });
+        operationPayload = asRecord(await pollResponse.json().catch(() => null));
+        if (!pollResponse.ok) {
+          if (pollResponse.status === 429 || pollResponse.status >= 500) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, boundedPollDelay(operationPayload.poll_after_ms))
+            );
+            continue;
+          }
+          throw new Error(
+            providerErrorMessage(
+              operationPayload,
+              `Token 池操作查询失败（HTTP ${pollResponse.status}）`
+            )
+          );
+        }
+        const status = stringValue(operationPayload.status) ?? 'running';
+        if (status === 'succeeded') break;
+        if (status === 'failed') {
+          throw new Error(providerErrorMessage(operationPayload, 'Token 池认领失败'));
+        }
+        if (!['queued', 'running', 'pending', 'provisioning'].includes(status)) {
+          throw new Error(`Token 池返回了不支持的操作状态：${sanitizeRemoteMessage(status)}`);
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, boundedPollDelay(operationPayload.poll_after_ms))
+        );
+      }
+      if ((stringValue(operationPayload.status) ?? '') !== 'succeeded') {
+        throw new Error('Token 池认领超时，请稍后重试');
+      }
+
+      const claimUrl = operationEndpoint(
+        record.baseUrl,
+        record.manifest.endpoints.tokenClaim,
+        operationId
+      );
+      const claimResponse = await this.fetchImpl(claimUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: authorization,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'Idempotency-Key': randomUUID(),
+        },
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS),
+        redirect: 'error',
+      });
+      const receipt = asRecord(await claimResponse.json().catch(() => null));
+      if (!claimResponse.ok) {
+        throw new Error(
+          providerErrorMessage(receipt, `Token 领取失败（HTTP ${claimResponse.status}）`)
+        );
+      }
+      const claimedKey =
+        stringValue(receipt.key) ??
+        stringValue(receipt.api_key) ??
+        stringValue(receipt.plaintext_key);
+      if (!claimedKey) throw new Error('Token 领取响应没有返回可用 Key');
+      const claimedSecret: Record<string, unknown> = {
+        key: claimedKey,
+        keyId: stringValue(receipt.key_id) ?? stringValue(receipt.keyId),
+        endpoint: stringValue(receipt.endpoint),
+        endpoints: asRecord(receipt.endpoints),
+        runtimeProfiles: asRecord(receipt.runtime_profiles ?? receipt.runtimeProfiles),
+        modelsUrl: stringValue(receipt.models_url) ?? stringValue(receipt.modelsUrl),
+        modelIds: Array.isArray(receipt.model_ids)
+          ? receipt.model_ids.filter((id): id is string => typeof id === 'string')
+          : Array.isArray(receipt.modelIds)
+            ? receipt.modelIds.filter((id): id is string => typeof id === 'string')
+            : [],
+        expiresAt: stringValue(receipt.expires_at) ?? stringValue(receipt.expiresAt),
+      };
+      const aikeyRuntime = await loadAikeyRuntime();
+      const validation = aikeyRuntime.validateClaimedSecret(claimedSecret);
+      if (!validation.ok) {
+        throw new Error(
+          `Token 无法应用：${sanitizeRemoteMessage(validation.reason || '返回内容无效')}`
+        );
+      }
+      let applied: RuntimeCredentialApplyOutput;
+      try {
+        applied = await this.runtimeCredentialApplier({
+          secret: claimedSecret,
+          choices: {
+            ...(request.model?.trim() ? { model: request.model.trim() } : {}),
+            ...(request.wireApi ? { wireApi: request.wireApi } : {}),
+          },
+          runtimes,
+          home: this.runtimeHome,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `Token 已领取，但本地应用失败：${sanitizeRemoteMessage(message, [claimedKey])}`
+        );
+      }
+      const expectedResultNames: Record<AdvancedConnectionRuntimeId, string[]> = {
+        claude: ['claude'],
+        codex: ['codex-auth', 'codex-config'],
+        pi: ['pi'],
+      };
+      const runtimeResults: AdvancedConnectionRuntimeApplyResult[] = runtimes.map((runtime) => {
+        const matches = (applied.runtimes ?? []).filter((item) =>
+          expectedResultNames[runtime].includes(item.runtime ?? '')
+        );
+        const ok =
+          applied.ok === true &&
+          matches.length === expectedResultNames[runtime].length &&
+          matches.every((item) => item.ok !== false && !item.error);
+        const pathResult = [...matches].reverse().find((item) => item.path);
+        const error = matches.find((item) => item.error)?.error;
+        return {
+          runtime,
+          ok,
+          ...(pathResult?.path ? { path: path.basename(pathResult.path) } : {}),
+          ...(!ok
+            ? {
+                error: sanitizeRemoteMessage(
+                  error || `缺少 ${expectedResultNames[runtime].join('/')} 成功结果`,
+                  [claimedKey]
+                ),
+              }
+            : {}),
+        };
+      });
+      const warnings = runtimeResults
+        .filter((result) => !result.ok)
+        .map((result) => `${result.runtime}：${result.error || '本地配置失败'}`);
+      if (warnings.length > 0) {
+        throw new Error(`Token 已领取，但本地应用未完成：${warnings.join('；')}`);
+      }
+      return {
+        ok: true,
+        ...(stringValue(receipt.key_id) ? { keyId: stringValue(receipt.key_id) } : {}),
+        maskedKey: aikeyRuntime.maskKey(claimedKey),
+        ...(stringValue(receipt.expires_at) ? { expiresAt: stringValue(receipt.expires_at) } : {}),
+        ...(request.model?.trim() ? { model: request.model.trim() } : {}),
+        runtimes: runtimeResults,
+        appliedAt: this.now().toISOString(),
+        warnings,
+      };
+    } finally {
+      this.activeTokenClaims.delete(connectionId);
+    }
+  }
+
   async syncAuthorizedData(
     connectionId: string,
     snapshot: AdvancedConnectionLocalSnapshot
   ): Promise<AdvancedConnectionSyncResult> {
     const record = await this.requireRecord(connectionId);
+    this.assertAuthorizedTransport(record);
     const secret = await this.getValidSecret(record);
     if (!secret) throw new Error('请先完成用户授权');
     const sent: AdvancedConnectionSyncResult['sent'] = [];
@@ -583,7 +990,7 @@ export class AdvancedConnectionService {
         skipped.push({ channel, reason: '服务未声明对应端点' });
         return;
       }
-      if (record.compatibilityMode) {
+      if (record.compatibilityMode && channel !== 'usage') {
         skipped.push({
           channel,
           reason: '当前 AgentBus 使用既有专用通道，不发送通用 Provider 载荷',
@@ -637,7 +1044,7 @@ export class AdvancedConnectionService {
       {
         generatedAt: snapshot.generatedAt,
         ...(permissions['usage.aggregates'] === 'granted'
-          ? { aggregates: snapshot.usage ?? {} }
+          ? { aggregates: usageAggregatePayload(snapshot.usage ?? {}) }
           : {}),
         ...(permissions['usage.project-metadata'] === 'granted'
           ? {
@@ -666,6 +1073,7 @@ export class AdvancedConnectionService {
 
   async pullRemoteTasks(connectionId: string): Promise<AdvancedConnectionPullTasksResult> {
     const record = await this.requireRecord(connectionId);
+    this.assertAuthorizedTransport(record);
     if (record.permissions['team.tasks.read'] !== 'granted') {
       throw new Error('请先允许“接收远程任务”');
     }
@@ -819,6 +1227,10 @@ export class AdvancedConnectionService {
             state: 'authenticated',
             account,
             grantedScopes: scopes,
+            permissions:
+              current.managedDefault && current.compatibilityMode
+                ? { ...current.permissions, 'usage.aggregates': 'granted' }
+                : current.permissions,
             lastError: undefined,
           }));
         } catch {
@@ -827,6 +1239,7 @@ export class AdvancedConnectionService {
           return;
         }
         this.attempts.delete(attempt.id);
+        await Promise.resolve(this.onAuthenticated?.(attempt.connectionId)).catch(() => undefined);
         return;
       }
 
@@ -865,6 +1278,12 @@ export class AdvancedConnectionService {
     }));
   }
 
+  private assertAuthorizedTransport(record: StoredConnectionRecord): void {
+    if (!record.secure && !isLoopbackUrl(record.baseUrl)) {
+      throw new Error('远程连接必须使用 HTTPS；HTTP 仅允许 localhost 或 127.0.0.1');
+    }
+  }
+
   private async requireRecord(connectionId: string): Promise<StoredConnectionRecord> {
     const index = await this.readIndex();
     const record = index.connections.find((item) => item.id === connectionId);
@@ -888,7 +1307,7 @@ export class AdvancedConnectionService {
   }
 
   private async toSummary(record: StoredConnectionRecord): Promise<AdvancedConnectionSummary> {
-    const secretPresent = await this.secretStore.has(record.id);
+    const secretPresent = await this.secretStore.has(record.id).catch(() => false);
     return {
       id: record.id,
       label: record.label,

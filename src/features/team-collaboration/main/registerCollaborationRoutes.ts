@@ -47,8 +47,8 @@ export function registerCollaborationRoutes(
           memberTeamSlugs.map(async (teamSlug) => {
             const manifest = await dependencies.teams.readTeamManifest(teamSlug);
             if (manifest.deletedAt) throw new Error(`数字员工 ${manifest.displayName} 已删除`);
-            if (manifest.harness !== 'claudecode') {
-              throw new Error(`数字员工 ${manifest.displayName} 暂不支持圆桌协作`);
+            if (!['claudecode', 'codex', 'pi'].includes(manifest.harness)) {
+              throw new Error(`数字员工 ${manifest.displayName} 的运行方式暂不支持圆桌协作`);
             }
             if (!manifest.workDir.trim()) {
               throw new Error(`数字员工 ${manifest.displayName} 没有可用工作目录`);
@@ -166,6 +166,23 @@ export function registerCollaborationRoutes(
           ok: false,
           error: error instanceof Error ? error.message : '协作任务不存在',
         });
+      }
+    }
+  );
+
+  app.post<{ Params: { runId: string }; Body: { feedback?: string } }>(
+    '/api/collaboration/runs/:runId/request-changes',
+    async (request, reply) => {
+      try {
+        return await dependencies.orchestrator.requestChanges(
+          request.params.runId,
+          request.body?.feedback ?? ''
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '小队返工失败';
+        return reply
+          .code(message.includes('不存在') ? 404 : 409)
+          .send({ ok: false, error: message });
       }
     }
   );

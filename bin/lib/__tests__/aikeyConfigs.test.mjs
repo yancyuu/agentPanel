@@ -12,7 +12,15 @@ import path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { applyClaimedSecret, applyToConfigs, resolveClaudeBaseUrl, resolveCodexBaseUrl, writeAikeyEnv, validateClaimedSecret, isRoutableHost } from '../aikey.mjs';
+import {
+  applyClaimedSecret,
+  applyToConfigs,
+  resolveClaudeBaseUrl,
+  resolveCodexBaseUrl,
+  writeAikeyEnv,
+  validateClaimedSecret,
+  isRoutableHost,
+} from '../aikey.mjs';
 import { mapTierModels } from '../tokenDistribution.mjs';
 
 describe('applyToConfigs — Claude settings.json', () => {
@@ -28,15 +36,22 @@ describe('applyToConfigs — Claude settings.json', () => {
   it('deep-merges env and preserves unrelated top-level keys + existing env keys', async () => {
     const file = path.join(home, '.claude', 'settings.json');
     await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, JSON.stringify({
-      // Unrelated top-level keys that MUST survive the merge.
-      hooks: { Stop: [{ type: 'command', command: 'echo bye' }] },
-      model: 'claude-sonnet-4',
-      env: {
-        ANTHROPIC_AUTH_TOKEN: 'old-secret',
-        SOME_OTHER_VAR: 'keep-me',
-      },
-    }, null, 2));
+    await writeFile(
+      file,
+      JSON.stringify(
+        {
+          // Unrelated top-level keys that MUST survive the merge.
+          hooks: { Stop: [{ type: 'command', command: 'echo bye' }] },
+          model: 'claude-sonnet-4',
+          env: {
+            ANTHROPIC_AUTH_TOKEN: 'old-secret',
+            SOME_OTHER_VAR: 'keep-me',
+          },
+        },
+        null,
+        2
+      )
+    );
 
     const result = applyToConfigs({
       key: 'sk-new',
@@ -99,13 +114,26 @@ describe('applyToConfigs — Codex auth.json', () => {
     try {
       const file = path.join(home, '.codex', 'auth.json');
       await mkdir(path.dirname(file), { recursive: true });
-      await writeFile(file, JSON.stringify({
-        OPENAI_API_KEY: 'sk-old',
-        tokens: { id_token: 'xxx', access_token: 'yyy', refresh_token: 'zzz' },
-        custom_marker: 'preserve',
-      }, null, 2));
+      await writeFile(
+        file,
+        JSON.stringify(
+          {
+            OPENAI_API_KEY: 'sk-old',
+            tokens: { id_token: 'xxx', access_token: 'yyy', refresh_token: 'zzz' },
+            custom_marker: 'preserve',
+          },
+          null,
+          2
+        )
+      );
 
-      applyToConfigs({ key: 'sk-new', endpoint: 'https://gw', model: 'm', runtimes: ['codex'], home });
+      applyToConfigs({
+        key: 'sk-new',
+        endpoint: 'https://gw',
+        model: 'm',
+        runtimes: ['codex'],
+        home,
+      });
 
       const written = JSON.parse(await readFile(file, 'utf-8'));
       expect(written).toEqual({ OPENAI_API_KEY: 'sk-new' });
@@ -215,23 +243,33 @@ size = 1000
 
 describe('resolveClaudeBaseUrl', () => {
   it('returns the v3 receipt anthropic endpoint', () => {
-    expect(resolveClaudeBaseUrl({ endpoints: { anthropic: 'https://gw.example/cpamc-cc' } })).toBe('https://gw.example/cpamc-cc');
+    expect(resolveClaudeBaseUrl({ endpoints: { anthropic: 'https://gw.example/cpamc-cc' } })).toBe(
+      'https://gw.example/cpamc-cc'
+    );
   });
   it('trims whitespace and tolerates a missing endpoints.anthropic', () => {
-    expect(resolveClaudeBaseUrl({ endpoints: { anthropic: '  https://gw.example/cpamc-cc  ' } })).toBe('https://gw.example/cpamc-cc');
+    expect(
+      resolveClaudeBaseUrl({ endpoints: { anthropic: '  https://gw.example/cpamc-cc  ' } })
+    ).toBe('https://gw.example/cpamc-cc');
     expect(resolveClaudeBaseUrl({})).toBe('');
   });
 });
 
 describe('resolveCodexBaseUrl', () => {
   it('appends /v1 to the v3 receipt OpenAI endpoint', () => {
-    expect(resolveCodexBaseUrl({ endpoints: { openai: 'https://ai.skg.com/cpamc-openai' } })).toBe('https://ai.skg.com/cpamc-openai/v1');
+    expect(resolveCodexBaseUrl({ endpoints: { openai: 'https://ai.skg.com/cpamc-openai' } })).toBe(
+      'https://ai.skg.com/cpamc-openai/v1'
+    );
   });
   it('does not duplicate an existing /v1 suffix', () => {
-    expect(resolveCodexBaseUrl({ endpoints: { openai: 'https://ai.skg.com/cpamc-openai/v1' } })).toBe('https://ai.skg.com/cpamc-openai/v1');
+    expect(
+      resolveCodexBaseUrl({ endpoints: { openai: 'https://ai.skg.com/cpamc-openai/v1' } })
+    ).toBe('https://ai.skg.com/cpamc-openai/v1');
   });
   it('trims whitespace and tolerates a missing endpoints.openai', () => {
-    expect(resolveCodexBaseUrl({ endpoints: { openai: '  https://gw.example/cpaopen  ' } })).toBe('https://gw.example/cpaopen/v1');
+    expect(resolveCodexBaseUrl({ endpoints: { openai: '  https://gw.example/cpaopen  ' } })).toBe(
+      'https://gw.example/cpaopen/v1'
+    );
     expect(resolveCodexBaseUrl({})).toBe('');
   });
 });
@@ -243,7 +281,10 @@ describe('applyClaimedSecret — per-runtime writes', () => {
       const result = applyClaimedSecret({
         secret: {
           key: 'sk-pool',
-          endpoints: { anthropic: 'https://gw.example/cpamc-cc', openai: 'https://gw.example/cpaopen' },
+          endpoints: {
+            anthropic: 'https://gw.example/cpamc-cc',
+            openai: 'https://gw.example/cpaopen',
+          },
         },
         choices: { model: 'qwen-max', wireApi: 'chat' },
         runtimes: ['codex'],
@@ -275,7 +316,10 @@ describe('applyClaimedSecret — per-runtime writes', () => {
     try {
       const secret = {
         key: 'sk-pool',
-        endpoints: { anthropic: 'https://gw.example/cpamc-cc', openai: 'https://gw.example/cpaopen' },
+        endpoints: {
+          anthropic: 'https://gw.example/cpamc-cc',
+          openai: 'https://gw.example/cpaopen',
+        },
         modelIds: ['GLM-4.5-Air', 'GLM-5.1', 'GLM-5.2'],
       };
       const result = applyClaimedSecret({
@@ -291,7 +335,9 @@ describe('applyClaimedSecret — per-runtime writes', () => {
       // tierModels: all three tiers use the single chosen model.
       expect(result.tierModels).toEqual({ haiku: 'GLM-5.2', sonnet: 'GLM-5.2', opus: 'GLM-5.2' });
 
-      const claude = JSON.parse(await readFile(path.join(home, '.claude', 'settings.json'), 'utf-8'));
+      const claude = JSON.parse(
+        await readFile(path.join(home, '.claude', 'settings.json'), 'utf-8')
+      );
       expect(claude.env.ANTHROPIC_BASE_URL).toBe('https://gw.example/cpamc-cc');
       expect(claude.env.ANTHROPIC_AUTH_TOKEN).toBe('sk-pool');
       // Tier vars: all three use the same chosen model.
@@ -303,6 +349,38 @@ describe('applyClaimedSecret — per-runtime writes', () => {
 
       // No .hermit-bak from a claim write.
       expect(existsSync(path.join(home, '.claude', 'settings.json.hermit-bak'))).toBe(false);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('preflights every selected target before rotating any credential', async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), 'hermit-claim-transaction-'));
+    try {
+      const originalClaude = '{"env":{"ANTHROPIC_AUTH_TOKEN":"old-key"}}\n';
+      await mkdir(path.join(home, '.claude'), { recursive: true });
+      await writeFile(path.join(home, '.claude', 'settings.json'), originalClaude);
+      await mkdir(path.join(home, '.codex', 'config.toml'), { recursive: true });
+
+      expect(() =>
+        applyClaimedSecret({
+          secret: {
+            key: 'sk-new-key',
+            endpoints: {
+              anthropic: 'https://gw.example/cpamc-cc',
+              openai: 'https://gw.example/cpaopen',
+            },
+          },
+          runtimes: ['claude', 'codex'],
+          home,
+        })
+      ).toThrow('不是普通文件');
+
+      expect(await readFile(path.join(home, '.claude', 'settings.json'), 'utf8')).toBe(
+        originalClaude
+      );
+      expect(existsSync(path.join(home, '.codex', 'auth.json'))).toBe(false);
+      expect(existsSync(path.join(home, 'aikey.env'))).toBe(false);
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -336,7 +414,7 @@ describe('applyClaimedSecret — per-runtime writes', () => {
       await mkdir(path.dirname(file), { recursive: true });
       await writeFile(
         file,
-        `model = "gpt-5"\n[projects.my-project]\npath = "/Users/me/work"\nautoupdate = true\n`,
+        `model = "gpt-5"\n[projects.my-project]\npath = "/Users/me/work"\nautoupdate = true\n`
       );
 
       applyClaimedSecret({
@@ -356,7 +434,10 @@ describe('applyClaimedSecret — per-runtime writes', () => {
 
   it('throws when the secret has no key', () => {
     expect(() =>
-      applyClaimedSecret({ secret: { endpoints: { anthropic: 'https://gw' } }, runtimes: ['claude'] }),
+      applyClaimedSecret({
+        secret: { endpoints: { anthropic: 'https://gw' } },
+        runtimes: ['claude'],
+      })
     ).toThrow(/key/);
   });
 });
@@ -406,7 +487,10 @@ describe('applyClaimedSecret — env file injection', () => {
       applyClaimedSecret({
         secret: {
           key: 'sk-envtest',
-          endpoints: { anthropic: 'https://gw.example/cpamc-cc', openai: 'https://gw.example/cpaopen' },
+          endpoints: {
+            anthropic: 'https://gw.example/cpamc-cc',
+            openai: 'https://gw.example/cpaopen',
+          },
           modelIds: ['glm-5.2'],
         },
         choices: { model: 'glm-5.2', wireApi: 'responses' },
@@ -430,6 +514,42 @@ describe('applyClaimedSecret — env file injection', () => {
     }
   });
 
+  it('writes only the selected provider exports for Claude-only and Pi-only claims', async () => {
+    const claudeHome = await mkdtemp(path.join(os.tmpdir(), 'hermit-claim-claude-env-'));
+    const piHome = await mkdtemp(path.join(os.tmpdir(), 'hermit-claim-pi-env-'));
+    try {
+      applyClaimedSecret({
+        secret: {
+          key: 'sk-claude-only',
+          endpoints: { anthropic: 'https://gw.example/cpamc-cc' },
+          modelIds: ['glm-5.2'],
+        },
+        choices: { model: 'glm-5.2' },
+        runtimes: ['claude'],
+        home: claudeHome,
+      });
+      const claudeEnv = await readFile(path.join(claudeHome, 'aikey.env'), 'utf8');
+      expect(claudeEnv).toContain('ANTHROPIC_API_KEY');
+      expect(claudeEnv).not.toContain('OPENAI_API_KEY');
+
+      applyClaimedSecret({
+        secret: {
+          key: 'sk-pi-only',
+          endpoints: { openai: 'https://gw.example/cpaopen' },
+          modelIds: ['glm-5.2'],
+        },
+        choices: { model: 'glm-5.2' },
+        runtimes: ['pi'],
+        home: piHome,
+      });
+      const piEnv = await readFile(path.join(piHome, 'aikey.env'), 'utf8');
+      expect(piEnv).toContain('OPENAI_API_KEY');
+      expect(piEnv).not.toContain('ANTHROPIC_API_KEY');
+    } finally {
+      await rm(claudeHome, { recursive: true, force: true });
+      await rm(piHome, { recursive: true, force: true });
+    }
+  });
 });
 
 // validateClaimedSecret — the gateway returns non-functional sentinels (e.g. key
@@ -441,15 +561,45 @@ describe('validateClaimedSecret — reject gateway placeholder/junk values', () 
     const r = validateClaimedSecret({ key: 'sk-homeless', endpoints: {} });
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/占位值/);
+    expect(r.reason).not.toContain('sk-homeless');
   });
   it('rejects a non-routable endpoint host (bare "gw")', () => {
-    const r = validateClaimedSecret({ key: 'sk-prodkey-9876543210', endpoints: { openai: 'https://gw/cpaopen' } });
+    const r = validateClaimedSecret({
+      key: 'sk-prodkey-9876543210',
+      endpoints: { openai: 'https://gw/cpaopen' },
+    });
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/不可路由/);
   });
   it('rejects an empty key', () => {
     expect(validateClaimedSecret({ key: '', endpoints: {} }).ok).toBe(false);
   });
+  it('rejects remote cleartext, credential-bearing, metadata, and runtime-profile endpoints', () => {
+    for (const secret of [
+      { key: 'sk-prodkey-9876543210', endpoints: { openai: 'http://gw.example/cpaopen' } },
+      {
+        key: 'sk-prodkey-9876543210',
+        endpoints: { openai: 'https://user:pass@gw.example/cpaopen' },
+      },
+      { key: 'sk-prodkey-9876543210', endpoints: { openai: 'https://169.254.169.254/latest' } },
+      {
+        key: 'sk-prodkey-9876543210',
+        runtimeProfiles: { codex: { base_url: 'http://gw.example/cpaopen' } },
+      },
+    ]) {
+      expect(validateClaimedSecret(secret).ok).toBe(false);
+    }
+  });
+
+  it('allows cleartext only for loopback development endpoints', () => {
+    expect(
+      validateClaimedSecret({
+        key: 'sk-prodkey-9876543210',
+        endpoints: { openai: 'http://127.0.0.1:8080/cpaopen' },
+      }).ok
+    ).toBe(true);
+  });
+
   it('accepts a real key + routable FQDN endpoints', () => {
     const r = validateClaimedSecret({
       key: 'sk-prodkey-9876543210',
@@ -458,10 +608,12 @@ describe('validateClaimedSecret — reject gateway placeholder/junk values', () 
     expect(r.ok).toBe(true);
   });
   it('applyClaimedSecret THROWS on a placeholder secret (no config touched)', () => {
-    expect(() => applyClaimedSecret({
-      secret: { key: 'sk-homeless', endpoints: { openai: 'https://gw/cpaopen' } },
-      runtimes: ['codex'],
-    })).toThrow(/占位值|不可路由|不可用/);
+    expect(() =>
+      applyClaimedSecret({
+        secret: { key: 'sk-homeless', endpoints: { openai: 'https://gw/cpaopen' } },
+        runtimes: ['codex'],
+      })
+    ).toThrow(/占位值|不可路由|不可用/);
   });
 });
 

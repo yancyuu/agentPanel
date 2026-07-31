@@ -32,8 +32,9 @@ import {
 import { MAX_TEXT_LENGTH } from '@shared/constants';
 import { stripAgentBlocks } from '@shared/constants/agentBlocks';
 import { formatDistanceToNow } from 'date-fns';
-import { CheckCircle2, Eye, File, Loader2, MessageSquare, Reply, Send, X } from 'lucide-react';
+import { File, Loader2, MessageSquare, Reply, Send, X } from 'lucide-react';
 
+import { FeedbackAnchorView } from './FeedbackAnchorView';
 import { getVisibleTaskComments, sortTaskCommentsChronologically } from './taskCommentChronology';
 
 import type { MentionSuggestion } from '@renderer/types/mention';
@@ -238,11 +239,6 @@ export const TaskCommentsSection = ({
                   }
                   className={[
                     'group min-w-0 overflow-hidden border-b border-[var(--surface-border-subtle)] px-5 py-3.5',
-                    comment.type === 'review_approved'
-                      ? 'border-y border-emerald-500/20 bg-emerald-500/5'
-                      : comment.type === 'review_request'
-                        ? 'border-y border-indigo-500/20 bg-indigo-500/5'
-                        : '',
                   ].join(' ')}
                   style={
                     comment.author === 'system'
@@ -252,9 +248,7 @@ export const TaskCommentsSection = ({
                           borderBottom: '1px solid var(--system-activity-border)',
                           borderLeft: '3px solid var(--system-activity-accent)',
                         }
-                      : !comment.type || comment.type === 'regular'
-                        ? { backgroundColor: 'transparent' }
-                        : undefined
+                      : { backgroundColor: 'transparent' }
                   }
                 >
                   <div className="mb-1 flex items-center gap-2 text-[10px] text-[var(--color-text-muted)]">
@@ -266,17 +260,6 @@ export const TaskCommentsSection = ({
                       color={colorMap.get(comment.author)}
                       hideAvatar={comment.author === 'user' || comment.author === 'system'}
                     />
-                    {comment.type === 'review_approved' ? (
-                      <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
-                        <CheckCircle2 size={10} />
-                        已批准
-                      </span>
-                    ) : comment.type === 'review_request' ? (
-                      <span className="inline-flex items-center gap-0.5 rounded-full bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:text-indigo-400">
-                        <Eye size={10} />
-                        已请求审查
-                      </span>
-                    ) : null}
                     <span>
                       {(() => {
                         const date = new Date(comment.createdAt);
@@ -311,6 +294,11 @@ export const TaskCommentsSection = ({
                       <CopyButton text={comment.text} inline />
                     </span>
                   </div>
+                  {comment.anchor ? (
+                    <div className="mb-1">
+                      <FeedbackAnchorView anchor={comment.anchor} />
+                    </div>
+                  ) : null}
                   {(() => {
                     const reply = parseMessageReply(comment.text);
                     const rawForDisplay = reply ? reply.replyText : comment.text;

@@ -5,30 +5,41 @@ on:
     tags:
       - '[0-9]*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing or new release tag to build and upload
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   create-release:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
     steps:
-      - name: Checkout
+      - name: Checkout release source
         uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Create or verify GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$TAG" \
-            --generate-notes \
-            --draft=false 2>/dev/null \
-            || echo "Release $TAG already exists, skipping creation"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists"
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TAG" \
+              --generate-notes \
+              --draft
+          fi
 
   # Docker 镜像发布已移除：仓库内没有 docker/Dockerfile，该 job 一直引用不存在的文件而失败。
   # 需要发布容器镜像时，先编写 docker/Dockerfile，再恢复 release-docker job。
@@ -38,9 +49,11 @@ jobs:
   # installers (install.sh / install.ps1 on the Pages site) download these.
   release-standalone:
     needs: [create-release]
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -56,6 +69,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -81,6 +96,121 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          gh release upload "$TAG" "${{ matrix.asset }}" \
+          gh release upload "$RELEASE_TAG" "${{ matrix.asset }}" \
             --repo "$GITHUB_REPOSITORY" --clobber
+
+  # Build the Electron desktop installers linked from Pages. Every matrix entry
+  # uploads an explicit allowlist so stale files in dist-desktop can never leak
+  # into a release.
+  release-desktop:
+    needs: [create-release]
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            target: --mac dmg --arm64
+            assets: AgentCLI-*-arm64.dmg
+          - runner: macos-15-intel
+            target: --mac dmg --x64
+            assets: AgentCLI-*-x64.dmg
+          - runner: windows-latest
+            target: --win nsis portable --x64
+            assets: AgentCLI-Setup-*-x64.exe AgentCLI-Portable-*-x64.exe
+          - runner: windows-latest
+            target: --win nsis portable --arm64
+            assets: AgentCLI-Setup-*-arm64.exe AgentCLI-Portable-*-arm64.exe
+          - runner: ubuntu-latest
+            target: --linux AppImage --x64
+            assets: AgentCLI-*-x86_64.AppImage
+          - runner: ubuntu-latest
+            target: --linux AppImage --arm64
+            assets: AgentCLI-*-arm64.AppImage
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm fetch:vendor
+      - run: pnpm desktop:build
+      - run: pnpm desktop:stage
+      - name: Build desktop target
+        shell: bash
+        run: pnpm exec electron-builder ${{ matrix.target }}
+      - name: Upload desktop target
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          files=()
+          for pattern in ${{ matrix.assets }}; do
+            matches=(dist-desktop/$pattern)
+            if [ "${#matches[@]}" -eq 0 ]; then
+              echo "missing expected desktop asset: $pattern" >&2
+              exit 1
+            fi
+            files+=("${matches[@]}")
+          done
+          printf 'uploading %s\n' "${files[@]}"
+          gh release upload "$RELEASE_TAG" "${files[@]}" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+
+  publish-release:
+    needs: [release-standalone, release-desktop]
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - name: Verify every distributable before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          test "$RELEASE_TAG" = "$VERSION"
+          actual="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for asset in \
+            agentcli-windows-x64.zip \
+            agentcli-macos-x64.zip \
+            agentcli-macos-arm64.zip \
+            agentcli-linux-x64.zip \
+            "AgentCLI-${VERSION}-arm64.dmg" \
+            "AgentCLI-${VERSION}-x64.dmg" \
+            "AgentCLI-Setup-${VERSION}-x64.exe" \
+            "AgentCLI-Portable-${VERSION}-x64.exe" \
+            "AgentCLI-Setup-${VERSION}-arm64.exe" \
+            "AgentCLI-Portable-${VERSION}-arm64.exe" \
+            "AgentCLI-${VERSION}-x86_64.AppImage" \
+            "AgentCLI-${VERSION}-arm64.AppImage"; do
+            printf '%s\n' "$actual" | grep -Fqx "$asset" || {
+              echo "missing release asset: $asset" >&2
+              exit 1
+            }
+          done
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+      - name: Dispatch Pages after publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_TAG"

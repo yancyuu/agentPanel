@@ -633,10 +633,10 @@ async function startOAuthCallbackServer(expectedState, timeoutMs) {
           res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(
             buildAuthCallbackHtml({
-            title: '授权失败',
-            eyebrow: `${BRAND.stylizedName} Auth`,
-            message: 'state 校验失败，请回到终端重试。',
-            tone: 'error',
+              title: '授权失败',
+              eyebrow: `${BRAND.stylizedName} Auth`,
+              message: 'state 校验失败，请回到终端重试。',
+              tone: 'error',
             })
           );
           reject(new Error('OAuth state mismatch'));
@@ -646,10 +646,10 @@ async function startOAuthCallbackServer(expectedState, timeoutMs) {
           res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(
             buildAuthCallbackHtml({
-            title: '授权已取消',
-            eyebrow: `${BRAND.stylizedName} Auth`,
-            message: '授权流程已取消，请回到终端查看详情。',
-            tone: 'warn',
+              title: '授权已取消',
+              eyebrow: `${BRAND.stylizedName} Auth`,
+              message: '授权流程已取消，请回到终端查看详情。',
+              tone: 'warn',
             })
           );
           reject(new Error(`OAuth provider returned error: ${error}`));
@@ -659,10 +659,10 @@ async function startOAuthCallbackServer(expectedState, timeoutMs) {
           res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(
             buildAuthCallbackHtml({
-            title: '授权失败',
-            eyebrow: `${BRAND.stylizedName} Auth`,
-            message: '缺少授权码，请回到终端重新发起登录。',
-            tone: 'error',
+              title: '授权失败',
+              eyebrow: `${BRAND.stylizedName} Auth`,
+              message: '缺少授权码，请回到终端重新发起登录。',
+              tone: 'error',
             })
           );
           reject(new Error('OAuth callback missing code'));
@@ -671,9 +671,9 @@ async function startOAuthCallbackServer(expectedState, timeoutMs) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(
           buildAuthCallbackHtml({
-          title: '授权完成',
-          eyebrow: `${BRAND.productName} is ready`,
-          message: `你已经成功登录 ${BRAND.authProviderName}，可以回到 ${BRAND.productName} 继续使用。`,
+            title: '授权完成',
+            eyebrow: `${BRAND.productName} is ready`,
+            message: `你已经成功登录 ${BRAND.authProviderName}，可以回到 ${BRAND.productName} 继续使用。`,
           })
         );
         resolve(code);
@@ -870,8 +870,8 @@ async function waitForAuthPollInterval(intervalMs, signal) {
     signal.addEventListener(
       'abort',
       () => {
-      clearTimeout(timer);
-      reject(signal.reason || new Error('CLI auth cancelled'));
+        clearTimeout(timer);
+        reject(signal.reason || new Error('CLI auth cancelled'));
       },
       { once: true }
     );
@@ -897,8 +897,8 @@ async function pollDeviceAuthToken(config, session, { signal = null } = {}) {
       : await fetch(
           `${config.pollUrl}?flow_id=${encodeURIComponent(session.flowId)}&poll_secret=${encodeURIComponent(session.pollSecret)}`,
           {
-          headers: { Accept: 'application/json' },
-          signal: fetchSignal,
+            headers: { Accept: 'application/json' },
+            signal: fetchSignal,
           }
         );
     const payload = await res.json().catch(() => null);
@@ -947,8 +947,8 @@ async function performDeviceAuthLogin({ quiet = false, controlUrl = null } = {})
       printCliRows(
         '飞书授权登录',
         [
-        ['状态', `正在连接 ${BRAND.authProviderName} 授权服务`, 'warn'],
-        ['服务', config.baseUrl, 'info'],
+          ['状态', `正在连接 ${BRAND.authProviderName} 授权服务`, 'warn'],
+          ['服务', config.baseUrl, 'info'],
         ],
         '如果这里超过 30 秒，说明授权服务不可达或网络被拦截；Esc/Ctrl+C 可取消。'
       );
@@ -969,7 +969,7 @@ async function performDeviceAuthLogin({ quiet = false, controlUrl = null } = {})
               ? '请复制下面的地址到浏览器完成飞书授权'
               : '已打开浏览器，等待飞书授权确认',
           ],
-        ['安全', `CLI 只保存 ${BRAND.authProviderName} 授权状态`],
+          ['安全', `CLI 只保存 ${BRAND.authProviderName} 授权状态`],
         ],
         '浏览器完成授权后，CLI 会自动继续；Esc/Ctrl+C 可取消。'
       );
@@ -1190,7 +1190,9 @@ function isLocalCommandAllowedWithoutLogin() {
   )
     return true;
   if (commandArgs[0] === 'usage')
-    return ['status', 'today', 'report', 'start', 'stop', 'autostart'].includes(commandArgs[1]);
+    return ['status', 'today', 'report', 'start', 'stop', 'autostart', 'reconcile'].includes(
+      commandArgs[1]
+    );
   if (commandArgs[0] === 'collaboration' && commandArgs[1] === 'start') return true;
   if (commandArgs[0] === 'teams') return ['list', 'create'].includes(commandArgs[1]);
   if (commandArgs[0] === 'tasks')
@@ -1306,12 +1308,12 @@ async function runAuthDevLogin({ exitOnDone = true, requireCode = true, quiet = 
     printCliRows(
       '开发模式已解锁',
       [
-      ['账号', auth.account?.email || auth.account?.id || 'local dev'],
-      ['有效期', auth.expiresAt || '本地会话'],
-      ['调试日志', '开启'],
-      ['Web 日志', daemonLogPath],
-      ['同步日志', telemetryWorkerLogPath],
-      ['范围', '仅源码 checkout，本地调试使用'],
+        ['账号', auth.account?.email || auth.account?.id || 'local dev'],
+        ['有效期', auth.expiresAt || '本地会话'],
+        ['调试日志', '开启'],
+        ['Web 日志', daemonLogPath],
+        ['同步日志', telemetryWorkerLogPath],
+        ['范围', '仅源码 checkout，本地调试使用'],
       ],
       `退出开发登录可运行：${brandCommand('auth logout')}`
     );
@@ -1349,7 +1351,7 @@ async function printAuthStatus({ exitOnDone = true } = {}) {
     printCliRows(
       BRAND.authAccountLabel,
       [
-      ['状态', '未登录'],
+        ['状态', '未登录'],
         [
           '影响',
           `本地使用和本地 usage 统计无需登录；云端授权、托管服务和显式上传需要 ${BRAND.authProviderName} 飞书授权`,
@@ -1409,7 +1411,7 @@ async function runAuthLogin({
             auth.account?.id ||
             `${BRAND.authProviderName} account`,
         ],
-      ['授权', `飞书授权已通过 ${BRAND.authProviderName} 确认，云端授权和托管服务已可用`],
+        ['授权', `飞书授权已通过 ${BRAND.authProviderName} 确认，云端授权和托管服务已可用`],
         [
           '安全',
           `CLI 只保存 ${BRAND.authProviderName} 授权状态，不会保存飞书 app secret、飞书 token 或 Claude Code 凭证`,
@@ -1427,10 +1429,10 @@ async function runAuthLogin({
     printCliRows(
       '登录失败',
       [
-      ['原因', message],
-      ['默认', `通过 ${BRAND.authProviderName} 打开飞书授权，可用 --control-url 指定控制台地址`],
-      ['协议', '/api/v1/auth/start + poll'],
-      ['安全', 'CLI 不保存飞书 app secret、飞书 token 或 Claude Code 凭证，也不会打印 token'],
+        ['原因', message],
+        ['默认', `通过 ${BRAND.authProviderName} 打开飞书授权，可用 --control-url 指定控制台地址`],
+        ['协议', '/api/v1/auth/start + poll'],
+        ['安全', 'CLI 不保存飞书 app secret、飞书 token 或 Claude Code 凭证，也不会打印 token'],
       ],
       '请确认授权服务已按最新 AgentCLI API 返回 flow_id / poll_secret / authorization_url。'
     );
@@ -1440,64 +1442,64 @@ async function runAuthLogin({
 }
 
 export {
-getAuthStorePath,
-ensureAuthStoreDir,
-normalizeExpiry,
-readOpenHermitAuthStore,
-isAuthTokenExpired,
-authStatusFromStore,
-normalizeScopes,
-normalizeAccessTokenPayload,
-mergeAuthToken,
-readOpenHermitAuthStatus,
-writeOpenHermitAuthStore,
-deleteOpenHermitAuthStore,
-getOAuthConfig,
-hasRawOAuthConfig,
-normalizeControlUrl,
-resolveConversationUploadBaseUrl,
-isSourceCheckout,
-getDefaultDeviceAuthBaseUrl,
-getDeviceAuthConfig,
-assertOAuthConfigured,
-base64Url,
-randomOAuthValue,
-buildCodeChallenge,
-buildAuthorizationUrl,
-openExternalUrl,
-escapeHtml,
-buildAuthCallbackHtml,
-startOAuthCallbackServer,
-exchangeAuthorizationCode,
-fetchOAuthUserInfo,
-buildAuthStoreFromToken,
-performRawOAuthLogin,
-startDeviceAuthSession,
-normalizeHermitAuthIdentity,
-waitForAuthPollInterval,
-pollDeviceAuthToken,
-performDeviceAuthLogin,
-performOpenHermitLogin,
-refreshExpiredOpenHermitToken,
-refreshOpenHermitAuthStatus,
-authStatusPayload,
-failAuthRequired,
-requireOpenHermitAuthForCommand,
-isAuthCommandAllowedWithoutLogin,
-isLocalCommandAllowedWithoutLogin,
-requireOpenHermitAuthForEntry,
-parseAuthLoginOptions,
-buildDevAuthStore,
-promptDevUnlockCode,
-runAuthDevLogin,
-printAuthStatus,
-runAuthLogout,
-runAuthLogin,
-AUTH_CALLBACK_PATH,
-AUTH_STORE_SCHEMA_VERSION,
-DEFAULT_OPENHERMIT_CLOUD_BASE_URL,
-OPENHERMIT_AUTH_BROKER_URL,
-OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL,
-DEV_AUTH_UNLOCK_CODE,
-resolveAuthedServerContext,
+  getAuthStorePath,
+  ensureAuthStoreDir,
+  normalizeExpiry,
+  readOpenHermitAuthStore,
+  isAuthTokenExpired,
+  authStatusFromStore,
+  normalizeScopes,
+  normalizeAccessTokenPayload,
+  mergeAuthToken,
+  readOpenHermitAuthStatus,
+  writeOpenHermitAuthStore,
+  deleteOpenHermitAuthStore,
+  getOAuthConfig,
+  hasRawOAuthConfig,
+  normalizeControlUrl,
+  resolveConversationUploadBaseUrl,
+  isSourceCheckout,
+  getDefaultDeviceAuthBaseUrl,
+  getDeviceAuthConfig,
+  assertOAuthConfigured,
+  base64Url,
+  randomOAuthValue,
+  buildCodeChallenge,
+  buildAuthorizationUrl,
+  openExternalUrl,
+  escapeHtml,
+  buildAuthCallbackHtml,
+  startOAuthCallbackServer,
+  exchangeAuthorizationCode,
+  fetchOAuthUserInfo,
+  buildAuthStoreFromToken,
+  performRawOAuthLogin,
+  startDeviceAuthSession,
+  normalizeHermitAuthIdentity,
+  waitForAuthPollInterval,
+  pollDeviceAuthToken,
+  performDeviceAuthLogin,
+  performOpenHermitLogin,
+  refreshExpiredOpenHermitToken,
+  refreshOpenHermitAuthStatus,
+  authStatusPayload,
+  failAuthRequired,
+  requireOpenHermitAuthForCommand,
+  isAuthCommandAllowedWithoutLogin,
+  isLocalCommandAllowedWithoutLogin,
+  requireOpenHermitAuthForEntry,
+  parseAuthLoginOptions,
+  buildDevAuthStore,
+  promptDevUnlockCode,
+  runAuthDevLogin,
+  printAuthStatus,
+  runAuthLogout,
+  runAuthLogin,
+  AUTH_CALLBACK_PATH,
+  AUTH_STORE_SCHEMA_VERSION,
+  DEFAULT_OPENHERMIT_CLOUD_BASE_URL,
+  OPENHERMIT_AUTH_BROKER_URL,
+  OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL,
+  DEV_AUTH_UNLOCK_CODE,
+  resolveAuthedServerContext,
 };

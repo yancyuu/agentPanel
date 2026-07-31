@@ -12,22 +12,16 @@ import { BRAND } from '../branding.mjs';
 
 export const NAV_ACTIONS = [
   {
-    id: 'web',
-    label: '本地工作台',
-    description: '打开本机 Web 工作台；数字员工请在 Web 端创建和管理',
-    recommended: true,
-    children: [
-      { id: 'toggle-web', label: '开启/关闭 AgentCLI 工作台', toggle: 'web', description: '启动/停止本机 AgentCLI Web 工作台；请在 Web 工作台创建和管理数字员工' },
-      { id: 'workbench-status', label: '查看本地工作台状态', description: '查看 AgentCLI 工作台运行状态' },
-    ],
-  },
-  {
     id: 'data-sync',
     label: '消息总线',
     description: '回车展开；消息上报启动后台增量扫描，只上报最近 7 天；可手动重报最近 7 天',
     children: [
       { id: 'toggle-message-upload', label: '开启/关闭 用量上报', toggle: 'conversation-upload' },
-      { id: 'scan', label: '重报最近 7 天', description: '忽略游标重扫最近 7 天并补传；服务端按 eventId 自动去重' },
+      {
+        id: 'scan',
+        label: '重报最近 7 天',
+        description: '忽略游标重扫最近 7 天并补传；服务端按 eventId 自动去重',
+      },
       { id: 'upload-logs', label: '查看上报日志', developerOnly: true },
       { id: 'overview', label: '查看同步状态' },
     ],
@@ -47,9 +41,23 @@ export const NAV_ACTIONS = [
     label: 'token 池（Beta）',
     description: '回车展开；签发并认领 AI 网关 key，可选写入 Claude/Codex 配置，支持一键恢复',
     children: [
-      { id: 'aikey-claim', label: '认领', description: '签发消费者并认领 key；选择运行时（Claude/Codex，默认都写），写入本地配置 + aikey env' },
-      { id: 'aikey-manual', label: '说明书', description: '在线说明书 + 本地脱敏配置：变量名、端点和可用模型（给 agent 用，不含明文 key）' },
-      { id: 'aikey-restore', label: '恢复配置快照', description: '选择 ~/.hermit/agentcli.env.bak 中的时间点，还原 Claude/Codex/Pi 配置' },
+      {
+        id: 'aikey-claim',
+        label: '认领',
+        description:
+          '签发消费者并认领 key；可选写入 Codex / Claude Code / Pi（默认仅 Codex），并更新本地配置与 aikey env',
+      },
+      {
+        id: 'aikey-manual',
+        label: '说明书',
+        description:
+          '在线说明书 + 本地脱敏配置：变量名、端点和可用模型（给 agent 用，不含明文 key）',
+      },
+      {
+        id: 'aikey-restore',
+        label: '恢复配置快照',
+        description: '选择 ~/.hermit/agentcli.env.bak 中的时间点，还原 Claude/Codex/Pi 配置',
+      },
       { id: 'aikey-status', label: '状态', description: '查看当前 token 池状态' },
     ],
   },
@@ -60,37 +68,7 @@ export const NAV_ACTIONS = [
   },
 ];
 
-export const WEB_ENTRY_ACTIONS = [
-  {
-    id: 'start-web',
-    label: '开启本地数字员工工作台',
-    description: '启动本机工作台；不影响用量上报后台进程',
-    recommended: true,
-  },
-  {
-    id: 'stop-web',
-    label: '关闭本地数字员工工作台',
-    description: '停止本机工作台；不影响用量上报后台进程',
-  },
-  {
-    id: 'back',
-    label: '取消 / 返回首页',
-    description: `不修改工作台状态，回到 ${BRAND.stylizedName} 入口`,
-  },
-];
-
 export const SERVICE_ACTIONS = [
-  {
-    id: 'start-local',
-    label: '启动本地基础服务',
-    description: '启动 Web + Usage 后台采集；团队协作为企业版开放',
-    recommended: true,
-  },
-  {
-    id: 'start-web',
-    label: '只启动 Web 控制台',
-    description: '启动本机 Web UI，不启动 usage worker',
-  },
   {
     id: 'start-usage',
     label: '启动 Usage 后台采集',
@@ -104,17 +82,12 @@ export const SERVICE_ACTIONS = [
   {
     id: 'status',
     label: '查看服务状态',
-    description: '查看 Web daemon、usage worker 和企业版协作状态',
+    description: '查看本地服务、usage worker 和企业版协作状态',
   },
   {
     id: 'stop-usage',
     label: '停止 Usage 采集',
     description: '停止 usage worker 并关闭开机自启',
-  },
-  {
-    id: 'stop-web',
-    label: '停止 Web 控制台',
-    description: '停止后台 daemon/runtime',
   },
   {
     id: 'back',
@@ -124,11 +97,6 @@ export const SERVICE_ACTIONS = [
 ];
 
 export const LOCAL_USE_ACTIONS = [
-  {
-    id: 'web',
-    label: '打开本机 Web 控制台',
-    description: `进入本机 ${BRAND.stylizedName} Web，适合本地设置和可视化管理`,
-  },
   {
     id: 'employees',
     label: '数字员工',
@@ -152,11 +120,6 @@ export const LOCAL_USE_ACTIONS = [
 ];
 
 export const TEAM_COLLAB_ACTIONS = [
-  {
-    id: 'open-web-settings',
-    label: '打开协作设置',
-    description: '进入 Web 会话 → IM，管理企业版 agentbus 配置',
-  },
   {
     id: 'task-bus',
     label: 'IM 协作状态',
@@ -196,7 +159,7 @@ export const RUNTIME_ACTIONS = [
   {
     id: 'status',
     label: '服务状态',
-    description: '查看 daemon / Web URL',
+    description: '查看本地 daemon 和运行状态',
   },
   {
     id: 'doctor',
@@ -248,11 +211,6 @@ export const TASK_BUS_ACTIONS = [
     id: 'status',
     label: '查看 IM 协作状态',
     description: '企业版 IM 协作状态',
-  },
-  {
-    id: 'open-web-settings',
-    label: '打开 Web 会话',
-    description: '企业版 agentbus 总线配置入口（会话 → IM）',
   },
   {
     id: 'doctor',

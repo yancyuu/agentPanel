@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 
 import staticPlugin from '@fastify/static';
+
 import type { FastifyInstance } from 'fastify';
 
 interface StaticRouteOptions {

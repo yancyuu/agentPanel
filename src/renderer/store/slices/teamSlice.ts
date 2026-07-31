@@ -1273,8 +1273,6 @@ function detectTaskCommentNotifications(
     for (const comment of newComments) {
       // Don't notify about user's own comments
       if (comment.author === 'user') continue;
-      // Skip review-related comment types (already covered by status change notifications)
-      if (comment.type === 'review_request' || comment.type === 'review_approved') continue;
 
       const key = `${task.teamName}:${task.id}:${comment.id}`;
       if (notifiedCommentKeys.has(key)) continue;

@@ -34,7 +34,10 @@ async function waitFor(
 }
 
 class FakeDirectCli extends EventEmitter {
+  readonly prompts: string[] = [];
+
   send(sessionKey: string, params: { messageId: string; text: string }): Promise<void> {
+    this.prompts.push(params.text);
     let text: string;
     if (sessionKey.includes(':roundtable:agent-a')) {
       text = JSON.stringify({
@@ -79,13 +82,18 @@ class FakeDirectCli extends EventEmitter {
   }
 }
 
-function createManifest(slug: string, displayName: string, root: string): TeamManifest {
+function createManifest(
+  slug: string,
+  displayName: string,
+  root: string,
+  harness = 'claudecode'
+): TeamManifest {
   return {
     schemaVersion: 2,
     slug,
     displayName,
     bindProject: slug,
-    harness: 'claudecode',
+    harness,
     workDir: path.join(root, slug),
     collaboration: true,
     rootPath: path.join(root, slug),
@@ -220,7 +228,7 @@ describe('CollaborationOrchestrator', () => {
             status: 'done',
             reviewState: 'approved',
             assignee: null,
-            result: '完成结果',
+            deliveries: [{ version: 1, result: '完成结果', deliveredAt: now }],
             createdAt: now,
             updatedAt: now,
             order: 0,
@@ -245,7 +253,7 @@ describe('CollaborationOrchestrator', () => {
     const workspace = new CollaborationWorkspaceService(root);
     const manifests = new Map([
       ['agent-a', createManifest('agent-a', '产品经理', root)],
-      ['agent-b', createManifest('agent-b', '研究员', root)],
+      ['agent-b', createManifest('agent-b', '研究员', root, 'pi')],
     ]);
     const tasks: Task[] = [];
     const teams = {
@@ -269,7 +277,6 @@ describe('CollaborationOrchestrator', () => {
           collaborationRunId: payload.collaborationRunId as string | undefined,
           taskKind: payload.taskKind as Task['taskKind'],
           createdBy: payload.createdBy as string | undefined,
-          result: null,
           createdAt: now,
           updatedAt: now,
           order: tasks.length,
@@ -283,12 +290,23 @@ describe('CollaborationOrchestrator', () => {
         Object.assign(task, patch, { updatedAt: new Date().toISOString() });
         return Promise.resolve(task);
       },
+      addDelivery(_teamSlug: string, taskId: string, input: { result: string }) {
+        const task = tasks.find((candidate) => candidate.id === taskId);
+        if (!task) return Promise.reject(new Error('not found'));
+        const delivery = {
+          version: (task.deliveries?.length ?? 0) + 1,
+          result: input.result,
+          deliveredAt: new Date().toISOString(),
+        };
+        task.deliveries = [...(task.deliveries ?? []), delivery];
+        return Promise.resolve({ task, delivery, skippedFeedbackIds: [] as string[] });
+      },
       readTasks() {
         return Promise.resolve(tasks);
       },
     } as unknown as Pick<
       TeamProvisioningService,
-      'readTeamManifest' | 'createTask' | 'patchTask' | 'readTasks'
+      'readTeamManifest' | 'createTask' | 'patchTask' | 'addDelivery' | 'readTasks'
     >;
     const directCli = new FakeDirectCli();
     const orchestrator = new CollaborationOrchestrator({
@@ -348,6 +366,36 @@ describe('CollaborationOrchestrator', () => {
         }),
       ],
     });
+
+    const promptsBeforeFailedPersistence = directCli.prompts.length;
+    await expect(
+      orchestrator.requestChanges(run.id, '这次持久化会失败', async () => {
+        throw new Error('task persistence failed');
+      })
+    ).rejects.toThrow('task persistence failed');
+    const rolledBack = await workspace.readRun(run.id);
+    expect(rolledBack).toMatchObject({
+      phase: 'review',
+      finalResult: '# 最终交付物\n\n这是队长整合后的正式成果。',
+    });
+    expect(rolledBack.revisionNumber).toBeUndefined();
+    expect(directCli.prompts).toHaveLength(promptsBeforeFailedPersistence);
+
+    await orchestrator.requestChanges(run.id, '请补充风险和下一步建议');
+    await waitFor(async () => {
+      const revised = await workspace.readRun(run.id);
+      return revised.phase === 'review' && revised.revisionNumber === 1;
+    });
+    const revised = await workspace.readRun(run.id);
+    expect(revised).toMatchObject({
+      phase: 'review',
+      revisionNumber: 1,
+      revisionFeedback: '请补充风险和下一步建议',
+    });
+    expect(tasks).toHaveLength(2);
+    expect(directCli.prompts.some((prompt) => prompt.includes('请补充风险和下一步建议'))).toBe(
+      true
+    );
 
     orchestrator.dispose();
   });

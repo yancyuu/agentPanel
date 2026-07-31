@@ -21,19 +21,19 @@ describe('auth cloud base URL resolution', () => {
     tmpHome = null;
   });
 
-  it('uses the canonical AgentBus IP for a fresh installation', async () => {
+  it('uses the canonical HTTPS AgentBus domain for a fresh installation', async () => {
     tmpHome = await mkdtemp(path.join(os.tmpdir(), 'hermit-auth-base-'));
 
     const auth = await importAuthWithHome(tmpHome);
 
-    expect(auth.OPENHERMIT_AUTH_BROKER_URL).toBe('http://47.112.24.153');
-    expect(auth.OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL).toBe('http://47.112.24.153');
+    expect(auth.OPENHERMIT_AUTH_BROKER_URL).toBe('https://agentbus.skg.com');
+    expect(auth.OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL).toBe('https://agentbus.skg.com');
   });
 
   it.each([
-    'https://agentbus.skg.com',
+    'http://47.112.24.153',
     'http://159.75.231.98:8088',
-  ])('migrates the legacy product default %s to the new AgentBus IP', async (legacyBaseUrl) => {
+  ])('migrates the legacy product default %s to the HTTPS AgentBus domain', async (legacyBaseUrl) => {
     tmpHome = await mkdtemp(path.join(os.tmpdir(), 'hermit-auth-base-'));
     await mkdir(path.join(tmpHome, 'auth'), { recursive: true });
     await writeFile(
@@ -47,9 +47,9 @@ describe('auth cloud base URL resolution', () => {
 
     const auth = await importAuthWithHome(tmpHome);
 
-    expect(auth.OPENHERMIT_AUTH_BROKER_URL).toBe('http://47.112.24.153');
-    expect(auth.OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL).toBe('http://47.112.24.153');
-    expect(auth.resolveConversationUploadBaseUrl(legacyBaseUrl)).toBe('http://47.112.24.153');
+    expect(auth.OPENHERMIT_AUTH_BROKER_URL).toBe('https://agentbus.skg.com');
+    expect(auth.OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL).toBe('https://agentbus.skg.com');
+    expect(auth.resolveConversationUploadBaseUrl(legacyBaseUrl)).toBe('https://agentbus.skg.com');
   });
 
   it('preserves an explicitly configured custom cloud domain', async () => {
@@ -116,8 +116,8 @@ describe('auth cloud base URL resolution', () => {
 
     const auth = await importAuthWithHome(tmpHome);
 
-    // HTTP's default port is 80, so URL normalization omits the explicit port.
-    expect(auth.OPENHERMIT_AUTH_BROKER_URL).toBe('http://fresh-host.example.test');
-    expect(auth.OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL).toBe('http://fresh-host.example.test');
+    // Host-only overrides inherit the secure protocol from the canonical default.
+    expect(auth.OPENHERMIT_AUTH_BROKER_URL).toBe('https://fresh-host.example.test');
+    expect(auth.OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL).toBe('https://fresh-host.example.test');
   });
 });

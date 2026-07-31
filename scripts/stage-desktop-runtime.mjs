@@ -26,26 +26,18 @@ async function removeSymbolicLinks(directory) {
 await rm(stageRoot, { recursive: true, force: true });
 await mkdir(stageRoot, { recursive: true });
 
-execFileSync('pnpm', ['--filter', '.', 'deploy', '--prod', '--legacy', runtimeRoot], {
-  cwd: root,
-  stdio: 'inherit',
-});
-
-// Electron code signing cannot safely traverse pnpm's symlinked virtual store.
-// Reinstall only production dependencies as a flat, self-contained runtime tree.
-await rm(path.join(runtimeRoot, 'node_modules'), { recursive: true, force: true });
 execFileSync(
-  'npm',
-  [
-    'install',
-    '--omit=dev',
-    '--ignore-scripts',
-    '--no-package-lock',
-    '--no-audit',
-    '--no-fund',
-  ],
-  { cwd: runtimeRoot, stdio: 'inherit' }
+  'pnpm',
+  ['--config.node-linker=hoisted', '--filter', '.', 'deploy', '--prod', '--legacy', runtimeRoot],
+  {
+    cwd: root,
+    stdio: 'inherit',
+  }
 );
+
+// Hoisted deploy uses the reviewed pnpm-lock graph and leaves only executable
+// convenience links under node_modules/.bin. The packaged runtime calls concrete
+// entry files, so remove those links rather than re-resolving dependencies with npm.
 await removeSymbolicLinks(path.join(runtimeRoot, 'node_modules'));
 
 const portableNativePackages = [
@@ -78,28 +70,19 @@ for (const packageSpec of portableNativePackages) {
 }
 await rm(portablePackageRoot, { recursive: true, force: true });
 
-const workflowSource = path.join(
-  root,
-  'src/main/services/system-manager/builtin-workflows'
-);
+const workflowSource = path.join(root, 'src/main/services/system-manager/builtin-workflows');
 const workflowTarget = path.join(runtimeRoot, 'dist', 'builtin-workflows');
 await rm(workflowTarget, { recursive: true, force: true });
 await cp(workflowSource, workflowTarget, { recursive: true });
 
 await Promise.all([
   access(path.join(runtimeRoot, 'dist', 'server.bundle.mjs')),
+  access(path.join(runtimeRoot, 'dist', 'telemetry-worker.bundle.mjs')),
   access(path.join(runtimeRoot, 'dist-renderer', 'index.html')),
   access(path.join(runtimeRoot, 'bin', 'agentcli.mjs')),
   access(path.join(runtimeRoot, 'node_modules', 'fastify', 'package.json')),
   access(
-    path.join(
-      runtimeRoot,
-      'node_modules',
-      '@earendil-works',
-      'pi-coding-agent',
-      'dist',
-      'cli.js'
-    )
+    path.join(runtimeRoot, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js')
   ),
 ]);
 

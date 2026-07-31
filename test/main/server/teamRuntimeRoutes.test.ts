@@ -55,6 +55,7 @@ function createHarness() {
   const directCliManager = {
     getSessionId: vi.fn((): string | undefined => undefined),
     send: vi.fn(async () => undefined),
+    runOneShot: vi.fn(async () => undefined),
   };
   const directCliRoutes = new Map<string, { teamName: string; from: string; to: string }>();
   const restartBridge = vi.fn(async () => undefined);
@@ -187,7 +188,7 @@ describe('team runtime operations and routes', () => {
         teamSlug: 'team-a',
         title: 'Deleted',
         status: 'done',
-        result: '__deleted__',
+        deletedAt: '2026-01-01',
         createdAt: '2026-01-01',
         updatedAt: '2026-01-01',
         order: 1,
@@ -201,6 +202,29 @@ describe('team runtime operations and routes', () => {
     expect(harness.loopAssetsScanner.scanTeam).toHaveBeenCalledWith(
       expect.objectContaining({ taskCount: 1, bindProject: 'project-a' })
     );
+  });
+
+  it('dispatches Pi and Codex teams through the one-shot runtime path', async () => {
+    const harness = createHarness();
+    harness.teamProvisioning.readTeamManifestByProject.mockResolvedValueOnce(
+      manifest({ harness: 'pi' })
+    );
+
+    await harness.operations.dispatchDirectCliMessage({
+      teamName: 'team-a',
+      sessionKey: 'team-a:task:pi',
+      workDir: '/manifest/work',
+      from: 'Team A',
+      to: 'user',
+      text: '使用内置 Pi 完成任务',
+      messageId: 'pi-message',
+    });
+
+    expect(harness.directCliManager.runOneShot).toHaveBeenCalledWith(
+      'team-a:task:pi',
+      expect.objectContaining({ harness: 'pi', text: '使用内置 Pi 完成任务' })
+    );
+    expect(harness.directCliManager.send).not.toHaveBeenCalled();
   });
 
   it('keeps concurrent runtime replies mapped to their originating mail thread', async () => {

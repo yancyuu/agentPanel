@@ -42,7 +42,7 @@ export interface CollaborationOrchestratorDependencies {
   workspace: CollaborationWorkspaceService;
   teams: Pick<
     TeamProvisioningService,
-    'readTeamManifest' | 'createTask' | 'patchTask' | 'readTasks'
+    'readTeamManifest' | 'createTask' | 'patchTask' | 'readTasks' | 'addDelivery'
   >;
   directCli: DirectCliGateway;
   workbenchUrl: string;
@@ -300,8 +300,8 @@ export class CollaborationOrchestrator {
       team.memberTeamSlugs.map(async (teamSlug): Promise<CollaborationMemberSnapshot> => {
         const manifest = await this.dependencies.teams.readTeamManifest(teamSlug);
         if (manifest.deletedAt) throw new Error(`数字员工 ${manifest.displayName} 已删除`);
-        if (manifest.harness !== 'claudecode') {
-          throw new Error(`数字员工 ${manifest.displayName} 暂不支持圆桌协作`);
+        if (!['claudecode', 'codex', 'pi'].includes(manifest.harness)) {
+          throw new Error(`数字员工 ${manifest.displayName} 的运行方式暂不支持圆桌协作`);
         }
         if (!manifest.workDir.trim())
           throw new Error(`数字员工 ${manifest.displayName} 没有工作目录`);
@@ -348,6 +348,40 @@ export class CollaborationOrchestrator {
         await this.updateRun(runId, (run) => ({ ...run, phase: 'failed', error: message }));
       })
       .finally(() => this.running.delete(runId));
+  }
+
+  async requestChanges(
+    runId: string,
+    feedback: string,
+    beforeStart?: (run: CollaborationRun) => Promise<void>
+  ): Promise<CollaborationRun> {
+    const current = await this.dependencies.workspace.readRun(runId);
+    if (current.phase !== 'review') throw new Error('当前小队任务不在待审核阶段');
+    const revisionFeedback = feedback.trim();
+    if (!revisionFeedback) throw new Error('请填写需要修改的内容');
+    const updated = await this.updateRun(runId, (run) => ({
+      ...run,
+      phase: 'executing',
+      finalResult: undefined,
+      revisionFeedback,
+      revisionNumber: (run.revisionNumber ?? 0) + 1,
+      error: undefined,
+      workItems: run.workItems.map((item) => ({
+        ...item,
+        status: 'pending',
+        result: undefined,
+        error: undefined,
+        updatedAt: new Date().toISOString(),
+      })),
+    }));
+    try {
+      await beforeStart?.(updated);
+    } catch (error) {
+      await this.updateRun(runId, () => current);
+      throw error;
+    }
+    this.start(runId);
+    return updated;
   }
 
   async recoverInterruptedRuns(): Promise<string[]> {
@@ -537,6 +571,9 @@ export class CollaborationOrchestrator {
       `你的工作项：${item.title}`,
       `具体要求：${item.description}`,
       `预期交付：${item.expectedOutput}`,
+      run.revisionFeedback
+        ? `用户对上一版交付的修改意见：${run.revisionFeedback}\n请基于该意见重新检查并改进你的工作项。`
+        : null,
       inputFiles ? `用户提供的任务输入文件：\n${inputFiles}\n请先读取这些文件。` : null,
       '',
       '请独立完成这项工作。可以使用必要工具查资料、分析或生成文件。',
@@ -560,6 +597,9 @@ export class CollaborationOrchestrator {
       '你是本任务队长。下面是团队成员已经完成的全部工作成果。',
       `用户任务：${run.title}`,
       run.description ? `用户补充说明：${run.description}` : null,
+      run.revisionFeedback
+        ? `用户对上一版交付的修改意见：${run.revisionFeedback}\n本次必须逐项回应并修正。`
+        : null,
       captainInputFiles ? `用户提供的任务输入文件：\n${captainInputFiles}` : null,
       '',
       results,
@@ -718,9 +758,12 @@ export class CollaborationOrchestrator {
               `work-${item.id}`,
               this.buildWorkPrompt(run, item, assignee)
             );
+            // 工作项成果记录为一条交付成果（delivery），不再写单一的 result 字段
+            await this.dependencies.teams.addDelivery(run.rootTaskTeamSlug, item.taskId, {
+              result,
+            });
             await this.dependencies.teams.patchTask(run.rootTaskTeamSlug, item.taskId, {
               status: 'done',
-              result,
             });
             await this.updateRun(runId, (current) => ({
               ...current,
@@ -777,29 +820,28 @@ export class CollaborationOrchestrator {
     const existingRootTask = (await this.dependencies.teams.readTasks(run.rootTaskTeamSlug)).find(
       (task) => task.id === run.rootTaskId
     );
-    const rootTask: Task = await this.dependencies.teams.patchTask(
-      run.rootTaskTeamSlug,
-      run.rootTaskId,
-      {
-        status: 'done',
-        result: finalResult,
-        reviewState: 'review',
-        comments: [
-          ...(existingRootTask?.comments ?? []),
-          {
-            id: randomUUID(),
-            author: captain.displayName,
-            text: '小队已完成协作并提交最终成果，请检查结果。',
-            createdAt: new Date().toISOString(),
-            type: 'regular',
-          },
-        ],
-      }
-    );
+    // 最终成果记录为一条交付成果（delivery），不再写单一的 result 字段
+    await this.dependencies.teams.addDelivery(run.rootTaskTeamSlug, run.rootTaskId, {
+      result: finalResult,
+    });
+    await this.dependencies.teams.patchTask(run.rootTaskTeamSlug, run.rootTaskId, {
+      status: 'done',
+      reviewState: 'review',
+      comments: [
+        ...(existingRootTask?.comments ?? []),
+        {
+          id: randomUUID(),
+          author: captain.displayName,
+          text: '小队已完成协作并提交最终成果，请检查结果。',
+          createdAt: new Date().toISOString(),
+          type: 'regular',
+        },
+      ],
+    });
     await this.updateRun(runId, (current) => ({
       ...current,
       phase: 'review',
-      finalResult: rootTask.result ?? finalResult,
+      finalResult,
       error: undefined,
     }));
   }

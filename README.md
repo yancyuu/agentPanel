@@ -34,6 +34,8 @@ AgentCLI 是一个面向普通用户的**本地 AI 数字员工客户端**。你
 交付报告会直接显示在任务里，图片可以预览，文件可以打开。满意后点击“满意并归档”，正式成果会按版本保存到数字员工的本地 `outputs` 目录；如果不满意，直接提出修改意见，原任务会继续返工，不会产生混乱的新任务。
 
 > **Web for humans, CLI for agents.** 普通用户只需要工作台；CLI、HTTP API 和任务总线留在底层，为数字员工、自动化和高级用户提供能力。
+>
+> **桌面测试版签名说明：** 当前公开构建尚未配置 Apple Developer ID 公证和 Windows 商业代码签名。macOS 若阻止首次打开，请在“应用程序”中右键 AgentCLI，选择“打开”并确认；无需关闭 Gatekeeper 或系统安全保护。正式无警告分发将在签名证书配置完成后提供。
 
 ### 一次完整的工作流程
 
@@ -150,7 +152,7 @@ agentcli
 ```bash
 # 1. 安装（三选一）
 npm install -g @yancyyu/agentcli@latest      # 或 npx @yancyyu/agentcli@latest
-agentcli init                                 # ✅ 快速启动 Web + 用量后台 worker
+agentcli init                                 # ✅ 兼容自动化：只启动本地用量后台 worker
 
 # 2. 登录上报目标（飞书授权绑定 AgentBus）
 agentcli auth login
@@ -164,7 +166,7 @@ agentcli status                               # daemon / worker 运行中
 agentcli usage today                          # 今日本地用量摘要（不上传）
 ```
 
-> ⚠️ 自动上报需要**三要素同时满足**：已登录 + 消息上报已开启 + 后台采集运行中。「消息上报」开关只在交互菜单或 Web 里（`agentcli` →「用量同步」→「消息上报」），没有单独子命令——这是刻意设计。
+> ⚠️ 自动上报需要**三要素同时满足**：已登录 + 消息上报已开启 + 后台采集运行中。「消息上报」开关位于终端导航的「消息总线」中；会话正文始终需要单独授权，没有可被脚本误开的独立子命令。
 
 ---
 
@@ -174,17 +176,17 @@ agentcli usage today                          # 今日本地用量摘要（不�
 
 ### 启动与状态
 
-| 命令                            | 说明                                                                                   |
-| :------------------------------ | :------------------------------------------------------------------------------------- |
-| `agentcli`                      | 打开终端导航（控制面菜单）：工作台、用量同步、用户、token 池(beta)                     |
-| Web 工作台「创建数字员工」      | 运行 `agentcli web` 后在浏览器中创建和管理数字员工；终端工作台菜单不再提供快速创建入口 |
-| `agentcli init`                 | 快速初始化：默认启动 Web 工作台 + 用量后台 worker（worker 默认开机自启）               |
-| `agentcli web`                  | 直接启动 Web 工作台（默认 127.0.0.1:5680）；加 `--daemon` 后台运行                     |
-| `agentcli --daemon --port 8080` | 后台运行并指定端口                                                                     |
-| `agentcli status`               | 查看后台 daemon / Web 运行状态                                                         |
-| `agentcli doctor`               | 只读本地诊断：配置、服务、路径                                                         |
-| `agentcli stop`                 | 显示停止指引（不会主动关闭 Web / 用量 worker）                                         |
-| `agentcli restart`              | 重启 Web daemon + 用量 worker（更新或改配置后用它让新代码生效；本地命令，免登录）      |
+| 命令                            | 说明                                                                              |
+| :------------------------------ | :-------------------------------------------------------------------------------- |
+| `agentcli`                      | 打开终端导航：消息总线、用户和 token 池；不再提供 Web 工作台入口                  |
+| AgentCLI 桌面客户端             | 面向普通用户创建、运行和管理数字员工的默认入口                                    |
+| `agentcli init`                 | 兼容自动化：只启动本地用量后台 worker（默认开机自启），不启动 Web                 |
+| `agentcli web`                  | 直接启动 Web 工作台（默认 127.0.0.1:5680）；加 `--daemon` 后台运行                |
+| `agentcli --daemon --port 8080` | 后台运行并指定端口                                                                |
+| `agentcli status`               | 查看后台 daemon / Web 运行状态                                                    |
+| `agentcli doctor`               | 只读本地诊断：配置、服务、路径                                                    |
+| `agentcli stop`                 | 显示停止指引（不会主动关闭 Web / 用量 worker）                                    |
+| `agentcli restart`              | 重启 Web daemon + 用量 worker（更新或改配置后用它让新代码生效；本地命令，免登录） |
 
 ### 用户授权（上报前提）
 
@@ -215,15 +217,9 @@ agentcli usage today                          # 今日本地用量摘要（不�
 | `agentcli update`                | 检查并自更新到最新版本                                                            |
 | `agentcli add <plugin>`          | 安装能力插件到 MCP library（例：`add worker-society`）                            |
 
-### 在 Web 工作台创建数字员工
+### 在桌面客户端创建数字员工
 
-终端工作台菜单不再提供「开通数字员工」快捷向导。请运行：
-
-```bash
-agentcli web
-```
-
-浏览器打开 `http://127.0.0.1:5680` 后，在 Web 工作台使用「创建数字员工」完成创建、运行时选择和后续管理。底层 `create-digital-worker` 命令暂时保留，以兼容已有脚本和自动化流程。
+终端导航不再提供 Web 工作台和「开通数字员工」入口。普通用户请安装并打开 AgentCLI 桌面客户端，在「智能体」中完成创建、运行时选择和后续管理。`agentcli web`、`agentcli --daemon` 和底层 `create-digital-worker` 命令暂时保留，仅用于桌面内部服务、兼容脚本和自动化流程。
 
 ---
 
@@ -233,18 +229,20 @@ agentcli web
 
 AgentCLI 无侵入扫描本地会话日志：
 
-| 运行时      | 数据位置                        | 采集内容                                 |
-| :---------- | :------------------------------ | :--------------------------------------- |
-| Claude Code | `~/.claude/projects/**/*.jsonl` | token 用量、会话数、消息量；支持 IM 归因 |
-| Codex       | `~/.codex/sessions/**/*.jsonl`  | token 用量（output_tokens 为主）         |
+| 运行时      | 数据位置                        | 采集内容                                                         |
+| :---------- | :------------------------------ | :--------------------------------------------------------------- |
+| Claude Code | `~/.claude/projects/**/*.jsonl` | token 用量、会话数、消息量；支持 IM 归因                         |
+| Codex       | `~/.codex/sessions/**/*.jsonl`  | token 用量（统一按 input + output 口径）                         |
+| 内置 Pi     | 不扫描                          | 当前使用 `--no-session` 一次性执行，不默认纳入本地统计或远程上报 |
 
-### 把网关 Key 写进 Claude / Codex（token 池认领）
+### 把网关 Key 写进 Claude / Codex / Pi（token 池认领）
 
-登录后，在终端菜单 `agentcli` →「**token 池(测试版)**」→「**认领**」，会自动签发一个一次性网关 key。你可以选择写入 **Codex**、**Claude Code** 或两者；默认选择 Codex。认领后会直写本地运行时配置，并同步写入系统环境变量：
+登录后，在终端菜单 `agentcli` →「**token 池(测试版)**」→「**认领**」，会自动签发一个一次性网关 key。你可以选择写入 **Codex**、**Claude Code**、**Pi** 或其组合；默认选择 Codex。认领后只修改明确选择的运行时配置，并同步写入对应系统环境变量：
 
 - **Claude Code** `~/.claude/settings.json`：写入网关 endpoint（`ANTHROPIC_BASE_URL`）+ `ANTHROPIC_AUTH_TOKEN`，deep-merge 保留其它键，**不固定模型**。
 - **Codex** `~/.codex/auth.json`（`OPENAI_API_KEY`）+ `~/.codex/config.toml`（surgical 改写 `model_provider` / `model` / wire_api 与 `[model_providers.*]`，**保留 `[projects.*]`**）。Codex 的 base_url 由网关 `proxyPaths` 按所选 wire_api 解析，与 Claude 的 endpoint 不同。
-- 同时写 `~/.hermit/aikey.env`（0600），作为已认领标记，并供外部 agent 手动 `source`。
+- **Pi** `~/.pi/agent/models.json`：只更新 AgentCLI 管理的 `skg` Provider，保留其它 Provider。
+- 同时写 `~/.hermit/aikey.env`（0600），作为已认领标记，并供外部 agent 手动 `source`；仅包含本次所选运行时对应的 Provider 变量。
 - **系统环境变量**：认领时会一次性更新环境变量，不安装 `precmd` / `PROMPT_COMMAND` 等每次提示符执行的 hook：
   - **macOS**：更新 `~/.zshrc` 的 AgentCLI 管理块，并通过 `launchctl setenv` 让当前登录会话中新启动的 GUI 应用可读取；已有终端请新开一个。
   - **Linux**：更新 `~/.bashrc` 的 AgentCLI 管理块；新开终端后生效。

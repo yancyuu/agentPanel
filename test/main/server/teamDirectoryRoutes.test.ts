@@ -187,7 +187,7 @@ describe('team directory routes', () => {
         teamSlug: 'team-a',
         title: 'Deleted',
         status: 'done',
-        result: '__deleted__',
+        deletedAt: '2026-01-01',
         createdAt: '2026-01-01',
         updatedAt: '2026-01-01',
         order: 1,

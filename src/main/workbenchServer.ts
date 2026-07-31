@@ -10,6 +10,7 @@ import {
   CollaborationWorkspaceService,
   registerCollaborationRoutes,
 } from '@features/team-collaboration/main';
+import { DEFAULT_OPENHERMIT_CLOUD_BASE_URL } from '@shared/constants/cloudConfig.mjs';
 import { DESKTOP_SESSION_HEADER } from '@shared/constants/desktop';
 import Fastify from 'fastify';
 
@@ -190,9 +191,102 @@ async function createWorkbenchServerUncached(
       operations.broadcastSse('team-change', { type: 'diagnostic-run', runId: run.id }),
   });
   context.lifecycle.listenerDisposers.push(() => diagnosticRuns.dispose());
+
+  const buildAdvancedConnectionLocalSnapshot = async () => {
+    const manifests = (await svc.listTeams()).filter((manifest) => !manifest.deletedAt);
+    const taskGroups = await Promise.all(
+      manifests.map(async (manifest) => ({
+        teamSlug: manifest.slug,
+        tasks: await svc.readTasks(manifest.slug),
+      }))
+    );
+    const persistedTelemetry = await readUsageTelemetryWorkerStatus(environment.hermitHome);
+    const localTelemetry =
+      (await getTelemetryStatus()) ??
+      (await triggerScan({
+        enabled: false,
+        telemetry: {
+          enabled: true,
+          platform: 'claudecode',
+          uploadProviders: ['claudecode', 'codex'],
+          conversationUploadEnabled: false,
+        },
+      }));
+    const capabilityPacks = await getCapabilityPacks().list();
+    return {
+      generatedAt: new Date().toISOString(),
+      teams: manifests.map((manifest) => ({
+        slug: manifest.slug,
+        displayName: manifest.displayName,
+        description: manifest.description,
+        harness: manifest.harness,
+        online: true,
+      })),
+      tasks: taskGroups.flatMap(({ teamSlug, tasks }) =>
+        tasks
+          .filter((task) => task.taskKind !== 'subtask')
+          .map((task) => ({
+            id: task.id,
+            teamSlug,
+            title: task.title,
+            status: task.status,
+            updatedAt: task.updatedAt,
+          }))
+      ),
+      usage: (localTelemetry ?? persistedTelemetry) as unknown as Record<string, unknown>,
+      capabilities: capabilityPacks.packs.map((pack) => ({
+        id: pack.manifest.id,
+        name: pack.manifest.name,
+        description: pack.manifest.description,
+      })),
+    };
+  };
+
   const advancedConnections = new AdvancedConnectionService({
     hermitHome: environment.hermitHome,
+    onAuthenticated: async (connectionId) => {
+      await advancedConnections.syncAuthorizedData(
+        connectionId,
+        await buildAdvancedConnectionLocalSnapshot()
+      );
+    },
   });
+  if (process.env.NODE_ENV !== 'test') {
+    await advancedConnections
+      .ensureDefaultConnection(DEFAULT_OPENHERMIT_CLOUD_BASE_URL)
+      .catch((error) => app.log.warn({ err: error }, 'default AgentBus provisioning failed'));
+  }
+
+  let usageSyncRunning = false;
+  const usageSyncTimer = setInterval(
+    () => {
+      if (usageSyncRunning) return;
+      usageSyncRunning = true;
+      void advancedConnections
+        .list()
+        .then(async (connections) => {
+          const eligible = connections.filter(
+            (connection) =>
+              ['authenticated', 'ready', 'connected'].includes(connection.state) &&
+              connection.permissions['usage.aggregates'] === 'granted'
+          );
+          if (eligible.length === 0) return;
+          const snapshot = await buildAdvancedConnectionLocalSnapshot();
+          await Promise.allSettled(
+            eligible.map((connection) =>
+              advancedConnections.syncAuthorizedData(connection.id, snapshot)
+            )
+          );
+        })
+        .finally(() => {
+          usageSyncRunning = false;
+        });
+    },
+    5 * 60 * 1000
+  );
+  usageSyncTimer.unref();
+  context.lifecycle.listenerDisposers.push(() => clearInterval(usageSyncTimer));
+
   const commentReadState = new CommentReadStateService(environment.hermitHome);
   const workspaceCleanup = new WorkspaceCleanupService({ hermitHome: environment.hermitHome });
 
@@ -232,44 +326,7 @@ async function createWorkbenchServerUncached(
 
   registerAdvancedConnectionRoutes(app, {
     service: advancedConnections,
-    localSnapshot: async () => {
-      const manifests = (await svc.listTeams()).filter((manifest) => !manifest.deletedAt);
-      const taskGroups = await Promise.all(
-        manifests.map(async (manifest) => ({
-          teamSlug: manifest.slug,
-          tasks: await svc.readTasks(manifest.slug),
-        }))
-      );
-      const telemetryStatus = await readUsageTelemetryWorkerStatus(environment.hermitHome);
-      const capabilityPacks = await getCapabilityPacks().list();
-      return {
-        generatedAt: new Date().toISOString(),
-        teams: manifests.map((manifest) => ({
-          slug: manifest.slug,
-          displayName: manifest.displayName,
-          description: manifest.description,
-          harness: manifest.harness,
-          online: true,
-        })),
-        tasks: taskGroups.flatMap(({ teamSlug, tasks }) =>
-          tasks
-            .filter((task) => task.taskKind !== 'subtask')
-            .map((task) => ({
-              id: task.id,
-              teamSlug,
-              title: task.title,
-              status: task.status,
-              updatedAt: task.updatedAt,
-            }))
-        ),
-        usage: telemetryStatus as unknown as Record<string, unknown>,
-        capabilities: capabilityPacks.packs.map((pack) => ({
-          id: pack.manifest.id,
-          name: pack.manifest.name,
-          description: pack.manifest.description,
-        })),
-      };
-    },
+    localSnapshot: buildAdvancedConnectionLocalSnapshot,
   });
   registerCommentReadStateRoutes(app, { service: commentReadState });
   registerCollaborationRoutes(app, {
@@ -351,6 +408,21 @@ async function createWorkbenchServerUncached(
       taskId: string,
       patch: Parameters<TeamProvisioningService['patchTask']>[2]
     ) => svc.patchTask(teamName, taskId, patch),
+    addDelivery: (
+      teamName: string,
+      taskId: string,
+      input: Parameters<TeamProvisioningService['addDelivery']>[2]
+    ) => svc.addDelivery(teamName, taskId, input),
+    addFeedbackItem: (
+      teamName: string,
+      taskId: string,
+      input: Parameters<TeamProvisioningService['addFeedbackItem']>[2]
+    ) => svc.addFeedbackItem(teamName, taskId, input),
+    appendTaskHistoryEvent: (
+      teamName: string,
+      taskId: string,
+      event: Parameters<TeamProvisioningService['appendTaskHistoryEvent']>[2]
+    ) => svc.appendTaskHistoryEvent(teamName, taskId, event),
     dispatchTask: async (
       teamName: string,
       task: Parameters<TeamProvisioningService['dispatchTask']>[1]
@@ -408,6 +480,11 @@ async function createWorkbenchServerUncached(
     readTeamManifest: (teamName: string) => svc.readTeamManifest(teamName),
     broadcastTaskChange: (teamName: string, taskId: string) =>
       operations.broadcastSse('team-change', { type: 'task', teamName, taskId }),
+    requestCollaborationChanges: (
+      runId: string,
+      feedback: string,
+      beforeStart?: () => Promise<void>
+    ) => collaborationOrchestrator.requestChanges(runId, feedback, beforeStart),
     reply500: operations.reply500,
   };
   registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['core'] });
@@ -456,7 +533,12 @@ async function createWorkbenchServerUncached(
   });
   registerMcpRoutes(app, {
     readTasks: (teamSlug) => svc.readTasks(teamSlug),
+    createTask: (teamSlug, payload) => svc.createTask(teamSlug, payload),
     patchTask: (teamSlug, taskId, patch) => svc.patchTask(teamSlug, taskId, patch),
+    addDelivery: (teamSlug, taskId, input) => svc.addDelivery(teamSlug, taskId, input),
+    addFeedbackItem: (teamSlug, taskId, input) => svc.addFeedbackItem(teamSlug, taskId, input),
+    appendTaskHistoryEvent: (teamSlug, taskId, event) =>
+      svc.appendTaskHistoryEvent(teamSlug, taskId, event),
   });
   registerVersionUpdateRoutes(app, {
     version: environment.version,
@@ -609,7 +691,15 @@ async function createWorkbenchServerUncached(
     conversationTelemetry: services.conversationTelemetry,
   });
   registerUsageTelemetryStatusRoutes(app, usageTelemetryRouteDependencies);
-  registerReviewCompatibilityRoutes(app);
+  registerReviewCompatibilityRoutes(app, {
+    reviewDecisions: {
+      readReviewDecisions: (teamName) => svc.readReviewDecisions(teamName),
+      saveReviewDecision: (teamName, scopeKey, payload) =>
+        svc.saveReviewDecision(teamName, scopeKey, payload),
+      clearReviewDecision: (teamName, scopeKey) => svc.clearReviewDecision(teamName, scopeKey),
+    },
+    reply500: operations.reply500,
+  });
   registerSseRoutes(app, {
     state,
     assertTrustedBrowserOrigin: operations.assertTrustedBrowserOrigin,

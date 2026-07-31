@@ -1890,15 +1890,22 @@ async function uploadConversationMessagesLocked(
 
   const generatedAt = new Date(referenceMs).toISOString();
   const channels = new Map<string, UsageStatusChannel | null>();
-  try {
-    for (const platform of providers) {
+  const availableProviders: UploadPlatform[] = [];
+  const unavailableStatuses: ConversationUploadStatus[] = [];
+  for (const platform of providers) {
+    try {
       channels.set(platform, await fetchUsageChannel(baseUrl, token, platform, home));
+      availableProviders.push(platform);
+    } catch (error) {
+      const message = `${platform} 的服务端 /report/usage/status 不可用，本轮只跳过该平台：${sanitizeUploadError(error)}`;
+      unavailableStatuses.push(emptyStatus(true, true, { lastError: message }));
+      await appendUploadLog(home, 'server-cursor-unavailable', {
+        platform,
+        lastError: message,
+      });
     }
-  } catch (error) {
-    const message = `服务端 /report/usage/status 不可用，未扫描未上报：${sanitizeUploadError(error)}`;
-    await appendUploadLog(home, 'server-cursor-unavailable', { providers, lastError: message });
-    return emptyStatus(true, true, { lastError: message });
   }
+  if (availableProviders.length === 0) return mergeStatuses(unavailableStatuses);
 
   // Upload each platform channel concurrently: they target independent
   // eventId-dedup namespaces, so there is no contention between them.
@@ -1907,7 +1914,7 @@ async function uploadConversationMessagesLocked(
   let statuses: ConversationUploadStatus[];
   try {
     statuses = await Promise.all(
-      providers.map((platform) =>
+      availableProviders.map((platform) =>
         uploadPlatformMessages(
           platform,
           channels.get(platform) ?? null,
@@ -1931,7 +1938,7 @@ async function uploadConversationMessagesLocked(
     await appendUploadLog(home, 'server-unavailable', { providers, lastError: message });
     return emptyStatus(true, true, { lastError: message });
   }
-  return mergeStatuses(statuses);
+  return mergeStatuses([...unavailableStatuses, ...statuses]);
 }
 
 export async function uploadConversationMessages(

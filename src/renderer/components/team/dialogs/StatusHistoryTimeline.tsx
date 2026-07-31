@@ -18,11 +18,7 @@ interface WorkflowTimelineProps {
 
 export const WorkflowTimeline = ({ events, memberColorMap }: WorkflowTimelineProps) => {
   if (events.length === 0) {
-    return (
-      <div className="px-3 py-2 text-xs text-[var(--color-text-muted)]">
-        No workflow history recorded
-      </div>
-    );
+    return <div className="px-3 py-2 text-xs text-[var(--color-text-muted)]">暂无流程记录</div>;
   }
 
   return (
@@ -84,11 +80,11 @@ const EventContent = ({
       return (
         <span className="flex items-center gap-1">
           <Plus size={10} />
-          Created as
+          创建为
           <StatusBadge status={event.status} />
           {event.actor ? (
             <>
-              <span className="text-[var(--color-text-muted)]">by</span>
+              <span className="text-[var(--color-text-muted)]">由</span>
               <MemberBadge
                 name={event.actor}
                 color={memberColorMap?.get(event.actor)}
@@ -111,7 +107,7 @@ const EventContent = ({
       return (
         <span className="flex items-center gap-1">
           <Eye size={10} className="text-purple-400" />
-          Review requested
+          请求评审
           {event.reviewer ? (
             <MemberBadge
               name={event.reviewer}
@@ -120,21 +116,23 @@ const EventContent = ({
               hideAvatar
             />
           ) : null}
+          <EventNote note={event.note} />
         </span>
       );
     case 'review_started':
       return (
         <span className="flex items-center gap-1">
           <Eye size={10} className="text-purple-400" />
-          Review started
+          开始评审
         </span>
       );
     case 'review_changes_requested':
       return (
         <span className="flex items-center gap-1">
           <MessageSquareX size={10} className="text-amber-400" />
-          Changes requested
+          要求修改
           <ReviewStateBadge state="needsFix" />
+          <EventNote note={event.note} />
         </span>
       );
     case 'review_approved':
@@ -143,11 +141,24 @@ const EventContent = ({
           <ShieldCheck size={10} className="text-emerald-400" />
           已批准
           <ReviewStateBadge state="approved" />
+          <EventNote note={event.note} />
         </span>
       );
     default:
       return <span>未知事件</span>;
   }
+};
+
+const EventNote = ({ note }: { note?: string }) => {
+  if (!note) return null;
+  return (
+    <span
+      className="max-w-48 truncate text-[10px] italic text-[var(--color-text-muted)]"
+      title={note}
+    >
+      “{note}”
+    </span>
+  );
 };
 
 const StatusBadge = ({ status }: { status: TeamTaskStatus }) => {

@@ -172,19 +172,23 @@ function collectTasks(teamArg) {
 
   const rawTasks = Array.isArray(value.tasks) ? value.tasks : [];
   const tasks = rawTasks
-    .filter((task) => task && task.result !== '__deleted__')
-    .map((task) => ({
-      id: task.id,
-      displayId: typeof task.id === 'string' ? task.id.slice(0, 8) : '',
-      subject: task.title || task.subject || '',
-      description: task.description || '',
-      status: mapTaskStatus(task.status),
-      owner: task.assignee || task.owner || null,
-      createdAt: task.createdAt || null,
-      updatedAt: task.updatedAt || null,
-      result: task.result && task.result !== '__deleted__' ? task.result : null,
-      dispatchMeta: task.dispatchMeta || null,
-    }));
+    .filter((task) => task && !task.deletedAt)
+    .map((task) => {
+      const deliveries = Array.isArray(task.deliveries) ? task.deliveries : [];
+      const latestDelivery = deliveries.length > 0 ? deliveries[deliveries.length - 1] : null;
+      return {
+        id: task.id,
+        displayId: typeof task.id === 'string' ? task.id.slice(0, 8) : '',
+        subject: task.title || task.subject || '',
+        description: task.description || '',
+        status: mapTaskStatus(task.status),
+        owner: task.assignee || task.owner || null,
+        createdAt: task.createdAt || null,
+        updatedAt: task.updatedAt || null,
+        result: latestDelivery?.result || null,
+        dispatchMeta: task.dispatchMeta || null,
+      };
+    });
 
   return { team: teamArg, resolvedTeam, tasks, warnings, boardPath };
 }

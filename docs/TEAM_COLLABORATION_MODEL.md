@@ -61,6 +61,18 @@ interface CollaborationTeamManifest {
 ~/.hermit/collaboration-teams/<team-slug>/tasks/tasks.json
 ```
 
+## 当前桌面运行模型
+
+桌面工作台中的协作团队成员地位平等，每个任务通过结构化圆桌投票选出临时队长。成员可以使用：
+
+- Claude Code：复用长连接 stream-json 会话。
+- Codex：使用 `codex exec --json` 的一次性任务进程。
+- 内置 Pi：使用 `pi --print --mode text` 的一次性任务进程。
+
+Codex 和 Pi 的任务正文通过 stdin 传入，不出现在进程参数中；三种运行方式最终都转换为统一的完成/错误事件，因此单智能体任务和小队任务共用同一状态机。
+
+用户要求修改小队交付时，根任务进入 `needsFix`，对应 Collaboration Run 会从 `review` 回到 `executing`：已有成员工作项保持任务 ID 不变，但重新进入待执行状态，全体成员基于用户反馈返工，最后由原临时队长重新整合并再次提交审核。
+
 ## 任务编排
 
 1. 用户为协作团队创建的顶层任务默认分配给 Leader。
@@ -82,19 +94,13 @@ interface CollaborationTaskFields {
 
 ## AgentCLI 命令协议
 
-所有成员使用同一个内置 `agentcli`，不存在单独的 Leader CLI。
+所有成员使用同一个内置 `agentcli`，不存在单独的 Leader CLI。当前公开且稳定的任务发现命令只有：
 
 ```bash
-agentcli team status
-agentcli team members
-agentcli tasks list
-agentcli tasks create --parent <task-id>
-agentcli tasks assign --id <task-id> --agent <agent-id>
-agentcli tasks claim --id <task-id>
-agentcli tasks comment --id <task-id> --text "进度"
-agentcli tasks clarify --id <task-id> --target leader
-agentcli tasks complete --id <task-id> --result "交付"
+agentcli tasks list --team <team-slug> --port <agentcli-port>
 ```
+
+`team-slug` 和端口必须由当前运行环境注入，不能在文档或 Prompt 中写死测试值。任务创建、领取、评论、澄清、完成和改派由桌面客户端及本地任务服务执行；在 CLI 正式提供对应命令之前，不得在 Agent 指令中引用不存在的子命令。
 
 禁止使用 MCP、Skills 或 Harness 原生 Task/Todo 系统维护协作看板。
 
@@ -104,14 +110,14 @@ agentcli tasks complete --id <task-id> --result "交付"
 
 - 当前 Team、Leader Agent ID 和成员范围。
 - 新任务先进入 Leader 收件范围。
-- 必须使用 `agentcli tasks create/assign/comment/clarify/complete` 拆分、指派和汇总。
-- 不得直接调用内部 API，不得伪造任务 ID。
+- 通过桌面任务服务拆分、指派和汇总，必要时只使用 `agentcli tasks list` 核对任务事实。
+- 不得直接调用未公开的内部 API，不得伪造任务 ID、团队 slug 或端口。
 
 ### 普通成员
 
 - 当前 Team、Agent ID 和成员角色。
-- 只处理 `agentcli tasks list` 返回且明确指派给自己的任务。
-- 开始前 claim，过程中 comment，阻塞时 clarify，完成时 complete。
+- 只处理桌面任务服务或 `agentcli tasks list` 返回且明确指派给自己的任务。
+- 任务状态和反馈通过桌面任务服务持久化，不得调用不存在的 CLI 子命令。
 - 不得创建或改派团队任务。
 
 Prompt 中不注入凭据，不注入 MCP/Skills 扩展，不把用户输入的多行描述直接拼成系统协议。

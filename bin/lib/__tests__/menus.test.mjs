@@ -4,7 +4,16 @@
 // assertions against menus.mjs.
 import { describe, expect, it } from 'vitest';
 
-import { ACCOUNT_ACTIONS, LOCAL_COLLECTION_ACTIONS, NAV_ACTIONS, findMenuAction } from '../menus.mjs';
+import {
+  ACCOUNT_ACTIONS,
+  LOCAL_COLLECTION_ACTIONS,
+  LOCAL_USE_ACTIONS,
+  NAV_ACTIONS,
+  SERVICE_ACTIONS,
+  TASK_BUS_ACTIONS,
+  TEAM_COLLAB_ACTIONS,
+  findMenuAction,
+} from '../menus.mjs';
 
 describe('menus — scan action re-reports the last 24h', () => {
   it('data-sync nav group offers a 重报最近 7 天 action', () => {
@@ -26,26 +35,18 @@ describe('menus — scan action re-reports the last 24h', () => {
   });
 });
 
-describe('menus — 本地工作台只提供 Web 工作台入口', () => {
-  const web = NAV_ACTIONS.find((a) => a.id === 'web');
-
-  it('keeps a single workbench-status entry', () => {
-    const ids = web.children.map((c) => c.id);
-    expect(ids).toContain('workbench-status');
-    expect(ids).not.toContain('web-status');
-    expect(ids).not.toContain('feishu-bridge-status');
-  });
-
-  it('removes Digital Worker onboarding and points users to the Web workbench', () => {
-    const ids = web.children.map((c) => c.id);
-    expect(ids).toEqual(['toggle-web', 'workbench-status']);
-    expect(ids).not.toContain('quick-create-assistant');
-    expect(ids).not.toContain('install-lark-cli');
-    expect(ids).not.toContain('toggle-feishu-bridge');
-
-    const toggleWeb = web.children.find((child) => child.id === 'toggle-web');
-    expect(toggleWeb.description).toContain('Web 工作台');
-    expect(toggleWeb.description).toContain('创建和管理数字员工');
+describe('menus — 桌面客户端取代 CLI Web 工作台入口', () => {
+  it('removes Web workbench actions from every interactive menu', () => {
+    expect(NAV_ACTIONS.map((action) => action.id)).not.toContain('web');
+    expect(
+      NAV_ACTIONS.flatMap((action) => action.children ?? []).map((action) => action.id)
+    ).not.toEqual(expect.arrayContaining(['toggle-web', 'workbench-status']));
+    expect(SERVICE_ACTIONS.map((action) => action.id)).not.toEqual(
+      expect.arrayContaining(['start-local', 'start-web', 'stop-web'])
+    );
+    expect(LOCAL_USE_ACTIONS.map((action) => action.id)).not.toContain('web');
+    expect(TEAM_COLLAB_ACTIONS.map((action) => action.id)).not.toContain('open-web-settings');
+    expect(TASK_BUS_ACTIONS.map((action) => action.id)).not.toContain('open-web-settings');
   });
 });
 
@@ -58,19 +59,15 @@ describe('menus — 用户菜单不重复提供在线说明书', () => {
   });
 
   it('combines the online guide and local token-pool diagnostic into one manual action', () => {
-    const manual = findMenuAction(NAV_ACTIONS.find((action) => action.id === 'aikey').children, 'aikey-manual');
+    const manual = findMenuAction(
+      NAV_ACTIONS.find((action) => action.id === 'aikey').children,
+      'aikey-manual'
+    );
 
     expect(manual).toBeTruthy();
     expect(manual.label).toBe('说明书');
     expect(manual.description).toContain('在线说明书');
     expect(manual.description).toContain('本地脱敏配置');
-  });
-
-  it('does not expose digital worker onboarding from the AgentCLI workbench group', () => {
-    const web = NAV_ACTIONS.find((a) => a.id === 'web');
-    const action = findMenuAction(web.children, 'quick-create-assistant');
-
-    expect(action).toBeNull();
   });
 
   it('does not expose digital worker onboarding from the user account group', () => {

@@ -8,6 +8,7 @@ import type { Task } from './TeamWorkspaceService';
 interface DeliverableVersion {
   id: string;
   createdAt: string;
+  deliveryVersion: number;
   resultFile: string;
   attachments: string[];
 }
@@ -79,9 +80,9 @@ function attachmentExtension(mimeType: string): string {
 }
 
 /**
- * Persist an approved task result under the local digital employee directory.
- * No additional API or database is introduced: the existing approval action
- * writes an append-only deliverable version to ~/.hermit/teams/<team>/outputs.
+ * Persist the latest approved delivery as an append-only version under
+ * ~/.hermit/teams/<team>/outputs. Task input blobs remain independent from the
+ * formal archive; available task attachments are copied as immutable evidence.
  */
 export async function archiveTaskDeliverable({
   teamName,
@@ -89,8 +90,9 @@ export async function archiveTaskDeliverable({
   approvedAt = new Date(),
   teamDir = teamRoot(teamName),
 }: ArchiveTaskDeliverableOptions): Promise<ArchivedTaskDeliverable> {
-  const result = task.result?.trim();
-  if (!result || result === '__deleted__') {
+  const delivery = task.deliveries?.at(-1);
+  const result = delivery?.result.trim();
+  if (!delivery || !result) {
     throw new Error('Task has no deliverable result to archive');
   }
 
@@ -125,7 +127,6 @@ export async function archiveTaskDeliverable({
           await copyFile(sourcePath, path.join(versionDir, relativePath));
           return relativePath;
         } catch {
-          // The text deliverable remains valid even when a stale attachment blob is unavailable.
           return null;
         }
       })
@@ -137,6 +138,7 @@ export async function archiveTaskDeliverable({
   const version: DeliverableVersion = {
     id: versionId,
     createdAt: approvedAt.toISOString(),
+    deliveryVersion: delivery.version,
     resultFile: path.relative(outputDir, resultPath),
     attachments: archivedAttachments,
   };

@@ -9,7 +9,11 @@
   <meta property="og:description" content="提交任务、查看进度、阅读结果，需要调整时直接继续回复。" />
   <meta property="og:type" content="website" />
   <meta name="theme-color" content="#1769aa" />
-  <link rel="icon" href="icon.png" />
+  <link rel="icon" type="image/png" sizes="1024x1024" href="icon.png?v=1.10.1" />
+  <link rel="apple-touch-icon" href="icon.png?v=1.10.1" />
+  <meta property="og:image" content="https://yancyuu.github.io/agentcli/icon.png?v=1.10.1" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:image" content="https://yancyuu.github.io/agentcli/icon.png?v=1.10.1" />
   <style>
     :root {
       --ink: #10233d;
@@ -235,9 +239,10 @@
     .platform-select { width: 100%; margin-top: 13px; padding: 11px 12px; color: white; border: 1px solid rgba(255,255,255,.2); border-radius: 10px; background: rgba(1, 31, 56, .28); }
     .platform-select option { color: #142236; background: white; }
     .download-note { margin: 12px 0 0 !important; font-size: 12px; }
-    .all-downloads { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid rgba(255,255,255,.13); }
-    .all-downloads a { padding: 18px 20px; border-right: 1px solid rgba(255,255,255,.13); }
-    .all-downloads a:last-child { border-right: 0; }
+    .all-downloads { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid rgba(255,255,255,.13); }
+    .all-downloads a { padding: 18px 20px; border-right: 1px solid rgba(255,255,255,.13); border-bottom: 1px solid rgba(255,255,255,.13); }
+    .all-downloads a:nth-child(3n) { border-right: 0; }
+    .all-downloads a:nth-last-child(-n+3) { border-bottom: 0; }
     .all-downloads strong { display: block; font-size: 13px; }
     .all-downloads span { color: rgba(255,255,255,.58); font-size: 11px; }
 
@@ -274,8 +279,10 @@
       .trust-item:nth-child(2) { border-right: 0; }
       .trust-item:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
       .all-downloads { grid-template-columns: repeat(2, 1fr); }
-      .all-downloads a:nth-child(2) { border-right: 0; }
-      .all-downloads a:nth-child(-n+2) { border-bottom: 1px solid rgba(255,255,255,.13); }
+      .all-downloads a:nth-child(3n) { border-right: 1px solid rgba(255,255,255,.13); }
+      .all-downloads a:nth-child(2n) { border-right: 0; }
+      .all-downloads a:nth-last-child(-n+3) { border-bottom: 1px solid rgba(255,255,255,.13); }
+      .all-downloads a:nth-last-child(-n+2) { border-bottom: 0; }
     }
 
     @media (max-width: 640px) {
@@ -312,7 +319,7 @@
   <header class="site-header">
     <nav class="nav" aria-label="主导航">
       <a class="brand" href="#top">
-        <img class="brand-mark" src="icon.png" alt="" />
+        <img class="brand-mark" src="icon.png?v=1.10.1" alt="" />
         <span>AgentCLI</span>
       </a>
       <div class="nav-links">
@@ -327,11 +334,11 @@
   <main id="top">
     <section class="hero">
       <div class="hero-inner">
-        <span class="eyebrow"><span class="eyebrow-dot"></span> AgentCLI 桌面版 · v1.9.80</span>
+        <span class="eyebrow"><span class="eyebrow-dot"></span> AgentCLI 桌面版 · v1.10.1</span>
         <h1>把任务交给 AI 助手，<br />在一个地方查看进度和结果。</h1>
         <p class="hero-lede">写下要做的事，附上相关资料，再选择一个助手或一支小队。任务完成后可以直接查看结果，需要调整时就在原任务里继续回复。</p>
         <div class="hero-actions">
-          <a id="heroDownload" class="button button-primary" href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg"><span aria-hidden="true">↓</span><span id="heroDownloadText">下载 AgentCLI</span></a>
+          <a id="heroDownload" class="button button-primary" href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-arm64.dmg"><span aria-hidden="true">↓</span><span id="heroDownloadText">下载 AgentCLI</span></a>
           <a class="button button-secondary" href="#workflow">查看使用方式 <span aria-hidden="true">→</span></a>
         </div>
         <div id="heroDownloadContext" class="download-context">正在查看适合你电脑的版本…</div>
@@ -350,7 +357,7 @@
 
     <section class="trust-strip" aria-label="产品特点">
       <div class="trust-grid">
-        <div class="trust-item"><strong>像普通软件一样安装</strong><span>下载并打开，按页面提示完成首次设置</span></div>
+        <div class="trust-item"><strong>下载后按系统提示安装</strong><span>当前测试版尚未完成商业代码签名，安装时请确认系统安全提示</span></div>
         <div class="trust-item"><strong>任务资料默认保存在本机</strong><span>任务记录、参考文件和完成结果都留在这台电脑上</span></div>
         <div class="trust-item"><strong>修改不用重新开始</strong><span>在原任务里补充要求，之前的资料和结果都会保留</span></div>
       </div>
@@ -409,22 +416,26 @@
         <div class="download-card">
           <div class="detected-label">建议版本</div>
           <h3 id="recommendedTitle">macOS 客户端</h3>
-          <div id="recommendedDetail" class="download-detail">Apple Silicon · DMG · 208 MB</div>
-          <a id="recommendedDownload" class="button button-primary" href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg">下载 macOS 客户端</a>
+          <div id="recommendedDetail" class="download-detail">Apple Silicon · DMG · 211 MB</div>
+          <a id="recommendedDownload" class="button button-primary" href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-arm64.dmg">下载 macOS 客户端</a>
           <select id="platformSelect" class="platform-select" aria-label="选择其他系统版本">
             <option value="macArm">macOS Apple Silicon</option>
             <option value="macIntel">macOS Intel</option>
             <option value="windows">Windows x64</option>
+            <option value="windowsArm">Windows ARM64</option>
             <option value="linux">Linux x64</option>
+            <option value="linuxArm">Linux ARM64</option>
           </select>
-          <p id="downloadNote" class="download-note">下载后打开 DMG，将 AgentCLI 拖入“应用程序”。</p>
+          <p id="downloadNote" class="download-note">下载后打开 DMG，将 AgentCLI 拖入“应用程序”。当前 macOS 构建尚未经过 Apple 公证；若首次打开被拦截，请在“应用程序”中右键 AgentCLI，选择“打开”并再次确认。无需关闭系统安全保护。</p>
         </div>
       </div>
       <div class="all-downloads">
-        <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg"><strong>macOS Apple Silicon</strong><span>DMG 桌面客户端</span></a>
-        <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-macos-x64.zip"><strong>macOS Intel</strong><span>ZIP 独立包</span></a>
-        <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-windows-x64.zip"><strong>Windows x64</strong><span>ZIP 独立包</span></a>
-        <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-linux-x64.zip"><strong>Linux x64</strong><span>ZIP 独立包</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-arm64.dmg"><strong>macOS Apple Silicon</strong><span>DMG 桌面客户端</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-x64.dmg"><strong>macOS Intel</strong><span>DMG 桌面客户端</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-Setup-1.10.1-x64.exe"><strong>Windows x64</strong><span>安装程序</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-Setup-1.10.1-arm64.exe"><strong>Windows ARM64</strong><span>安装程序</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-x86_64.AppImage"><strong>Linux x64</strong><span>AppImage</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-arm64.AppImage"><strong>Linux ARM64</strong><span>AppImage</span></a>
       </div>
     </section>
 
@@ -463,32 +474,34 @@
       <details><summary>我的任务和文件保存在哪里？</summary><p>任务记录和文件默认保存在这台电脑上。使用外部 AI 服务处理任务时，完成任务所需的文字、文件或必要上下文可能会发送给该服务，具体范围取决于你选择的服务和设置。AgentBus 数据上报需要另外连接并授权。</p></details>
       <details><summary>安装后还需要其他软件吗？</summary><p>一般不需要。安装 AgentCLI 后，按首次启动页面的提示完成设置即可。使用 Claude Code、Codex 或 Pi 时，仍需登录或配置相应的模型服务；Pi 是随客户端提供的执行器，不包含免费模型。</p></details>
       <details><summary>什么时候用一个助手，什么时候用小队？</summary><p>日常整理、写作或检查任务通常选择一个助手即可。需要同时查资料、整理内容、撰写和复核时，可以选择小队。</p></details>
-      <details><summary>我应该下载哪个 Mac 版本？</summary><p>点击屏幕左上角的苹果菜单，选择“关于本机”。如果显示 Apple M 系列芯片，请选择 Apple 芯片版；如果显示 Intel 处理器，请选择 Intel 芯片版。</p></details>
-      <details><summary>当前有哪些版本？</summary><p>当前 macOS Apple Silicon 提供桌面安装文件；其他平台的可用形式会在下载卡片中明确标注。请按系统和芯片类型选择，不要混用不同平台的安装包。</p></details>
+      <details><summary>我应该下载哪个 Mac 版本？</summary><p>点击屏幕左上角的苹果菜单，选择“关于本机”。如果显示 Apple M 系列芯片，请选择 Apple 芯片版；如果显示 Intel 处理器，请选择 Intel 芯片版。当前测试版尚未经过 Apple 公证；若系统阻止首次打开，请在“应用程序”中右键 AgentCLI，选择“打开”并确认，不要关闭 Gatekeeper 或系统安全保护。</p></details>
+      <details><summary>当前有哪些版本？</summary><p>目前提供 macOS Apple Silicon、macOS Intel、Windows x64、Windows ARM64、Linux x64 和 Linux ARM64 版本。Mac 使用 DMG，Windows 使用安装程序，Linux 使用 AppImage；请按系统和芯片类型选择。</p></details>
     </section>
   </main>
 
   <footer class="footer">
     <div class="footer-inner">
-      <a class="brand" href="#top"><img class="brand-mark" src="icon.png" alt="" /><span>AgentCLI</span></a>
+      <a class="brand" href="#top"><img class="brand-mark" src="icon.png?v=1.10.1" alt="" /><span>AgentCLI</span></a>
       <div class="footer-links"><a href="#download">下载</a><a href="#advanced">高级用户</a><a href="https://github.com/yancyuu/agentcli">GitHub</a><span>© 2026 AgentCLI</span></div>
     </div>
   </footer>
 
   <script>
-    const DOWNLOADS = {"macArm":{"label":"macOS 客户端","shortLabel":"macOS Apple Silicon","detail":"Apple Silicon · DMG · 208 MB","filename":"AgentCLI-1.9.80-arm64.dmg","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg","kind":"desktop"},"macIntel":{"label":"macOS Intel 独立包","shortLabel":"macOS Intel","detail":"Intel x64 · ZIP · 131 MB","filename":"agentcli-macos-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-macos-x64.zip","kind":"portable"},"windows":{"label":"Windows 独立包","shortLabel":"Windows x64","detail":"Windows x64 · ZIP · 123 MB","filename":"agentcli-windows-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-windows-x64.zip","kind":"portable"},"linux":{"label":"Linux 独立包","shortLabel":"Linux x64","detail":"Linux x64 · ZIP · 136 MB","filename":"agentcli-linux-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-linux-x64.zip","kind":"portable"}};
+    const DOWNLOADS = {"macArm":{"label":"macOS 客户端","shortLabel":"macOS Apple Silicon","detail":"Apple Silicon · DMG · 211 MB","filename":"AgentCLI-1.10.1-arm64.dmg","href":"https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-arm64.dmg","kind":"desktop"},"macIntel":{"label":"macOS Intel 客户端","shortLabel":"macOS Intel","detail":"Intel x64 · DMG · 216 MB","filename":"AgentCLI-1.10.1-x64.dmg","href":"https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-x64.dmg","kind":"desktop"},"windows":{"label":"Windows x64 客户端","shortLabel":"Windows x64","detail":"Windows x64 · 安装程序 · 187 MB","filename":"AgentCLI-Setup-1.10.1-x64.exe","href":"https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-Setup-1.10.1-x64.exe","kind":"desktop"},"windowsArm":{"label":"Windows ARM64 客户端","shortLabel":"Windows ARM64","detail":"Windows ARM64 · 安装程序 · 179 MB","filename":"AgentCLI-Setup-1.10.1-arm64.exe","href":"https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-Setup-1.10.1-arm64.exe","kind":"desktop"},"linux":{"label":"Linux x64 客户端","shortLabel":"Linux x64","detail":"Linux x64 · AppImage · 198 MB","filename":"AgentCLI-1.10.1-x86_64.AppImage","href":"https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-x86_64.AppImage","kind":"desktop"},"linuxArm":{"label":"Linux ARM64 客户端","shortLabel":"Linux ARM64","detail":"Linux ARM64 · AppImage · 197 MB","filename":"AgentCLI-1.10.1-arm64.AppImage","href":"https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-arm64.AppImage","kind":"desktop"}};
 
     function updateDownload(key) {
       const item = DOWNLOADS[key] || DOWNLOADS.macArm;
       const isDesktop = item.kind === 'desktop';
       document.getElementById('recommendedTitle').textContent = item.label;
-      document.getElementById('recommendedDetail').textContent = item.detail + ' · v1.9.80';
+      document.getElementById('recommendedDetail').textContent = item.detail + ' · v1.10.1';
       document.getElementById('recommendedDownload').href = item.href;
       document.getElementById('recommendedDownload').textContent = '下载' + item.label;
       document.getElementById('platformSelect').value = key;
-      document.getElementById('downloadNote').textContent = isDesktop
-        ? '下载后打开安装文件，并按系统提示完成安装。'
-        : '当前提供免 Node.js 的 ZIP 便携版；解压后按包内说明运行。';
+      document.getElementById('downloadNote').textContent = key === 'macArm' || key === 'macIntel'
+        ? '下载后打开 DMG，将 AgentCLI 拖入“应用程序”。当前构建尚未经过 Apple 公证；若首次打开被拦截，请右键 AgentCLI，选择“打开”并确认，无需关闭系统安全保护。'
+        : isDesktop
+          ? '下载后打开安装文件，并按系统提示完成安装。当前测试版尚未完成商业代码签名，请核对下载来源与系统提示。'
+          : '当前提供免 Node.js 的 ZIP 便携版；解压后按包内说明运行。';
       document.getElementById('heroDownload').href = item.href;
       document.getElementById('heroDownloadText').textContent = '下载' + item.label;
       document.getElementById('heroDownloadContext').textContent = '当前显示：' + item.shortLabel + ' · ' + item.detail + '。下载前请确认系统和芯片类型。';
@@ -506,10 +519,14 @@
 
     async function detectPlatform() {
       let key = detectBasicPlatform();
-      if (key === 'macArm' && navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+      if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
         try {
           const values = await navigator.userAgentData.getHighEntropyValues(['architecture', 'bitness']);
-          if (String(values.architecture).toLowerCase().includes('x86')) key = 'macIntel';
+          const architecture = String(values.architecture).toLowerCase();
+          const isArm = architecture.includes('arm') || architecture.includes('aarch');
+          if (key === 'macArm' && architecture.includes('x86')) key = 'macIntel';
+          else if (key === 'windows' && isArm) key = 'windowsArm';
+          else if (key === 'linux' && isArm) key = 'linuxArm';
         } catch (_) {
           // Safari does not expose CPU architecture. Modern macOS defaults to Apple Silicon.
         }

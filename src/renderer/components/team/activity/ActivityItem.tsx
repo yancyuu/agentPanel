@@ -1076,7 +1076,9 @@ export const ActivityItem = memo(
         </>
       ) : message.to && message.to !== message.from ? (
         <>
-          <MoveRight size={10} style={{ color: CARD_ICON_MUTED }} className="shrink-0" />
+          {(crossTeamSentMemberName ?? qualifiedRecipient?.memberName ?? message.to) !== 'user' ? (
+            <MoveRight size={10} style={{ color: CARD_ICON_MUTED }} className="shrink-0" />
+          ) : null}
           {crossTeamTarget ? (
             <CrossTeamTeamBadge teamName={crossTeamTarget} onClick={onTeamClick} />
           ) : null}

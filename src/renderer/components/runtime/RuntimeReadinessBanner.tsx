@@ -1,8 +1,9 @@
-import { AlertTriangle, RefreshCw, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { api } from '@renderer/api';
 import { cn } from '@renderer/lib/utils';
+import { AlertTriangle, RefreshCw, X } from 'lucide-react';
+
 import type { RuntimeReadiness } from '@shared/types/runtimeReadiness';
 
 /**
@@ -26,7 +27,7 @@ import type { RuntimeReadiness } from '@shared/types/runtimeReadiness';
  * not nag power users running an externally-managed bridge who intentionally
  * ignore the status.
  */
-export function RuntimeReadinessBanner() {
+export const RuntimeReadinessBanner = () => {
   const [readiness, setReadiness] = useState<RuntimeReadiness | null>(null);
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
@@ -61,8 +62,8 @@ export function RuntimeReadinessBanner() {
   if (!readiness || overallOk) return null;
 
   // Guard: only render when we have a clear "degraded" signal we can read.
-  const binaryDegraded = binaryState && binaryState.status === 'degraded' ? binaryState : null;
-  const launchOffline = launchState && launchState.status === 'offline' ? launchState : null;
+  const binaryDegraded = binaryState?.status === 'degraded' ? binaryState : null;
+  const launchOffline = launchState?.status === 'offline' ? launchState : null;
   // If neither sub-state is readable as degraded, bail out — safer to hide.
   if (!binaryDegraded && !launchOffline) return null;
 
@@ -84,7 +85,7 @@ export function RuntimeReadinessBanner() {
       role="status"
       aria-live="polite"
     >
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-400" />
       <div className="min-w-0 flex-1">
         <div className="font-medium">cc-connect 运行时未就绪：团队配置、消息收发等功能将不可用</div>
         <div className="mt-0.5 text-xs text-amber-200/70">原因：{reason}</div>
@@ -102,18 +103,18 @@ export function RuntimeReadinessBanner() {
         onClick={() => window.location.reload()}
         title="刷新页面重新检测"
       >
-        <RefreshCw className="h-3 w-3" />
+        <RefreshCw className="size-3" />
         重试
       </button>
       <button
         type="button"
-        className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded text-amber-200/70 hover:bg-amber-500/20 hover:text-amber-100"
+        className="mt-0.5 inline-flex size-6 items-center justify-center rounded text-amber-200/70 hover:bg-amber-500/20 hover:text-amber-100"
         onClick={() => setDismissedKey(stateKey)}
         title="本次会话内隐藏（状态变化后会重新出现）"
         aria-label="隐藏横幅"
       >
-        <X className="h-3.5 w-3.5" />
+        <X className="size-3.5" />
       </button>
     </div>
   );
-}
+};

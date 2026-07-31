@@ -1,6 +1,5 @@
-import type { FastifyInstance } from 'fastify';
-
 import type { UpdateService } from '../services/UpdateService';
+import type { FastifyInstance } from 'fastify';
 
 interface VersionUpdateRouteDependencies {
   version: string;

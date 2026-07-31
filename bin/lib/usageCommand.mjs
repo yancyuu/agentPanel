@@ -19,7 +19,6 @@ import {
 import {
   printJson,
   ui,
-  useUnicodeUi,
   SPINNER_FRAMES,
   displayWidth,
   printCliRows,
@@ -41,7 +40,6 @@ import {
   listProcessesWin,
   stopFallbackProcesses,
   signalDaemon,
-  startDaemon,
   waitForOpenHermitServerReady,
 } from './daemon.mjs';
 import {
@@ -66,7 +64,7 @@ import {
   findAnyOptionValues,
 } from './env.mjs';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, openSync, closeSync, statSync } from 'node:fs';
-import { spawn, execSync, spawnSync } from 'node:child_process';
+import { spawn, execFileSync, execSync, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -86,6 +84,22 @@ function fitProgressLine(text) {
 }
 
 // --- Shared status structures -------------------------------------------------
+
+export function larkStartupStatusRow(larkStatus) {
+  if (!larkStatus) return null;
+  if (larkStatus.enabled === false) return ['Lark 授权', '未启用（需要单独的高风险授权）', 'off'];
+  return [
+    'Lark 授权',
+    larkStatus.ok ? `已批量上报 (${larkStatus.accountCount ?? 0} 个)` : `未上报: ${larkStatus.reason || ''}`,
+    larkStatus.ok ? 'ok' : 'warn',
+  ];
+}
+
+export function usageStartupModeText(larkStatus) {
+  return larkStatus?.enabled === false
+    ? '启动即上报用量，之后后台增量上报'
+    : '启动即上报用量+Lark授权，之后后台增量上报';
+}
 
 export function emptyUsageTelemetryStatus() {
   return {
@@ -173,7 +187,7 @@ export function cursorStatusText(channel = {}) {
   return '尚未提交 cursor';
 }
 
-function conversationUploadRows(_upload = {}, auth = readOpenHermitAuthStatus(), remote = null) {
+function conversationUploadRows(auth = readOpenHermitAuthStatus(), remote = null) {
   const missingUploadScope = auth.authorized && !hasUploadScopes(auth);
   const rows = [];
 
@@ -229,9 +243,9 @@ function appendUsageServerRows(rows, { telemetry, authoritativeUsage, remoteUsag
     rows.push(['登录', '登录已失效，请重新登录', 'warn']);
   } else if (usageUnauthorized) {
     rows.push(['上报接口', '授权异常；本地登录态仍有效，请重试或检查 upload 授权', 'warn']);
-    if (uploadEnabled) rows.push(...conversationUploadRows(upload, auth, remoteUsage));
+    if (uploadEnabled) rows.push(...conversationUploadRows(auth, remoteUsage));
   } else if (uploadEnabled) {
-    rows.push(...conversationUploadRows(upload, auth, remoteUsage));
+    rows.push(...conversationUploadRows(auth, remoteUsage));
   }
   return { usageUnauthorized, loginExpired };
 }
@@ -266,13 +280,6 @@ function readConversationUploadLogEvents(limit = 200) {
   return lines.flatMap((line) => {
     try { return [JSON.parse(line)]; } catch { return []; }
   });
-}
-
-function latestConversationUploadProgress(sinceMs = 0) {
-  const events = readConversationUploadLogEvents().filter(
-    (event) => Date.parse(event?.timestamp || '') >= sinceMs
-  );
-  return aggregateUploadProgress(events);
 }
 
 // --- Log tail helpers --------------------------------------------------------
@@ -517,7 +524,7 @@ function workerNeedsRestart(status) {
 async function restartTelemetryWorkerIfStale({ quiet = true } = {}) {
   const { status } = readTelemetryWorkerStatusFile();
   const pid = readPidFile(telemetryWorkerPidPath);
-  if (!pid || !isPidRunning(pid) || !workerNeedsRestart(status)) return null;
+  if (!pid || !isUsageWorkerPid(pid) || !workerNeedsRestart(status)) return null;
   return restartTelemetryWorker({ quiet, reason: '源码已更新，正在重启 worker' });
 }
 
@@ -528,8 +535,29 @@ export async function restartTelemetryWorker({ quiet = true, reason = '手动重
   return startTelemetryWorker({ quiet, forceRestart: true });
 }
 
-function isUsageWorkerCommand(command) {
-  return command.includes('src/main/telemetry/worker.ts') || command.includes('telemetry/worker.ts');
+export function isUsageWorkerCommand(command) {
+  const normalized = String(command || '').replace(/\\/g, '/').toLowerCase();
+  return normalized.includes('telemetry/worker.ts') || normalized.includes('dist/telemetry-worker.bundle.mjs');
+}
+
+export function processListHasUsageWorkerPid(processes, pid) {
+  return processes.some(
+    (processInfo) => Number(processInfo?.pid) === Number(pid) && isUsageWorkerCommand(processInfo?.command)
+  );
+}
+
+export function isUsageWorkerPid(pid) {
+  if (!Number.isInteger(Number(pid)) || Number(pid) <= 0 || !isPidRunning(Number(pid))) return false;
+  if (process.env.OPENHERMIT_USAGE_WORKER_MODE === 'test' && Number(pid) === process.pid) return true;
+  if (process.platform === 'win32') {
+    try { return processListHasUsageWorkerPid(listProcessesWin(), pid); } catch { return false; }
+  }
+  try {
+    const command = execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf-8' });
+    return isUsageWorkerCommand(command);
+  } catch {
+    return false;
+  }
 }
 
 function isTransientUsageWorkerCommand(command) {
@@ -565,7 +593,11 @@ export async function startTelemetryWorker({
   forceRestart = false,
   startupPassCompleted = false,
 } = {}) {
-  const existingPid = readPidFile(telemetryWorkerPidPath);
+  let existingPid = readPidFile(telemetryWorkerPidPath);
+  if (existingPid && isPidRunning(existingPid) && !isUsageWorkerPid(existingPid)) {
+    removeTelemetryWorkerPidFile();
+    existingPid = null;
+  }
   for (const stray of collectRunningUsageWorkerPids()) {
     if (Number(stray) === Number(existingPid)) continue;
     if (isPidRunning(stray)) signalDaemon(stray, 'SIGKILL');
@@ -647,7 +679,7 @@ export async function stopTelemetryWorker() {
     return { stopped: true, pid, running: false, mode: 'test' };
   }
   const targets = Array.from(new Set([
-    ...(Number.isInteger(pid) && pid > 0 ? [pid] : []),
+    ...(Number.isInteger(pid) && pid > 0 && isUsageWorkerPid(pid) ? [pid] : []),
     ...collectRunningUsageWorkerPids(),
   ]));
   if (targets.length === 0) {
@@ -688,8 +720,10 @@ async function runStartupOnceWorker() {
   };
   process.prependOnceListener('SIGINT', stopChild);
   process.prependOnceListener('SIGTERM', stopChild);
-  child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
-  child.stderr?.on('data', (chunk) => { stderr += String(chunk); });
+  child.stdout?.setEncoding('utf8');
+  child.stderr?.setEncoding('utf8');
+  child.stdout?.on('data', (chunk) => { stdout += chunk; });
+  child.stderr?.on('data', (chunk) => { stderr += chunk; });
   const code = await new Promise((resolve) => child.on('close', resolve));
   process.off('SIGINT', stopChild);
   process.off('SIGTERM', stopChild);
@@ -723,8 +757,10 @@ async function runTelemetryWorkerScanOnce({ localOnly = false, uploadDisabled = 
   };
   process.prependOnceListener('SIGINT', stopChild);
   process.prependOnceListener('SIGTERM', stopChild);
-  child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
-  child.stderr?.on('data', (chunk) => { stderr += String(chunk); });
+  child.stdout?.setEncoding('utf8');
+  child.stderr?.setEncoding('utf8');
+  child.stdout?.on('data', (chunk) => { stdout += chunk; });
+  child.stderr?.on('data', (chunk) => { stderr += chunk; });
   const code = await new Promise((resolve) => child.on('close', resolve));
   process.off('SIGINT', stopChild);
   process.off('SIGTERM', stopChild);
@@ -804,9 +840,9 @@ function usageCliPath() {
   return existsSync(packaged) ? packaged : fileURLToPath(import.meta.url);
 }
 
-function buildUsageLaunchdPlist() {
+export function buildUsageLaunchdPlist() {
   const pathValue = process.env.PATH || '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n\t<key>Label</key>\n\t<string>${usageLaunchdLabel()}</string>\n\t<key>ProgramArguments</key>\n\t<array>\n\t\t<string>${xmlEscape(process.execPath)}</string>\n\t\t<string>${xmlEscape(usageCliPath())}</string>\n\t\t<string>__telemetry-worker</string>\n\t</array>\n\t<key>EnvironmentVariables</key>\n\t<dict>\n\t\t<key>HERMIT_HOME</key>\n\t\t<string>${xmlEscape(hermitHome)}</string>\n\t\t<key>PATH</key>\n\t\t<string>${xmlEscape(pathValue)}</string>\n\t</dict>\n\t<key>RunAtLoad</key>\n\t<true/>\n\t<key>KeepAlive</key>\n\t<dict>\n\t\t<key>SuccessfulExit</key>\n\t\t<false/>\n\t</dict>\n\t<key>ThrottleInterval</key>\n\t<integer>30</integer>\n\t<key>StandardOutPath</key>\n\t<string>${xmlEscape(telemetryWorkerLogPath)}</string>\n\t<key>StandardErrorPath</key>\n\t<string>${xmlEscape(telemetryWorkerErrorLogPath)}</string>\n</dict>\n</plist>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n\t<key>Label</key>\n\t<string>${usageLaunchdLabel()}</string>\n\t<key>ProgramArguments</key>\n\t<array>\n\t\t<string>${xmlEscape(process.execPath)}</string>\n\t\t<string>${xmlEscape(usageCliPath())}</string>\n\t\t<string>__telemetry-worker</string>\n\t</array>\n\t<key>EnvironmentVariables</key>\n\t<dict>\n\t\t<key>ELECTRON_RUN_AS_NODE</key>\n\t\t<string>1</string>\n\t\t<key>HERMIT_HOME</key>\n\t\t<string>${xmlEscape(hermitHome)}</string>\n\t\t<key>PATH</key>\n\t\t<string>${xmlEscape(pathValue)}</string>\n\t</dict>\n\t<key>RunAtLoad</key>\n\t<true/>\n\t<key>KeepAlive</key>\n\t<dict>\n\t\t<key>SuccessfulExit</key>\n\t\t<false/>\n\t</dict>\n\t<key>ThrottleInterval</key>\n\t<integer>30</integer>\n\t<key>StandardOutPath</key>\n\t<string>${xmlEscape(telemetryWorkerLogPath)}</string>\n\t<key>StandardErrorPath</key>\n\t<string>${xmlEscape(telemetryWorkerErrorLogPath)}</string>\n</dict>\n</plist>\n`;
 }
 
 function launchctlBestEffort(args) {
@@ -821,10 +857,10 @@ function usageWindowsTaskName() { return 'AgentCLI Usage Telemetry'; }
 function usageWindowsTaskXmlPath() { return path.join(telemetryDir, 'usage-worker-task.xml'); }
 function usageWindowsWrapperPath() { return path.join(telemetryDir, 'usage-worker.cmd'); }
 
-function buildUsageWindowsWrapper() {
+export function buildUsageWindowsWrapper() {
   const pathValue = process.env.PATH || '';
   const escapeBatch = (value) => String(value).replace(/%/g, '%%').replace(/"/g, '""');
-  return `@echo off\r\nset "HERMIT_HOME=${escapeBatch(hermitHome)}"\r\nset "PATH=${escapeBatch(pathValue)}"\r\n"${escapeBatch(process.execPath)}" "${escapeBatch(usageCliPath())}" __telemetry-worker >> "${escapeBatch(telemetryWorkerLogPath)}" 2>> "${escapeBatch(telemetryWorkerErrorLogPath)}"\r\n`;
+  return `@echo off\r\nchcp 65001 >nul\r\nset "ELECTRON_RUN_AS_NODE=1"\r\nset "HERMIT_HOME=${escapeBatch(hermitHome)}"\r\nset "PATH=${escapeBatch(pathValue)}"\r\n"${escapeBatch(process.execPath)}" "${escapeBatch(usageCliPath())}" __telemetry-worker >> "${escapeBatch(telemetryWorkerLogPath)}" 2>> "${escapeBatch(telemetryWorkerErrorLogPath)}"\r\n`;
 }
 
 export function buildUsageWindowsTaskXml() {
@@ -1382,14 +1418,12 @@ export async function printUsageStart({ exitOnDone = true } = {}) {
   const featureProviders = currentFeatureStates().uploadProviders;
   const attributionProviders = featureProviders?.length ? featureProviders : ['claudecode', 'codex'];
   const larkStatus = startup?.lark;
-  const larkRow = larkStatus
-    ? [larkStatus.ok ? 'Lark 授权' : 'Lark 授权', larkStatus.ok ? `已批量上报 (${larkStatus.accountCount ?? 0} 个)` : `未上报: ${larkStatus.reason || ''}`, larkStatus.ok ? 'ok' : 'warn']
-    : null;
+  const larkRow = larkStartupStatusRow(larkStatus);
   const rows = [
     ['消息上报', conversationUploadEnabled ? auth.authorized ? `开启（pid ${worker.pid}）` : `等待登录（pid ${worker.pid}）` : '关闭', conversationUploadEnabled ? auth.authorized ? 'ok' : 'warn' : 'off'],
     ['日志', worker.logPath, 'info'],
     ['开机自启', autostart.enabled ? '开启' : '关闭', autostart.enabled ? 'ok' : 'off'],
-    ['模式', '启动即上报用量+Lark授权，之后后台增量上报', 'info'],
+    ['模式', usageStartupModeText(larkStatus), 'info'],
     ['归因', `${formatUploadProviders(attributionProviders)} + IM 会话归因`, 'info'],
   ];
   if (larkRow) rows.splice(1, 0, larkRow);

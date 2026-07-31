@@ -55,6 +55,77 @@ describe('ConversationMessageUploadService', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('keeps healthy providers uploading when another usage channel is not deployed yet', async () => {
+    const projectDir = path.join(claudeBase, 'projects', '-tmp-provider-isolation');
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(
+      path.join(projectDir, 'session-provider-isolation.jsonl'),
+      `${JSON.stringify({
+        type: 'user',
+        sessionId: 'session-provider-isolation',
+        uuid: 'msg-provider-isolation',
+        cwd: '/tmp/project',
+        timestamp: '2026-06-24T08:20:00.000Z',
+        message: { role: 'user', content: 'still upload Claude', model: 'claude-test-model' },
+      })}\n`
+    );
+
+    let messagePosts = 0;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/api/v1/auth/me')) {
+        return Response.json({
+          authenticated: true,
+          status: 'ok',
+          scopes: ['upload:read', 'upload:write'],
+        });
+      }
+      if (url.includes('/api/v1/report/usage/status')) {
+        const platform = new URL(url).searchParams.get('client');
+        if (platform === 'codex') return Response.json({ detail: 'not deployed' }, { status: 404 });
+        return Response.json({
+          channels: [
+            {
+              reporter: 'agentcli',
+              client: 'claudecode',
+              scene: 'coding',
+              status: 'never_reported',
+              inFlight: { count: 0, uploadIds: [] },
+              currentCursor: null,
+            },
+          ],
+        });
+      }
+      if (url.endsWith('/api/v1/report/messages')) {
+        messagePosts += 1;
+        return Response.json(
+          {
+            ok: true,
+            uploadId: 'upl-provider-isolation',
+            status: 'queued',
+            received: 1,
+            acceptedForProcessing: 1,
+            rejectedAtReceive: 0,
+          },
+          { status: 202 }
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    const result = await uploadConversationMessages({
+      telemetry: {
+        enabled: true,
+        platform: 'claudecode',
+        conversationUploadEnabled: true,
+        uploadProviders: ['claudecode', 'codex'],
+      },
+    });
+
+    expect(messagePosts).toBe(1);
+    expect(result.accepted).toBe(1);
+    expect(result.lastError).toContain('codex');
+  });
+
   it('bounds the first periodic scan to recent messages when no cursor exists (no full-history backfill)', async () => {
     // Regression for the 776s hang: a channel that has never reported used to
     // scan ALL history on its first cycle. The periodic worker now skips messages

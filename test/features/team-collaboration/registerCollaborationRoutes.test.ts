@@ -17,7 +17,9 @@ const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true }))
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => fs.rm(directory, { recursive: true, force: true }))
   );
 });
 
@@ -67,7 +69,7 @@ describe('collaboration routes', () => {
       status: 'done',
       reviewState: 'approved',
       assignee: null,
-      result: run.finalResult ?? null,
+      deliveries: [{ version: 1, result: run.finalResult ?? '', deliveredAt: now }],
       createdAt: now,
       updatedAt: now,
       order: 0,
@@ -80,10 +82,16 @@ describe('collaboration routes', () => {
     registerCollaborationRoutes(app, {
       workspace,
       teams,
-      orchestrator: { createRun: () => Promise.reject(new Error('unused')), start: () => undefined } as never,
+      orchestrator: {
+        createRun: () => Promise.reject(new Error('unused')),
+        start: () => undefined,
+      } as never,
     });
 
-    const response = await app.inject({ method: 'GET', url: `/api/collaboration/teams/${team.slug}` });
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/collaboration/teams/${team.slug}`,
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.json().runs[0]).toMatchObject({ id: run.id, phase: 'completed' });

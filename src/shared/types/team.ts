@@ -279,7 +279,37 @@ export type TaskHistoryEvent =
   | TaskReviewApprovedEvent
   | TaskReviewStartedEvent;
 
-export type TaskCommentType = 'regular' | 'review_request' | 'review_approved';
+export type TaskCommentType = 'regular';
+
+/**
+ * 反馈/评论的定位锚点：
+ * - quote：引用一段文本
+ * - hunk：代码评审 hunk，changeKey/hunkIndex 对齐 reviewKey 体系，contextHash 用于防漂移
+ */
+export type FeedbackAnchor =
+  | { kind: 'quote'; quote: string }
+  | { kind: 'hunk'; changeKey: string; hunkIndex: number; contextHash?: string };
+
+/** 一次交付成果（追加式版本化，version 从 1 递增） */
+export interface Delivery {
+  version: number;
+  result: string;
+  /** 本轮变更摘要；非首次交付时必填 */
+  summary?: string;
+  deliveredAt: string;
+  /** 本轮交付标记为已处理的反馈条目 id */
+  addressedFeedbackIds?: string[];
+}
+
+/** 条目化的评审反馈（reject_result / request_changes 产生） */
+export interface FeedbackItem {
+  id: string;
+  text: string;
+  anchor?: FeedbackAnchor;
+  status: 'open' | 'resolved';
+  createdAt: string;
+  resolvedAt?: string;
+}
 
 export interface TaskRef {
   taskId: string;
@@ -499,6 +529,8 @@ export interface TaskComment {
   text: string;
   createdAt: string;
   type: TaskCommentType;
+  /** 可选定位锚点（引用文本或代码 hunk） */
+  anchor?: FeedbackAnchor;
   taskRefs?: TaskRef[];
   /** Attachments on this comment. Metadata only — files stored on disk. */
   attachments?: TaskAttachmentMeta[];
@@ -589,9 +621,15 @@ export interface TeamTask {
   /** File modification time (mtime). Used for sorting by last activity. */
   updatedAt?: string;
   projectPath?: string;
-  /** Human-facing task deliverable. Rendered as rich Markdown when available. */
-  result?: string;
   comments?: TaskComment[];
+  /** 交付成果版本（追加式，version 从 1 递增；取代旧的 result 字段） */
+  deliveries?: Delivery[];
+  /** 条目化评审反馈（open/resolved 闭环） */
+  feedbackItems?: FeedbackItem[];
+  /** 交付结果被退回次数；>= 3 时置 needsHumanIntervention */
+  revisionCount?: number;
+  /** 退回次数达到上限，需要人工介入 */
+  needsHumanIntervention?: boolean;
   /** Signals that the agent is blocked and needs clarification. "lead" = ask team lead, "user" = escalated to human. */
   needsClarification?: 'lead' | 'user';
   /** ISO timestamp — when the task was soft-deleted. Only set for status === 'deleted'. */
@@ -866,6 +904,7 @@ export interface AddTaskCommentRequest {
   text: string;
   attachments?: CommentAttachmentPayload[];
   taskRefs?: TaskRef[];
+  anchor?: FeedbackAnchor;
 }
 
 export type MemberStatus = 'active' | 'idle' | 'terminated' | 'unknown';

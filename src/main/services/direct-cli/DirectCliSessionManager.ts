@@ -12,6 +12,11 @@
  * with no changes. We only relay the live stream over SSE for token-level display.
  */
 
+import { execFile } from 'node:child_process';
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 import { ClaudeBinaryResolver } from '@main/services/team/ClaudeBinaryResolver';
 import { killProcessTree, spawnCli } from '@main/utils/childProcess';
 import { classifyClaudeStreamLine, type ClaudeStreamLine } from '@shared/utils/claudeStreamJson';
@@ -146,6 +151,12 @@ export interface DirectCliSendParams {
   workbenchUrl?: string;
 }
 
+export type OneShotHarness = 'codex' | 'pi';
+
+export interface DirectCliOneShotParams extends DirectCliSendParams {
+  harness: OneShotHarness;
+}
+
 export type DirectCliEvent =
   | { kind: 'init'; sessionKey: string; sessionId: string; model?: string }
   | { kind: 'delta'; sessionKey: string; messageId: string; text: string }
@@ -170,6 +181,11 @@ export type DirectCliEvent =
       toolInput?: Record<string, unknown>;
     }
   | { kind: 'error'; sessionKey: string; messageId?: string; error: string };
+
+interface OneShotSessionHandle {
+  child: ChildProcess;
+  messageId: string;
+}
 
 interface CliSessionHandle {
   child: ChildProcess;
@@ -202,11 +218,108 @@ export type DirectCliEnvResolver = (params: {
   projectPath?: string;
 }) => Promise<{ env: NodeJS.ProcessEnv; providerArgs: string[] }>;
 
+export type OneShotBinaryResolver = (
+  harness: OneShotHarness,
+  env?: NodeJS.ProcessEnv
+) => Promise<string | null>;
+
 export interface DirectCliSessionManagerOptions {
   spawnFn?: DirectCliSpawnFn;
   envResolver?: DirectCliEnvResolver;
   binaryResolver?: typeof ClaudeBinaryResolver;
+  oneShotBinaryResolver?: OneShotBinaryResolver;
   store?: DirectCliSessionRepository;
+}
+
+const ONE_SHOT_OUTPUT_LIMIT = 4 * 1024 * 1024;
+
+function resolveFromPath(binaryName: string, env?: NodeJS.ProcessEnv): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      process.platform === 'win32' ? 'where' : 'which',
+      [binaryName],
+      { timeout: 5_000, env: env ?? process.env },
+      (error, stdout) => resolve(error || !stdout.trim() ? null : stdout.trim().split(/\r?\n/u)[0])
+    );
+  });
+}
+
+const DEFAULT_ONE_SHOT_BINARY_RESOLVER: OneShotBinaryResolver = async (harness, env) => {
+  if (harness === 'pi') {
+    const suffix = process.platform === 'win32' ? '.cmd' : '';
+    const bundled = path.join(
+      process.env.HERMIT_HOME ?? path.join(os.homedir(), '.hermit'),
+      'bin',
+      `pi${suffix}`
+    );
+    if (
+      await access(bundled)
+        .then(() => true)
+        .catch(() => false)
+    )
+      return bundled;
+  }
+  return resolveFromPath(harness, env);
+};
+
+interface PreparedOneShotInput {
+  text: string;
+  cleanup: () => Promise<void>;
+}
+
+async function prepareOneShotInput(
+  text: string,
+  attachments: AttachmentPayload[] | undefined,
+  workDir: string
+): Promise<PreparedOneShotInput> {
+  const available = (attachments ?? []).filter((attachment) => attachment.data);
+  if (available.length === 0) return { text, cleanup: async () => undefined };
+
+  const inputDirectory = await mkdtemp(path.join(workDir, '.agentcli-input-'));
+  const files: string[] = [];
+  try {
+    for (const [index, attachment] of available.entries()) {
+      const safeName =
+        path
+          .basename(attachment.filename || `attachment-${index + 1}`)
+          .replace(/[^\p{L}\p{N}._ -]/gu, '_') || `attachment-${index + 1}`;
+      const filePath = path.join(inputDirectory, `${index + 1}-${safeName}`);
+      await writeFile(filePath, Buffer.from(attachment.data ?? '', 'base64'), { mode: 0o600 });
+      files.push(
+        `- ${attachment.filename}（${attachment.mimeType || 'application/octet-stream'}）：${filePath}`
+      );
+    }
+  } catch (error) {
+    await rm(inputDirectory, { recursive: true, force: true });
+    throw error;
+  }
+
+  return {
+    text: `${text}\n\n用户附带了以下本地输入文件。请按路径读取并纳入本次任务，不要忽略：\n${files.join('\n')}`,
+    cleanup: () => rm(inputDirectory, { recursive: true, force: true }),
+  };
+}
+
+function codexFinalText(stdout: string): string {
+  let finalText = '';
+  for (const line of stdout.split(/\r?\n/u)) {
+    if (!line.trim()) continue;
+    try {
+      const event = JSON.parse(line) as Record<string, unknown>;
+      const item =
+        event.item && typeof event.item === 'object'
+          ? (event.item as Record<string, unknown>)
+          : undefined;
+      const candidate =
+        (item?.type === 'agent_message' && typeof item.text === 'string' ? item.text : undefined) ??
+        (typeof event.output_text === 'string' ? event.output_text : undefined) ??
+        (typeof event.text === 'string' ? event.text : undefined);
+      if (candidate?.trim()) finalText = candidate.trim();
+    } catch {
+      // Codex may emit an occasional non-JSON diagnostic line; stderr remains the error source.
+    }
+  }
+  return finalText || stdout.trim();
 }
 
 const DEFAULT_ENV_RESOLVER: DirectCliEnvResolver = async (params) => {
@@ -225,6 +338,10 @@ const DEFAULT_ENV_RESOLVER: DirectCliEnvResolver = async (params) => {
 
 export class DirectCliSessionManager extends EventEmitter {
   private readonly sessions = new Map<string, CliSessionHandle>();
+  private readonly oneShotSessions = new Map<string, OneShotSessionHandle>();
+
+  /** Keys reserved while one-shot binary/env resolution is still in flight. */
+  private readonly startingOneShotSessions = new Set<string>();
 
   /** In-flight ensureSession promises dedupe concurrent callers for the same key. */
   private readonly ensuring = new Map<string, Promise<void>>();
@@ -239,6 +356,8 @@ export class DirectCliSessionManager extends EventEmitter {
 
   private readonly binaryResolver: typeof ClaudeBinaryResolver;
 
+  private readonly oneShotBinaryResolver: OneShotBinaryResolver;
+
   private readonly store: DirectCliSessionRepository;
 
   constructor(options: DirectCliSessionManagerOptions = {}) {
@@ -247,11 +366,12 @@ export class DirectCliSessionManager extends EventEmitter {
       options.spawnFn ?? ((binaryPath, args, opts) => spawnCli(binaryPath, args, opts));
     this.envResolver = options.envResolver ?? DEFAULT_ENV_RESOLVER;
     this.binaryResolver = options.binaryResolver ?? ClaudeBinaryResolver;
+    this.oneShotBinaryResolver = options.oneShotBinaryResolver ?? DEFAULT_ONE_SHOT_BINARY_RESOLVER;
     this.store = options.store ?? new DirectCliSessionStore();
   }
 
   has(sessionKey: string): boolean {
-    return this.sessions.has(sessionKey);
+    return this.sessions.has(sessionKey) || this.oneShotSessions.has(sessionKey);
   }
 
   getSessionId(sessionKey: string): string | undefined {
@@ -493,6 +613,125 @@ export class DirectCliSessionManager extends EventEmitter {
     }
   }
 
+  /** Run Codex or bundled Pi as a bounded one-shot process and relay its final answer
+   * through the same DirectCliEvent channel used by persistent Claude sessions. */
+  async runOneShot(sessionKey: string, params: DirectCliOneShotParams): Promise<void> {
+    this.assertAcceptingWork();
+    const key = sessionKey.trim();
+    if (!key) throw new Error('direct-cli: sessionKey is required');
+    if (this.oneShotSessions.has(key) || this.startingOneShotSessions.has(key)) {
+      throw new Error('该智能体正在处理上一条请求');
+    }
+    const workDir = params.workDir.trim();
+    if (!workDir) throw new Error('direct-cli: workDir is required');
+    this.startingOneShotSessions.add(key);
+    let binaryPath: string;
+    let runtimeEnv: NodeJS.ProcessEnv;
+    let preparedInput: PreparedOneShotInput;
+    try {
+      const initialEnv = await this.envResolver({ binaryPath: null, projectPath: workDir });
+      this.assertAcceptingWork();
+      const resolvedBinary = await this.oneShotBinaryResolver(params.harness, initialEnv.env);
+      if (!resolvedBinary) {
+        throw new Error(params.harness === 'pi' ? '未找到内置 Pi' : '未找到本地 Codex CLI');
+      }
+      binaryPath = resolvedBinary;
+      const { env } = await this.envResolver({ binaryPath, projectPath: workDir });
+      this.assertAcceptingWork();
+      runtimeEnv = {
+        ...env,
+        ...(params.teamSlug ? { HERMIT_TEAM_SLUG: params.teamSlug } : {}),
+        ...(params.workbenchUrl ? { HERMIT_WORKBENCH_URL: params.workbenchUrl } : {}),
+      };
+      preparedInput = await prepareOneShotInput(params.text, params.attachments, workDir);
+    } catch (error) {
+      this.startingOneShotSessions.delete(key);
+      throw error;
+    }
+    const args =
+      params.harness === 'pi'
+        ? ['--print', '--mode', 'text', '--no-session', '--no-approve']
+        : [
+            'exec',
+            '--json',
+            '--skip-git-repo-check',
+            '--sandbox',
+            'workspace-write',
+            '-C',
+            workDir,
+            '-',
+          ];
+    let child: ChildProcess;
+    try {
+      child = this.spawnFn(binaryPath, args, {
+        cwd: workDir,
+        env: runtimeEnv,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      this.oneShotSessions.set(key, { child, messageId: params.messageId });
+    } catch (error) {
+      await preparedInput.cleanup();
+      throw error;
+    } finally {
+      this.startingOneShotSessions.delete(key);
+    }
+    let stdout = '';
+    let stderr = '';
+    const append = (current: string, chunk: string): string =>
+      `${current}${chunk}`.slice(-ONE_SHOT_OUTPUT_LIMIT);
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => {
+      stdout = append(stdout, chunk);
+    });
+    child.stderr?.on('data', (chunk: string) => {
+      stderr = append(stderr, chunk);
+    });
+    child.once('error', (error) => {
+      this.oneShotSessions.delete(key);
+      void preparedInput.cleanup();
+      this.emit('event', {
+        kind: 'error',
+        sessionKey: key,
+        messageId: params.messageId,
+        error: error.message,
+      } satisfies DirectCliEvent);
+    });
+    child.once('exit', (code, signal) => {
+      void preparedInput.cleanup();
+      const active = this.oneShotSessions.get(key);
+      if (active?.messageId !== params.messageId) return;
+      this.oneShotSessions.delete(key);
+      if (code !== 0) {
+        this.emit('event', {
+          kind: 'error',
+          sessionKey: key,
+          messageId: params.messageId,
+          error:
+            stderr.trim() || `${params.harness} 进程异常退出（${signal || code || 'unknown'}）`,
+        } satisfies DirectCliEvent);
+        return;
+      }
+      const text = params.harness === 'codex' ? codexFinalText(stdout) : stdout.trim();
+      if (!text) {
+        this.emit('event', {
+          kind: 'error',
+          sessionKey: key,
+          messageId: params.messageId,
+          error: `${params.harness} 没有返回可用结果`,
+        } satisfies DirectCliEvent);
+        return;
+      }
+      this.emit('event', {
+        kind: 'complete',
+        sessionKey: key,
+        messageId: params.messageId,
+        text,
+      } satisfies DirectCliEvent);
+    });
+    child.stdin?.end(preparedInput.text);
+  }
+
   /**
    * Send a user turn to an existing (or about-to-be-spawned) session and tag the
    * resulting stream with `messageId` until the `result` event arrives.
@@ -563,18 +802,22 @@ export class DirectCliSessionManager extends EventEmitter {
   }
 
   kill(sessionKey: string): void {
-    const handle = this.sessions.get(sessionKey.trim());
-    if (!handle) return;
-    handle.closed = true;
-    try {
-      // Kill the whole process tree: on Windows the child may be a cmd.exe
-      // shell wrapper (spawnCli shell fallback), and bare child.kill() would
-      // orphan the real claude process running underneath it.
-      killProcessTree(handle.child, 'SIGTERM');
-    } catch {
-      // Best effort.
+    const key = sessionKey.trim();
+    const handle = this.sessions.get(key);
+    const oneShot = this.oneShotSessions.get(key);
+    if (handle) handle.closed = true;
+    for (const child of [handle?.child, oneShot?.child]) {
+      if (!child) continue;
+      try {
+        // Kill the whole process tree: on Windows the child may be a cmd.exe
+        // shell wrapper, and bare child.kill() would orphan the real process.
+        killProcessTree(child, 'SIGTERM');
+      } catch {
+        // Best effort.
+      }
     }
-    this.sessions.delete(sessionKey.trim());
+    this.sessions.delete(key);
+    this.oneShotSessions.delete(key);
   }
 
   /** Reap every live subprocess and permanently reject new work. */
@@ -583,9 +826,8 @@ export class DirectCliSessionManager extends EventEmitter {
       this.shuttingDown = true;
       this.shutdownPromise = (async () => {
         await Promise.allSettled(Array.from(this.ensuring.values()));
-        for (const key of Array.from(this.sessions.keys())) {
-          this.kill(key);
-        }
+        const keys = new Set([...this.sessions.keys(), ...this.oneShotSessions.keys()]);
+        for (const key of keys) this.kill(key);
       })();
     }
     return this.shutdownPromise;

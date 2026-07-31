@@ -56,6 +56,7 @@ export interface SystemManagerStatus {
   defaultWorkDir: string;
   selectedWorkDir: string;
   claudeCommand: 'claude';
+  runtimeHarness?: 'claudecode' | 'codex' | 'pi';
   localStatus: 'ready' | 'missing-claude' | 'error';
   error?: string;
 }

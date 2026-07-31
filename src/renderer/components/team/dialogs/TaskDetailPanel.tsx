@@ -46,6 +46,7 @@ import {
   TASK_STATUS_LABELS,
   TASK_STATUS_STYLES,
 } from '@renderer/utils/memberHelpers';
+import { extractFilePathFromChangeKey } from '@renderer/utils/reviewKey';
 import { resolveTaskChangePresenceFromResult } from '@renderer/utils/taskChangePresence';
 import {
   buildTaskChangeRequestOptions,
@@ -72,7 +73,6 @@ import {
   ArrowRightFromLine,
   Check,
   Clock,
-  Copy,
   FileDiff,
   GitCompareArrows,
   HelpCircle,
@@ -84,7 +84,6 @@ import {
   PackageCheck,
   Pencil,
   PenLine,
-  Printer,
   RefreshCw,
   ScrollText,
   SquarePen,
@@ -101,6 +100,7 @@ import { TaskAttachments } from './TaskAttachments';
 import { TaskCommentAwaitingReply } from './TaskCommentAwaitingReply';
 import { type TaskCommentAttachmentCapability, TaskCommentInput } from './TaskCommentInput';
 import { TaskCommentsSection } from './TaskCommentsSection';
+import { TaskDeliveriesSection } from './TaskDeliveriesSection';
 
 import type {
   FileChangeSummary,
@@ -199,7 +199,6 @@ export const TaskDetailPanel = ({
   const [taskChangesFiles, setTaskChangesFiles] = useState<FileChangeSummary[] | null>(null);
   const [taskChangesLoading, setTaskChangesLoading] = useState(false);
   const [taskChangesError, setTaskChangesError] = useState<string | null>(null);
-  const [resultCopied, setResultCopied] = useState(false);
   const loadedTaskChangeSummaryKeyRef = useRef<string | null>(null);
   const taskChangesLoadInFlightKeysRef = useRef<Set<string>>(new Set());
   const currentTaskChangeSummaryKeyRef = useRef<string | null>(null);
@@ -258,26 +257,10 @@ export const TaskDetailPanel = ({
     }
   }, [currentTask, descriptionDraft, savingDescription, teamName, updateTaskFields]);
 
-  const copyDeliverable = useCallback(async () => {
-    const result = currentTask?.result?.trim();
-    if (!result) return;
-    try {
-      await navigator.clipboard.writeText(result);
-      setResultCopied(true);
-    } catch {
-      setResultCopied(false);
-    }
-  }, [currentTask?.result]);
-
-  const printDeliverable = useCallback(() => {
-    window.print();
-  }, []);
-
   // Reset editing state on dialog close or task change
   useEffect(() => {
     setEditingSubject(false);
     setEditingDescription(false);
-    setResultCopied(false);
   }, [open, currentTask?.id]);
 
   useEffect(() => {
@@ -594,6 +577,16 @@ export const TaskDetailPanel = ({
       preserveFilesOnError: false,
     });
   }, [requestTaskChangeSummary]);
+
+  // hunk 反馈锚点：关闭详情并打开变更审查，定位到对应文件
+  const handleOpenHunkAnchor = useCallback(
+    (changeKey: string) => {
+      if (!currentTask || !onViewChanges) return;
+      handleClose();
+      onViewChanges(currentTask.id, extractFilePathFromChangeKey(changeKey));
+    },
+    [currentTask, handleClose, onViewChanges]
+  );
 
   const handleDependencyClick = (target: ParsedTaskLinkHref): void => {
     // Resolve short displayId (e.g. "8ce74455") only inside the current team.
@@ -1172,56 +1165,44 @@ export const TaskDetailPanel = ({
           )}
         </CollapsibleTeamSection>
 
-        {/* Human-facing deliverable */}
-        {currentTask.result?.trim() ? (
-          <section
-            data-task-deliverable
-            className="overflow-hidden rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] shadow-[var(--surface-shadow)]"
-          >
-            <div className="flex items-center gap-2 border-b border-[var(--surface-border-subtle)] px-4 py-3">
-              <span className="flex size-7 items-center justify-center text-emerald-600 dark:text-emerald-400">
-                <PackageCheck size={15} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-semibold text-[var(--color-text)]">交付结果</h3>
-                <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">
-                  {currentTask.reviewState === 'review'
-                    ? '助手已完成，请检查结果是否符合要求。'
-                    : currentTask.status === 'completed'
-                      ? '这是助手为当前任务提交的最终结果。'
-                      : '助手已提交阶段性结果。'}
-                </p>
-              </div>
-              <div data-deliverable-actions className="flex shrink-0 items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => void copyDeliverable()}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)]"
-                >
-                  {resultCopied ? <Check size={11} /> : <Copy size={11} />}
-                  {resultCopied ? '已复制' : '复制'}
-                </button>
-                <button
-                  type="button"
-                  onClick={printDeliverable}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)]"
-                >
-                  <Printer size={11} />
-                  保存 PDF
-                </button>
+        {/* 交付成果 + 反馈待办点（deliveries 追加式版本化，取代旧的单一 result 卡片） */}
+        {(currentTask.deliveries?.length ?? 0) > 0 ||
+        (currentTask.feedbackItems?.length ?? 0) > 0 ? (
+          <CollapsibleTeamSection
+            title="交付成果"
+            icon={<PackageCheck size={14} />}
+            badge={
+              (currentTask.deliveries?.length ?? 0) > 0 ? currentTask.deliveries!.length : undefined
+            }
+            headerExtra={
+              <>
+                {(currentTask.feedbackItems ?? []).some((item) => item.status === 'open') ? (
+                  <span className="pointer-events-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-300">
+                    {
+                      (currentTask.feedbackItems ?? []).filter((item) => item.status === 'open')
+                        .length
+                    }{' '}
+                    条待处理
+                  </span>
+                ) : null}
                 {currentTask.reviewState === 'review' ? (
-                  <span className="rounded-full bg-indigo-500/10 px-2 py-1 text-[10px] font-medium text-indigo-600 dark:text-indigo-300">
+                  <span className="pointer-events-auto rounded-full bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:text-indigo-300">
                     请检查结果
                   </span>
                 ) : null}
-              </div>
-            </div>
-            <div className="p-4">
-              <ExpandableContent collapsedHeight={520} className="text-sm leading-7">
-                <MarkdownViewer content={currentTask.result.trim()} maxHeight="max-h-none" bare />
-              </ExpandableContent>
-            </div>
-          </section>
+              </>
+            }
+            contentClassName="pl-2.5"
+            headerClassName="-mx-6 w-[calc(100%+3rem)]"
+            headerContentClassName="pl-6"
+            defaultOpen
+          >
+            <TaskDeliveriesSection
+              deliveries={currentTask.deliveries}
+              feedbackItems={currentTask.feedbackItems}
+              onOpenHunk={variant === 'team' && onViewChanges ? handleOpenHunkAnchor : undefined}
+            />
+          </CollapsibleTeamSection>
         ) : null}
 
         {/* Reference and delivery files. Empty sections stay hidden in the inbox. */}

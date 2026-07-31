@@ -1,16 +1,16 @@
 import { CROSS_TEAM_SENT_SOURCE } from '@shared/constants/crossTeam';
 import { SYSTEM_MANAGER_TEAM_NAME } from '@shared/types/team';
+import { discoverableTeamToWorker } from '@shared/types/worker';
+
+import type { AppendGroupMessageInput } from '../services/team-management/TeamWorkspaceService';
+import type { CcSession } from '@shared/types/api';
 import type {
   HermitBridgeSessionDetail,
   HermitBridgeSessionListItem,
 } from '@shared/types/hermitBridge';
 import type { DiscoverableTeam } from '@shared/types/team';
-import { discoverableTeamToWorker } from '@shared/types/worker';
 import type { DiscoverableWorker } from '@shared/types/worker';
 import type { FastifyInstance } from 'fastify';
-
-import type { CcSession } from '@shared/types/api';
-import type { AppendGroupMessageInput } from '../services/team-management/TeamWorkspaceService';
 
 interface WorkerRouteDependencies {
   discoverTeams(): Promise<DiscoverableTeam[]>;

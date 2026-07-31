@@ -1,11 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import type { TelemetryConfig } from '@shared/types/team';
-import type { FastifyInstance } from 'fastify';
-
 import type { HermitBridgeClient } from '../services/hermitBridge/HermitBridgeClient';
 import type { TeamProvisioningService } from '../services/team-management';
+import type { TelemetryConfig } from '@shared/types/team';
+import type { FastifyInstance } from 'fastify';
 
 type TaskBusBridgeClient = Pick<HermitBridgeClient, 'listProjects' | 'getProject'>;
 type TaskBusTeamProvisioning = Pick<

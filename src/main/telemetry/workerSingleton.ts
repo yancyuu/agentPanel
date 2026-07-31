@@ -11,9 +11,17 @@
 // match every persistent telemetry/worker.ts daemon, exclude self and transient
 // --scan-once foreground scans (those self-exit after one scan; usage report must
 // not be killed mid-scan).
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 
 const REAP_GRACE_MS = 200;
+
+export function isUsageWorkerCommand(command: string): boolean {
+  const normalized = command.replace(/\\/g, '/').toLowerCase();
+  return (
+    normalized.includes('telemetry/worker.ts') ||
+    normalized.includes('dist/telemetry-worker.bundle.mjs')
+  );
+}
 
 function isTransientWorkerCommand(command: string): boolean {
   return ['--scan-once', '--startup-once', '--report-lark-credentials-once'].some((flag) =>
@@ -34,16 +42,51 @@ export function parseOtherUsageWorkerPids(psOutput: string, selfPid: number): nu
     if (!Number.isInteger(pid) || pid <= 0) continue;
     if (pid === selfPid) continue;
     const command = match[2];
-    if (!command.includes('telemetry/worker.ts')) continue;
+    if (!isUsageWorkerCommand(command)) continue;
     if (isTransientWorkerCommand(command)) continue;
     pids.push(pid);
   }
   return pids;
 }
 
-/** Live `ps` snapshot → pids of other worker daemons. [] on Windows / ps failure. */
+export function parseWindowsUsageWorkerPids(output: string, selfPid: number): number[] {
+  if (!output.trim()) return [];
+  try {
+    const parsed: unknown = JSON.parse(output);
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    return items.flatMap((item) => {
+      if (!item || typeof item !== 'object') return [];
+      const record = item as Record<string, unknown>;
+      const pid = Number(record.ProcessId ?? record.processId);
+      const command = String(record.CommandLine ?? record.commandLine ?? '');
+      if (!Number.isInteger(pid) || pid <= 0 || pid === selfPid) return [];
+      if (!isUsageWorkerCommand(command) || isTransientWorkerCommand(command)) return [];
+      return [pid];
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Live process snapshot → pids of other worker daemons. */
 export function listOtherUsageWorkerPids(selfPid = process.pid): number[] {
-  if (process.platform === 'win32') return []; // POSIX ps; Windows is managed via the CLI reaper.
+  if (process.platform === 'win32') {
+    try {
+      const output = execFileSync(
+        'powershell',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          'Get-CimInstance Win32_Process | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress',
+        ],
+        { encoding: 'utf-8', windowsHide: true }
+      );
+      return parseWindowsUsageWorkerPids(output, selfPid);
+    } catch {
+      return [];
+    }
+  }
   let output = '';
   try {
     output = execSync('ps -axo pid=,command=', { encoding: 'utf-8' });

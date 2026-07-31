@@ -1,9 +1,8 @@
 name: Deploy Landing Page to GitHub Pages
 
 on:
-  push:
-    branches:
-      - master
+  release:
+    types: [published]
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -14,7 +13,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -23,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - name: Build landing page
         run: node scripts/build-pages.mjs
@@ -34,18 +35,34 @@ jobs:
           grep -q "AgentCLI" _site/index.html
           grep -q "curl" _site/install.sh
 
+      - name: Verify desktop release assets exist
+        if: github.event_name != 'pull_request'
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}"
+          for asset in \
+            "AgentCLI-${VERSION}-arm64.dmg" \
+            "AgentCLI-${VERSION}-x64.dmg" \
+            "AgentCLI-Setup-${VERSION}-x64.exe" \
+            "AgentCLI-Setup-${VERSION}-arm64.exe" \
+            "AgentCLI-${VERSION}-x86_64.AppImage" \
+            "AgentCLI-${VERSION}-arm64.AppImage"; do
+            echo "checking ${asset}"
+            curl --retry 3 --retry-all-errors -fLIsS "${BASE}/${asset}" >/dev/null
+          done
+
       - name: Set up Pages
-        if: github.ref == 'refs/heads/master'
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
-        if: github.ref == 'refs/heads/master'
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
   deploy:
-    if: github.ref == 'refs/heads/master'
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:

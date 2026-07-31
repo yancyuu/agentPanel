@@ -1,6 +1,5 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
-
 import type { ServerRuntimeState, SseClient } from '../serverContext';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 const SSE_FALLBACK_RE = /^\/api\/(.*\/(events|stream|notifications\/stream))$/;
 
