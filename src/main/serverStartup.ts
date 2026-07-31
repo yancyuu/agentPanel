@@ -10,7 +10,7 @@ import type { FastifyBaseLogger } from 'fastify';
 const BRIDGE_BINARY_REMEDIATION = [
   '在终端运行: npm install -g cc-connect',
   '或设置环境变量 CC_CONNECT_MIRROR 指向可用的 GitHub release 代理（如 https://gh-proxy.com/）',
-  '安装完成后重启 AgentCli 工作台',
+  '安装完成后重启 AgentCLI 工作台',
 ];
 
 interface StartupServerApp {
@@ -92,7 +92,7 @@ export async function startStandaloneServerRuntime<TBridgeClient>({
   try {
     await ensureAgentCliShim();
   } catch (error) {
-    app.log.warn({ err: error }, 'AgentCli Workbench shim provisioning failed');
+    app.log.warn({ err: error }, 'AgentCLI Workbench shim provisioning failed');
   }
   // Binary diagnostics and sidecar readiness remain non-blocking for HTTP
   // startup, but share one abort signal and are both lifecycle-owned. The

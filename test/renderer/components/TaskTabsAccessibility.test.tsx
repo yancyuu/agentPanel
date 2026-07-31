@@ -58,7 +58,7 @@ afterEach(() => {
 
 describe('inbox segment tabs', () => {
   const Harness = (): React.JSX.Element => {
-    const [view, setView] = useState<'inbox' | 'in_progress' | 'completed'>('inbox');
+    const [view, setView] = useState<'in_progress' | 'review' | 'completed'>('in_progress');
     return (
       <InboxTaskList
         view={view}
@@ -81,15 +81,15 @@ describe('inbox segment tabs', () => {
 
   it('links segments to their panel and supports arrows, Home, and End', () => {
     const container = render(<Harness />);
-    const inbox = container.querySelector<HTMLElement>('#inbox-segment-tab-inbox');
+    const inProgress = container.querySelector<HTMLElement>('#inbox-segment-tab-in_progress');
 
-    expect(inbox?.getAttribute('aria-controls')).toBe('inbox-segment-panel-inbox');
-    expect(inbox?.tabIndex).toBe(0);
+    expect(inProgress?.getAttribute('aria-controls')).toBe('inbox-segment-panel-in_progress');
+    expect(inProgress?.tabIndex).toBe(0);
     expect(
       container.querySelector('[role="tabpanel"]:not([hidden])')?.getAttribute('aria-labelledby')
-    ).toBe('inbox-segment-tab-inbox');
+    ).toBe('inbox-segment-tab-in_progress');
 
-    press(inbox!, 'ArrowLeft');
+    press(inProgress!, 'ArrowLeft');
     const completed = container.querySelector<HTMLElement>('#inbox-segment-tab-completed');
     expect(completed?.getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(completed);
@@ -98,8 +98,8 @@ describe('inbox segment tabs', () => {
     );
 
     press(completed!, 'Home');
-    expect(inbox?.getAttribute('aria-selected')).toBe('true');
-    press(inbox!, 'End');
+    expect(inProgress?.getAttribute('aria-selected')).toBe('true');
+    press(inProgress!, 'End');
     expect(completed?.getAttribute('aria-selected')).toBe('true');
   });
 });

@@ -1072,7 +1072,7 @@ export const MentionableTextarea = React.forwardRef<HTMLTextAreaElement, Mention
     // --- Rotating tips ---
     const rotatingTips = React.useMemo(
       () => [
-        'Tips：输入 @ 可提及成员、团队或文件，输入 # 可引用任务。',
+        '提示：输入 @ 可提及成员、团队或文件，输入 # 可引用任务。',
         'Tips：不要把所有工作都堆给 Loop Lead，可以让 Lead 把循环分配给合适的成员。',
         ...extraTips,
       ],

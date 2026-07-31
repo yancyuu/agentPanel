@@ -1,7 +1,7 @@
 ---
 id: "doctor"
 label: "Doctor"
-description: "诊断 Hermit、Claude Code、hermit-bridge 和 Loop runtime 健康。"
+description: "诊断 AgentCLI、Claude Code、hermit-bridge 和 Loop runtime 健康。"
 category: health
 safety: read-only
 order: 20
@@ -10,7 +10,7 @@ filename: "doctor.md"
 <!-- hermit-builtin-workflow:v2-loop -->
 # Loop Runtime Doctor — 环境与循环运行时诊断
 
-你是 Hermit 运维诊断助手。请检查当前环境是否适合运行长期 Agent loop。
+你是 AgentCLI 运维诊断助手。请检查当前环境是否适合运行长期 Agent loop。
 
 
 ## 安全边界
@@ -26,7 +26,7 @@ filename: "doctor.md"
 
 - 操作系统、内存、磁盘、文件描述符限制
 - `claude` 是否可用、版本、登录状态
-- hermit-bridge / Hermit 服务是否运行
+- hermit-bridge / AgentCLI 服务是否运行
 - 当前工作区路径是否正确
 
 

@@ -34,7 +34,7 @@ function parsePlatformOptions(value) {
 }
 
 async function ensureDigitalWorkerLocalServer() {
-  // Creating a digital worker is available only from an already-running AgentCli
+  // Creating a digital worker is available only from an already-running AgentCLI
   // workbench. `waitForOpenHermitServerReady` probes /api/version, which is the
   // canonical readiness signal — it rejects a dead daemon, a merely bound port,
   // and a server still booting. Do NOT auto-start here: an explicit workbench
@@ -43,7 +43,7 @@ async function ensureDigitalWorkerLocalServer() {
   const existing = await waitForOpenHermitServerReady(null, 3_000);
   if (existing.ready) return existing;
   throw new Error(
-    'AgentCli 工作台未启动或尚未就绪：请先运行 agentcli web 或在菜单中开启 AgentCli 工作台，再创建数字员工。'
+    'AgentCLI 工作台未启动或尚未就绪：请先运行 agentcli web 或在菜单中开启 AgentCLI 工作台，再创建数字员工。'
   );
 }
 

@@ -437,10 +437,12 @@ export const createChangeReviewSlice: StateCreator<AppState, [], [], ChangeRevie
     data: ReviewChangeSetLike,
     extraState?: Partial<ChangeReviewSlice>
   ): void => {
+    const files = Array.isArray(data.files) ? data.files : [];
+    const normalizedData = { ...data, files } as ReviewChangeSetLike;
     set((s) => ({
-      activeChangeSet: data,
+      activeChangeSet: normalizedData,
       changeSetLoading: false,
-      selectedReviewFilePath: data.files[0]?.filePath ?? null,
+      selectedReviewFilePath: files[0]?.filePath ?? null,
       hunkDecisions: {},
       fileDecisions: {},
       fileContents: {},

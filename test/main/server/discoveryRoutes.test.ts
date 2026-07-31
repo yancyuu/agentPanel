@@ -47,6 +47,37 @@ describe('harness and graph discovery routes', () => {
     ]);
   });
 
+  it('reports packaged desktop runtime availability and bundled Pi', async () => {
+    const app = Fastify({ logger: false });
+    apps.push(app);
+    registerHarnessRoutes(app, {
+      agentTypes: ['claudecode', 'codex', 'pi'],
+      listProjects: () => Promise.resolve([]),
+      packagedDesktop: true,
+      isCommandAvailable: (command) => Promise.resolve(command === 'pi'),
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/api/harnesses' });
+
+    expect(response.json()).toEqual([
+      {
+        type: 'claudecode',
+        inUse: false,
+        available: false,
+        bundled: false,
+        desktopManaged: true,
+      },
+      {
+        type: 'codex',
+        inUse: false,
+        available: false,
+        bundled: false,
+        desktopManaged: true,
+      },
+      { type: 'pi', inUse: false, available: true, bundled: true, desktopManaged: true },
+    ]);
+  });
+
   it('builds graph nodes and active assignment edges', async () => {
     const harness = createHarness();
 

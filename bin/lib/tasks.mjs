@@ -1,6 +1,10 @@
-// tasks.mjs — Hermit CLI task-bus commands for digital employees.
+// tasks.mjs — AgentCLI task-bus commands for digital employees.
 // All mutations go through the running Workbench API so the task board remains
 // the single source of truth. Skills and MCP are intentionally not involved.
+
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import path from 'node:path';
 
 import { args, commandArgs, findOptionValue, jsonRequested, port } from './env.mjs';
 import { printJson } from './terminal.mjs';
@@ -19,9 +23,34 @@ function unwrapApiResponse(payload) {
   return payload;
 }
 
+function desktopRuntimeMetadata() {
+  try {
+    const hermitHome = process.env.HERMIT_HOME || path.join(homedir(), '.hermit');
+    const parsed = JSON.parse(
+      readFileSync(path.join(hermitHome, 'desktop-runtime.json'), 'utf8')
+    );
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function taskBusBaseUrl() {
   if (args.includes('--port')) return `http://127.0.0.1:${port}`;
-  return String(process.env.HERMIT_WORKBENCH_URL || `http://127.0.0.1:${port}`).replace(/\/$/u, '');
+  if (process.env.HERMIT_WORKBENCH_URL) {
+    return String(process.env.HERMIT_WORKBENCH_URL).replace(/\/$/u, '');
+  }
+  const desktopOrigin = desktopRuntimeMetadata()?.origin;
+  return String(desktopOrigin || `http://127.0.0.1:${port}`).replace(/\/$/u, '');
+}
+
+function taskBusHeaders(body) {
+  const headers = body === undefined ? {} : { 'Content-Type': 'application/json' };
+  const sessionToken =
+    process.env.AGENTCLI_DESKTOP_SESSION_TOKEN || desktopRuntimeMetadata()?.sessionToken;
+  if (sessionToken) headers['x-agentcli-desktop-token'] = String(sessionToken);
+  return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
 async function requestTaskBus(pathname, { method = 'GET', body } = {}) {
@@ -29,13 +58,13 @@ async function requestTaskBus(pathname, { method = 'GET', body } = {}) {
   try {
     response = await fetch(`${taskBusBaseUrl()}${pathname}`, {
       method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      headers: taskBusHeaders(body),
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(15_000),
     });
   } catch (error) {
     throw new Error(
-      `Hermit 工作台未启动或不可达（${taskBusBaseUrl()}）：${error instanceof Error ? error.message : String(error)}`
+      `AgentCLI 工作台未启动或不可达（${taskBusBaseUrl()}）：${error instanceof Error ? error.message : String(error)}`
     );
   }
 
@@ -45,7 +74,7 @@ async function requestTaskBus(pathname, { method = 'GET', body } = {}) {
     try {
       payload = JSON.parse(text);
     } catch {
-      throw new Error(`Hermit 工作台返回了无效响应（HTTP ${response.status}）`);
+      throw new Error(`AgentCLI 工作台返回了无效响应（HTTP ${response.status}）`);
     }
   }
   const unwrapped = unwrapApiResponse(payload);

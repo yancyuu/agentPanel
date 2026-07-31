@@ -44,7 +44,7 @@ describe('SystemManagerConfigService.adminInitialized', () => {
     const svc = new SystemManagerConfigService();
     await svc.updateConfig({ adminInitialized: true });
     // selectedWorkDir is fixed at the canonical admin workspace; a patch must
-    // never move it (the Helm Loop is always rooted at ~/.hermit).
+    // never move it (the 诊断 is always rooted at ~/.hermit).
     await svc.updateConfig({ selectedWorkDir: '/tmp/should-be-ignored' });
 
     const config = await svc.getConfig();
@@ -55,10 +55,10 @@ describe('SystemManagerConfigService.adminInitialized', () => {
 });
 
 describe('SystemManagerConfigService.getStatus', () => {
-  it('reports the Helm Loop identity and the canonical ~/.hermit workspace', async () => {
+  it('reports the 诊断 identity and the canonical ~/.hermit workspace', async () => {
     const svc = new SystemManagerConfigService();
     const status = await svc.getStatus();
-    expect(status.displayName).toBe('Helm Loop');
+    expect(status.displayName).toBe('诊断');
     expect(status.adminWorkDir).toBe(workdir);
     expect(status.defaultWorkDir).toBe(workdir);
     expect(status.selectedWorkDir).toBe(workdir);

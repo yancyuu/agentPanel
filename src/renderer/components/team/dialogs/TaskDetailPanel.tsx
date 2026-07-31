@@ -72,6 +72,7 @@ import {
   ArrowRightFromLine,
   Check,
   Clock,
+  Copy,
   FileDiff,
   GitCompareArrows,
   HelpCircle,
@@ -80,8 +81,10 @@ import {
   Link2,
   Loader2,
   MessageSquare,
+  PackageCheck,
   Pencil,
   PenLine,
+  Printer,
   RefreshCw,
   ScrollText,
   SquarePen,
@@ -147,6 +150,11 @@ export interface TaskDetailPanelProps {
   onOpenInEditor?: (filePath: string) => void;
   onDeleteTask?: (taskId: string) => void;
   commentAttachmentCapability?: TaskCommentAttachmentCapability;
+  commentPlaceholder?: string;
+  commentSendLabel?: string;
+  commentContextHint?: string;
+  /** Consumer-focused presentation: prioritize goal, deliverable, and collaboration. */
+  compactForInbox?: boolean;
   /** Extra content rendered in the dialog header (e.g. "Open team" button). */
   headerExtra?: React.ReactNode;
 }
@@ -168,6 +176,10 @@ export const TaskDetailPanel = ({
   onOpenInEditor,
   onDeleteTask,
   commentAttachmentCapability,
+  commentPlaceholder,
+  commentSendLabel,
+  commentContextHint,
+  compactForInbox = false,
   headerExtra,
 }: TaskDetailPanelProps): React.JSX.Element => {
   const colorMap = useMemo(() => buildMemberColorMap(members), [members]);
@@ -187,6 +199,7 @@ export const TaskDetailPanel = ({
   const [taskChangesFiles, setTaskChangesFiles] = useState<FileChangeSummary[] | null>(null);
   const [taskChangesLoading, setTaskChangesLoading] = useState(false);
   const [taskChangesError, setTaskChangesError] = useState<string | null>(null);
+  const [resultCopied, setResultCopied] = useState(false);
   const loadedTaskChangeSummaryKeyRef = useRef<string | null>(null);
   const taskChangesLoadInFlightKeysRef = useRef<Set<string>>(new Set());
   const currentTaskChangeSummaryKeyRef = useRef<string | null>(null);
@@ -245,10 +258,26 @@ export const TaskDetailPanel = ({
     }
   }, [currentTask, descriptionDraft, savingDescription, teamName, updateTaskFields]);
 
+  const copyDeliverable = useCallback(async () => {
+    const result = currentTask?.result?.trim();
+    if (!result) return;
+    try {
+      await navigator.clipboard.writeText(result);
+      setResultCopied(true);
+    } catch {
+      setResultCopied(false);
+    }
+  }, [currentTask?.result]);
+
+  const printDeliverable = useCallback(() => {
+    window.print();
+  }, []);
+
   // Reset editing state on dialog close or task change
   useEffect(() => {
     setEditingSubject(false);
     setEditingDescription(false);
+    setResultCopied(false);
   }, [open, currentTask?.id]);
 
   useEffect(() => {
@@ -354,6 +383,10 @@ export const TaskDetailPanel = ({
     currentTask?.sourceMessageId && currentTask?.sourceMessage?.attachments?.length
       ? currentTask.sourceMessage.attachments.length
       : 0;
+  const relatedFileCount =
+    (currentTask?.attachments?.length ?? 0) +
+    commentImageAttachments.length +
+    sourceAttachmentCount;
 
   // Lazy-load task changes for any displayable state (in_progress, review, approved, completed).
   const canShowTaskChanges = currentTask ? canDisplayTaskChanges(currentTask) : false;
@@ -862,7 +895,7 @@ export const TaskDetailPanel = ({
       </div>
 
       {/* Clarification banner */}
-      {currentTask.needsClarification ? (
+      {!compactForInbox && currentTask.needsClarification ? (
         <div
           className={`flex items-center justify-between rounded-md px-3 py-2 text-xs ${
             currentTask.needsClarification === 'user'
@@ -1139,55 +1172,96 @@ export const TaskDetailPanel = ({
           )}
         </CollapsibleTeamSection>
 
-        {/* Attachments */}
-        <CollapsibleTeamSection
-          title="附件"
-          icon={<ImageIcon size={14} />}
-          badge={
-            (currentTask.attachments?.length ?? 0) +
-              commentImageAttachments.length +
-              sourceAttachmentCount >
-            0
-              ? (currentTask.attachments?.length ?? 0) +
-                commentImageAttachments.length +
-                sourceAttachmentCount
-              : undefined
-          }
-          contentClassName="pl-2.5"
-          headerClassName="-mx-6 w-[calc(100%+3rem)]"
-          headerContentClassName="pl-6"
-          defaultOpen={
-            (currentTask.attachments?.length ?? 0) > 0 ||
-            commentImageAttachments.length > 0 ||
-            sourceAttachmentCount > 0
-          }
-        >
-          {currentTask.sourceMessageId && currentTask.sourceMessage ? (
-            <SourceMessageAttachments
-              teamName={teamName}
-              sourceMessageId={currentTask.sourceMessageId}
-              sourceMessage={currentTask.sourceMessage}
-            />
-          ) : null}
-          <TaskAttachments
-            teamName={teamName}
-            taskId={currentTask.id}
-            attachments={currentTask.attachments ?? []}
-          />
-          {commentImageAttachments.length > 0 ? (
-            <CommentImagesGrid
-              items={commentImageAttachments}
+        {/* Human-facing deliverable */}
+        {currentTask.result?.trim() ? (
+          <section
+            data-task-deliverable
+            className="overflow-hidden rounded-xl border border-emerald-500/20 bg-emerald-500/[0.035]"
+          >
+            <div className="flex items-center gap-2 border-b border-emerald-500/15 px-4 py-3">
+              <span className="flex size-7 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <PackageCheck size={15} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-semibold text-[var(--color-text)]">交付结果</h3>
+                <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">
+                  {currentTask.reviewState === 'review'
+                    ? '助手已完成，请检查结果是否符合要求。'
+                    : currentTask.status === 'completed'
+                      ? '这是助手为当前任务提交的最终结果。'
+                      : '助手已提交阶段性结果。'}
+                </p>
+              </div>
+              <div data-deliverable-actions className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void copyDeliverable()}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)]"
+                >
+                  {resultCopied ? <Check size={11} /> : <Copy size={11} />}
+                  {resultCopied ? '已复制' : '复制'}
+                </button>
+                <button
+                  type="button"
+                  onClick={printDeliverable}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)]"
+                >
+                  <Printer size={11} />
+                  保存 PDF
+                </button>
+                {currentTask.reviewState === 'review' ? (
+                  <span className="rounded-full bg-indigo-500/10 px-2 py-1 text-[10px] font-medium text-indigo-600 dark:text-indigo-300">
+                    请检查结果
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <div className="p-4">
+              <ExpandableContent collapsedHeight={520} className="text-sm leading-7">
+                <MarkdownViewer content={currentTask.result.trim()} maxHeight="max-h-none" bare />
+              </ExpandableContent>
+            </div>
+          </section>
+        ) : null}
+
+        {/* Reference and delivery files. Empty sections stay hidden in the inbox. */}
+        {!compactForInbox || relatedFileCount > 0 ? (
+          <CollapsibleTeamSection
+            title="相关文件"
+            icon={<ImageIcon size={14} />}
+            badge={relatedFileCount > 0 ? relatedFileCount : undefined}
+            contentClassName="pl-2.5"
+            headerClassName="-mx-6 w-[calc(100%+3rem)]"
+            headerContentClassName="pl-6"
+            defaultOpen={relatedFileCount > 0 && !compactForInbox}
+          >
+            {currentTask.sourceMessageId && currentTask.sourceMessage ? (
+              <SourceMessageAttachments
+                teamName={teamName}
+                sourceMessageId={currentTask.sourceMessageId}
+                sourceMessage={currentTask.sourceMessage}
+              />
+            ) : null}
+            <TaskAttachments
               teamName={teamName}
               taskId={currentTask.id}
+              attachments={currentTask.attachments ?? []}
             />
-          ) : null}
-        </CollapsibleTeamSection>
+            {commentImageAttachments.length > 0 ? (
+              <CommentImagesGrid
+                items={commentImageAttachments}
+                teamName={teamName}
+                taskId={currentTask.id}
+              />
+            ) : null}
+          </CollapsibleTeamSection>
+        ) : null}
 
         {/* Changes */}
-        {variant === 'team' && canShowTaskChanges && onViewChanges ? (
+        {!compactForInbox && variant === 'team' && canShowTaskChanges && onViewChanges ? (
           <CollapsibleTeamSection
             key={`task-changes:${currentTask.id}`}
-            title="变更"
+            title="文件变更"
             icon={<FileDiff size={14} />}
             badge={taskChangesFiles ? taskChangesFiles.length : undefined}
             headerExtra={
@@ -1291,16 +1365,20 @@ export const TaskDetailPanel = ({
                 ))}
               </div>
             ) : changesSectionOpen ? (
-              <p className="text-xs text-[var(--color-text-muted)]">暂无文件变更记录</p>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                {currentTask.status === 'in_progress'
+                  ? '任务正在执行，尚未产生文件变更'
+                  : '该任务没有文件变更记录'}
+              </p>
             ) : null}
           </CollapsibleTeamSection>
         ) : null}
 
         {/* Execution Logs — sessions that reference this task */}
-        {variant === 'team' ? (
+        {!compactForInbox && variant === 'team' ? (
           <CollapsibleTeamSection
             key={`task-logs:${currentTask.id}`}
-            title="任务日志"
+            title="执行记录"
             icon={<ScrollText size={14} />}
             badge={taskLogStreamCount}
             headerExtra={
@@ -1349,7 +1427,7 @@ export const TaskDetailPanel = ({
         ) : null}
 
         {/* Workflow History */}
-        {currentTask.historyEvents && currentTask.historyEvents.length > 0 ? (
+        {!compactForInbox && currentTask.historyEvents && currentTask.historyEvents.length > 0 ? (
           <CollapsibleTeamSection
             title="流程历史"
             icon={<History size={14} />}
@@ -1363,36 +1441,20 @@ export const TaskDetailPanel = ({
           </CollapsibleTeamSection>
         ) : null}
 
-        {/* Comments */}
+        {/* Task collaboration */}
         <CollapsibleTeamSection
-          title="评论"
+          title="任务协作"
           icon={<MessageSquare size={14} />}
           badge={
             (currentTask.comments?.length ?? 0) > 0
               ? (currentTask.comments?.length ?? 0)
               : undefined
           }
-          contentClassName="overflow-x-visible pl-0"
+          contentClassName="min-w-0 overflow-x-hidden pl-0"
           headerClassName="-mx-6 w-[calc(100%+3rem)]"
           headerContentClassName="pl-6"
           defaultOpen
         >
-          <div className="pl-2.5">
-            <TaskCommentInput
-              teamName={teamName}
-              taskId={currentTask.id}
-              members={members}
-              replyTo={effectiveReplyTo}
-              onClearReply={clearReply}
-              attachmentCapability={commentAttachmentCapability}
-            />
-          </div>
-          <TaskCommentAwaitingReply
-            comments={currentTask.comments}
-            taskOwner={currentTask.owner}
-            taskCreatedBy={currentTask.createdBy}
-            members={members}
-          />
           <TaskCommentsSection
             teamName={teamName}
             taskId={currentTask.id}
@@ -1402,10 +1464,29 @@ export const TaskDetailPanel = ({
             hideInput
             onReply={handleReply}
             onTaskRefClick={onScrollToTask ? handleDependencyClick : undefined}
-            containerClassName="-mx-6"
+            containerClassName="min-w-0"
             unreadCommentIds={unreadSnapshotRef.current}
             registerCommentForViewport={registerComment}
           />
+          <TaskCommentAwaitingReply
+            comments={currentTask.comments}
+            taskOwner={currentTask.owner}
+            taskCreatedBy={currentTask.createdBy}
+            members={members}
+          />
+          <div className="min-w-0 px-2.5 pt-2">
+            <TaskCommentInput
+              teamName={teamName}
+              taskId={currentTask.id}
+              members={members}
+              replyTo={effectiveReplyTo}
+              onClearReply={clearReply}
+              attachmentCapability={commentAttachmentCapability}
+              placeholder={commentPlaceholder}
+              sendLabel={commentSendLabel}
+              contextHint={commentContextHint}
+            />
+          </div>
         </CollapsibleTeamSection>
       </div>
     </LightboxLockProvider>

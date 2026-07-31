@@ -34,7 +34,7 @@ export const CommunityChatView = (): React.JSX.Element => {
                   适合谁加入
                 </div>
                 <p className="text-sm leading-6 text-text-muted">
-                  如果你正在用 Claude Code / Hermit / 多 Agent 团队做真实项目，或者想交流 AI
+                  如果你正在用 Claude Code / AgentCLI / 多 Agent 团队做真实项目，或者想交流 AI
                   自动化、产品工程和独立创造，这里会持续分享实验和想法。
                 </p>
               </div>
@@ -45,7 +45,7 @@ export const CommunityChatView = (): React.JSX.Element => {
                   你可以期待
                 </div>
                 <ul className="space-y-2 text-sm leading-6 text-text-muted">
-                  <li>• Hermit / OpenHermit 的功能讨论和使用反馈</li>
+                  <li>• AgentCLI 的功能讨论和使用反馈</li>
                   <li>• Agent 团队、Loop、Workflow 的实践案例</li>
                   <li>• 一人公司、自动化研发和产品想法交流</li>
                 </ul>

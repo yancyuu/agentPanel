@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -47,25 +48,11 @@ describe('ConversationMessageUploadService', () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('defaults message upload to enabled when telemetry has no explicit upload setting', async () => {
-    // Regression: UsageTelemetryService treated a fresh config as default-on, but
-    // this uploader's old Boolean(...) gate returned disabled before even probing
-    // auth. A config with no upload fields must now proceed into the upload path.
-    fetchMock.mockImplementation(async (url: string) => {
-      if (url.endsWith('/api/v1/auth/me')) {
-        return Response.json({ authenticated: true, status: 'ok', feishu_authorized: true });
-      }
-      if (url.includes('/api/v1/report/usage/status')) return Response.json({ channels: [] });
-      throw new Error(`unexpected fetch ${url}`);
-    });
-
+  it('defaults message upload to disabled when telemetry has no explicit opt-in', async () => {
     const result = await uploadConversationMessages({ telemetry: {} });
 
-    expect(result.enabled).toBe(true);
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\/api\/v1\/auth\/me$/),
-      expect.anything()
-    );
+    expect(result.enabled).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('bounds the first periodic scan to recent messages when no cursor exists (no full-history backfill)', async () => {
@@ -1465,6 +1452,114 @@ describe('ConversationMessageUploadService', () => {
     expect(result.accepted).toBe(1);
   });
 
+  it('restores the exact Codex model from before the incremental cursor and ignores model_provider', async () => {
+    const codexHome = path.join(tmpDir, '.codex');
+    process.env.CODEX_HOME = codexHome;
+    const sessionDir = path.join(codexHome, 'sessions', '2026', '07', '30');
+    await mkdir(sessionDir, { recursive: true });
+    const sessionPath = path.join(sessionDir, 'rollout-incremental-model.jsonl');
+    const prefix = `${JSON.stringify({
+      timestamp: '2026-07-30T18:00:00.000Z',
+      type: 'turn_context',
+      payload: {
+        type: 'turn_context',
+        cwd: '/tmp/codex-incremental',
+        model: 'gpt-5.6-sol',
+      },
+    })}\n`;
+    const incremental = `${JSON.stringify({
+      timestamp: '2026-07-30T18:01:00.000Z',
+      type: 'session_meta',
+      payload: { type: 'session_meta', model_provider: 'openai' },
+    })}\n${JSON.stringify({
+      timestamp: '2026-07-30T18:02:00.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        turn_id: 'turn-incremental',
+        info: {
+          last_token_usage: { input_tokens: 10, output_tokens: 4, total_tokens: 14 },
+        },
+      },
+    })}\n`;
+    await writeFile(sessionPath, `${prefix}${incremental}`);
+    const uploadedOffset = Buffer.byteLength(prefix, 'utf8');
+    const key = createHash('sha256').update(sessionPath).digest('hex');
+
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/v1/auth/me')) {
+        return Response.json({
+          authenticated: true,
+          status: 'ok',
+          scopes: ['upload:read', 'upload:write'],
+        });
+      }
+      if (url.includes('/api/v1/report/usage/status')) {
+        return Response.json({
+          channels: [
+            {
+              reporter: 'agentcli',
+              client: 'codex',
+              scene: 'coding',
+              status: 'success',
+              inFlight: { count: 0, uploadIds: [] },
+              currentCursor: {
+                schemaVersion: 1,
+                purpose: 'local-jsonl-scan-position',
+                generatedAt: '2026-07-30T18:00:30.000Z',
+                files: [
+                  {
+                    fileKey: key,
+                    pathHash: `sha256-${key}`,
+                    size: uploadedOffset,
+                    mtimeMs: 1,
+                    fromOffset: 0,
+                    toOffset: uploadedOffset,
+                  },
+                ],
+                fileCount: 1,
+                messageCount: 1,
+              },
+            },
+          ],
+        });
+      }
+      if (url.endsWith('/api/v1/report/messages')) {
+        const body = JSON.parse(String(init?.body));
+        expect(body.messages).toHaveLength(1);
+        expect(body.messages[0].message).toMatchObject({
+          modelName: 'gpt-5.6-sol',
+          usage: { totalTokens: 14 },
+        });
+        expect(body.messages[0].message.modelName).not.toBe('openai');
+        return Response.json(
+          {
+            ok: true,
+            uploadId: 'upl_incremental_codex',
+            status: 'queued',
+            received: 1,
+            acceptedForProcessing: 1,
+            rejectedAtReceive: 0,
+          },
+          { status: 202 }
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    const result = await uploadConversationMessages({
+      telemetry: {
+        enabled: true,
+        platform: 'codex',
+        conversationUploadEnabled: true,
+        uploadProviders: ['codex'],
+      },
+    });
+
+    expect(result.lastError).toBeUndefined();
+    expect(result.attempted).toBe(1);
+  });
+
   it('uploads per-turn deltas, not cumulative snapshots, for total_token_usage-only Codex logs', async () => {
     // Real Codex logs may omit last_token_usage and carry only the CUMULATIVE
     // total_token_usage. The server sums message.usage.totalTokens, so sending
@@ -1491,7 +1586,12 @@ describe('ConversationMessageUploadService', () => {
       })}\n`;
     await writeFile(
       path.join(sessionDir, 'rollout-cumulative.jsonl'),
-      tokenLine(100, '2026-07-02T00:00:00.000Z') +
+      `${JSON.stringify({
+        timestamp: '2026-07-01T23:59:00.000Z',
+        type: 'turn_context',
+        payload: { type: 'turn_context', model: 'gpt-5.6-sol' },
+      })}\n` +
+        tokenLine(100, '2026-07-02T00:00:00.000Z') +
         tokenLine(200, '2026-07-02T00:01:00.000Z') +
         tokenLine(300, '2026-07-02T00:02:00.000Z')
     );
@@ -1569,6 +1669,10 @@ describe('ConversationMessageUploadService', () => {
         timestamp: '2026-07-02T00:16:00.000Z',
         type: 'session_meta',
         payload: { type: 'session_meta', session_id: 'rollout-content', cwd: '/tmp/codex-content' },
+      })}\n${JSON.stringify({
+        timestamp: '2026-07-02T00:16:05.000Z',
+        type: 'turn_context',
+        payload: { type: 'turn_context', model: 'gpt-5.6-sol' },
       })}\n${JSON.stringify({
         timestamp: '2026-07-02T00:16:10.000Z',
         type: 'event_msg',

@@ -12,6 +12,18 @@ import {
   listFeishuAssistants,
 } from '../feishuAssistant.mjs';
 
+beforeEach(() => {
+  vi.stubGlobal('__feishuAssistant_test_spawn', () => ({
+    status: 1,
+    stdout: '',
+    stderr: 'test stub',
+  }));
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('isHermitBridgeInstalled', () => {
   it('returns a boolean', () => {
     const result = isHermitBridgeInstalled();
@@ -62,7 +74,9 @@ describe('feishuAssistant — public runtime surface', () => {
   });
 
   it('returns a clear error when the runtime never becomes ready', async () => {
-    const fetchImpl = vi.fn(async () => { throw new Error('connect ECONNREFUSED'); });
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('connect ECONNREFUSED');
+    });
 
     const result = await ensureCcConnectRuntime(5680, { timeoutMs: 5, pollMs: 1, fetchImpl });
 
@@ -73,7 +87,10 @@ describe('feishuAssistant — public runtime surface', () => {
 
   it('does not spawn a foreground cc-connect process', async () => {
     let spawnCalled = false;
-    vi.stubGlobal('__feishuAssistant_test_spawn', () => { spawnCalled = true; return null; });
+    vi.stubGlobal('__feishuAssistant_test_spawn', () => {
+      spawnCalled = true;
+      return null;
+    });
     const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) }));
 
     await ensureCcConnectRuntime(5680, { pollMs: 1, fetchImpl });
@@ -117,13 +134,10 @@ describe('createFeishuAssistant — argument forwarding', () => {
 
   beforeEach(() => {
     spawnedArgs = null;
-    vi.stubGlobal(
-      '__feishuAssistant_test_spawn',
-      (cmd, args) => {
-        spawnedArgs = { cmd, args };
-        return { status: 0, stdout: '{"ok":true,"teamSlug":"test-team"}', stderr: '' };
-      }
-    );
+    vi.stubGlobal('__feishuAssistant_test_spawn', (cmd, args) => {
+      spawnedArgs = { cmd, args };
+      return { status: 0, stdout: '{"ok":true,"teamSlug":"test-team"}', stderr: '' };
+    });
   });
 
   afterEach(() => {

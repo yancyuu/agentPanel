@@ -4,11 +4,11 @@
 
 ## 当前结论
 
-Hermit 不是团队内部 Leader/Member 模拟器。更稳定的模型是：
+AgentCLI 不是团队内部 Leader/Member 模拟器。更稳定的模型是：
 
-> Hermit 是本地优先的团队工作区和跨团队任务协议层。
+> AgentCLI 是本地优先的团队工作区和跨团队任务协议层。
 
-团队内部如何计划、执行、重试、review，由各自 runtime 和工作流决定。Hermit 负责团队配置、任务/消息工作区、渠道路由、跨团队状态机、审计和用户可见控制面。
+团队内部如何计划、执行、重试、review，由各自 runtime 和工作流决定。AgentCLI 负责团队配置、任务/消息工作区、渠道路由、跨团队状态机、审计和用户可见控制面。
 
 ## 当前产品边界
 
@@ -28,9 +28,9 @@ Hermit 不是团队内部 Leader/Member 模拟器。更稳定的模型是：
 
 | 层级 | 负责 | 不负责 |
 |:---|:---|:---|
-| Hermit | 团队列表、团队配置、任务看板、消息工作区、渠道绑定、白名单、审计、跨团队 dispatch、Task Bus 目标协议 | 平台 Bot 适配、模型能力、团队内部 todo 细节 |
+| AgentCLI | 团队列表、团队配置、任务看板、消息工作区、渠道绑定、白名单、审计、跨团队 dispatch、Task Bus 目标协议 | 平台 Bot 适配、模型能力、团队内部 todo 细节 |
 | Team runtime | 执行任务、内部计划、工具调用、局部重试、局部 review | 全局路由、跨团队审计、其他团队状态管理 |
-| hermit-bridge | runtime 生命周期、渠道接入、Bridge 消息投递、project 配置 | Hermit 业务状态、跨团队任务决策 |
+| hermit-bridge | runtime 生命周期、渠道接入、Bridge 消息投递、project 配置 | AgentCLI 业务状态、跨团队任务决策 |
 | Redis Task Bus | 当前跨团队派单和响应流转 | 用户聊天渠道、团队内部任务存储 |
 
 ## 团队工作区
@@ -50,16 +50,16 @@ team
 - **messages**：团队消息、跨团队消息、hermit-bridge 事件、渠道消息。
 - **workspace**：项目目录和可选 worktree 隔离。
 
-Hermit 只持久化控制面和投影状态，不把 runtime 内部思考、工具调用或私有 todo 强行改造成统一格式。
+AgentCLI 只持久化控制面和投影状态，不把 runtime 内部思考、工具调用或私有 todo 强行改造成统一格式。
 
 ## hermit-bridge 与渠道边界
 
-外部平台接入由 hermit-bridge 承载。Hermit 不直接实现 Feishu/Lark、微信、Telegram、Discord、Slack 等平台 Bot 适配器。
+外部平台接入由 hermit-bridge 承载。AgentCLI 不直接实现 Feishu/Lark、微信、Telegram、Discord、Slack 等平台 Bot 适配器。
 
 当前分层：
 
 1. **平台绑定**：团队绑定弹窗把平台凭据交给 hermit-bridge。Feishu/Lark 和微信支持扫码授权；其它平台通过 token、secret、bot id 等表单配置。
-2. **团队路由**：Hermit 根据 hermit-bridge 传入的外部 `session_key` 匹配团队。当前主要覆盖 Feishu/Lark、微信、Telegram、Discord、Slack 的 session key 解析。
+2. **团队路由**：AgentCLI 根据 hermit-bridge 传入的外部 `session_key` 匹配团队。当前主要覆盖 Feishu/Lark、微信、Telegram、Discord、Slack 的 session key 解析。
 3. **访问控制**：团队配置里的 `platformAllowChat` / `platformAllowFrom` 用平台维度限制群聊、频道或用户，支持逗号/空白分隔列表和 `*`。
 4. **审计归档**：渠道消息进入团队 message workspace，不能映射到团队的外部 session 不应写成伪团队目录。
 

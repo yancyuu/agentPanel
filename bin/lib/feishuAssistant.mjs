@@ -46,7 +46,7 @@ function resolvePackageLauncher() {
 
 /**
  * Resolve how to invoke cc-connect. Prefers the bundled optionalDependency
- * (shipped with AgentCli), falls back to a global `cc-connect` on PATH.
+ * (shipped with AgentCLI), falls back to a global `cc-connect` on PATH.
  * Returns {cmd, args, displayPath, via} or null when not found.
  */
 function resolveCcConnectLauncher() {
@@ -96,7 +96,7 @@ function compactBridgeResult(r, fallback) {
 }
 
 /**
- * Wait for the cc-connect runtime to be reachable through the local AgentCli
+ * Wait for the cc-connect runtime to be reachable through the local AgentCLI
  * server before channel binding. The server owns cc-connect process lifecycle
  * (it launches the sidecar on boot); this only polls the proxied status so the
  * CLI never blocks on a foreground `cc-connect start` process.

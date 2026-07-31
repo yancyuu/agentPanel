@@ -192,19 +192,13 @@ async function doScan(cfg?: TelemetryConfig): Promise<UsageTelemetryStatus | nul
   try {
     const collection = await getCollector().collect();
     lastLocalScan = statusFromCollection(collection);
-    // Conversation-upload gate — DEFAULT-ON. Must match the CLI resolver
-    // (uploadState.mjs::resolveConversationUploadEnabled): ON unless explicitly
-    // opted out, so a fresh install uploads without toggling first. The toggle's
-    // OFF path persists conversationUploadEnabled:false, honored as opt-out.
+    // Conversation content is explicit opt-in. A fresh install must never upload
+    // message bodies merely because a remote connection or broad upload scope exists.
+    // Keep this aligned with ConversationMessageUploadService and uploadState.mjs.
     const telemetryCfg = cfg?.telemetry;
     const canonicalUpload = telemetryCfg?.conversationUploadEnabled;
     const legacyUpload = telemetryCfg?.conversations?.uploadEnabled;
-    const conversationUploadOn =
-      canonicalUpload === true || legacyUpload === true
-        ? true
-        : canonicalUpload === false || legacyUpload === false
-          ? false
-          : true;
+    const conversationUploadOn = canonicalUpload === true || legacyUpload === true;
     if (cfg && conversationUploadOn) {
       try {
         lastLocalScan.conversationUpload = await uploadConversationMessages(

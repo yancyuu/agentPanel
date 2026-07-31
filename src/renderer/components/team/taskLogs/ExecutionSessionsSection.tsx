@@ -15,10 +15,7 @@ export const ExecutionSessionsSection = ({
 }: ExecutionSessionsSectionProps): React.JSX.Element => {
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-text-muted)]">
-          执行会话
-        </h4>
+      <div className="flex min-h-4 items-center justify-end gap-2">
         {isRefreshing || isPreviewOnline ? (
           <span className="flex items-center gap-2 text-[10px] text-[var(--color-text-muted)]">
             {isPreviewOnline ? (
@@ -33,14 +30,14 @@ export const ExecutionSessionsSection = ({
             {isRefreshing ? (
               <span className="flex items-center gap-1">
                 <Loader2 size={10} className="animate-spin" />
-                Updating...
+                更新中...
               </span>
             ) : null}
           </span>
         ) : null}
       </div>
       <p className="text-xs text-[var(--color-text-muted)]">
-        Legacy session-centric transcript browsing and previews.
+        按执行会话查看与当前任务关联的运行记录。
       </p>
       <MemberLogsTab {...props} />
     </div>

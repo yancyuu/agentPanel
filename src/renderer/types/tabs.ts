@@ -86,7 +86,9 @@ export interface Tab {
     | 'report'
     | 'extensions'
     | 'schedules'
+    | 'inbox'
     | 'tasks'
+    | 'collaboration'
     | 'graph'
     | 'chat';
 

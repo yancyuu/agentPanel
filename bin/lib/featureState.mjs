@@ -21,7 +21,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { hermitHome, telemetryWorkerPidPath } from './env.mjs';
+import { hermitHome, telemetryWorkerPidPath, telemetryWorkerStatusPath } from './env.mjs';
 import { readOpenHermitAuthStatus, refreshOpenHermitAuthStatus } from './auth.mjs';
 import { readPidFile, readDaemonPid, isPidRunning, refreshDaemonPidFromReadyServer } from './daemon.mjs';
 import { readHermitSettings } from './settings.mjs';
@@ -32,6 +32,7 @@ import { checkExistingOpenHermitServer } from './runtime.mjs';
 
 // 30-second TTL for the background auth probe result cached in-process.
 const AUTH_PROBE_TTL_MS = 30_000;
+const TELEMETRY_HEARTBEAT_STALE_MS = 15 * 60 * 1000;
 let _authProbeCache = { result: null, timestamp: 0 };
 
 export function invalidateAuthCache() {
@@ -130,6 +131,23 @@ export function currentFeatureStates() {
   _maybeRefreshAuth();
   const webPid = readDaemonPid();
   const usagePid = readPidFile(telemetryWorkerPidPath);
+  let usageStatus = null;
+  try {
+    usageStatus = JSON.parse(readFileSync(telemetryWorkerStatusPath, 'utf8'));
+  } catch {}
+  const usageProcessAlive = Boolean(usagePid && isPidRunning(usagePid));
+  const usageStatusPidMatches = Boolean(
+    usageProcessAlive && usageStatus?.pid && Number(usageStatus.pid) === Number(usagePid)
+  );
+  const usageHeartbeatAt = Date.parse(usageStatus?.updatedAt || '');
+  const usageHeartbeatFresh =
+    Number.isFinite(usageHeartbeatAt) &&
+    Date.now() - usageHeartbeatAt <= TELEMETRY_HEARTBEAT_STALE_MS;
+  const usageRunning =
+    usageProcessAlive &&
+    usageStatusPidMatches &&
+    usageHeartbeatFresh &&
+    usageStatus?.running !== false;
   const settings = readHermitSettings();
   const telemetry = settings.taskBus?.telemetry && typeof settings.taskBus.telemetry === 'object'
     ? settings.taskBus.telemetry
@@ -145,7 +163,7 @@ export function currentFeatureStates() {
     webPid,
     usagePid,
     webRunning: pidRunning || serverRunning,
-    usageRunning: Boolean(usagePid && isPidRunning(usagePid)),
+    usageRunning,
     conversationUploadEnabled: resolveConversationUploadEnabled(telemetry),
     uploadProviders,
     aikeyClaimed,

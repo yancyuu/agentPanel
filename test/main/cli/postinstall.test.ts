@@ -42,14 +42,14 @@ afterEach(() => {
   fs.rmSync(hermitHome, { recursive: true, force: true });
 });
 
-describe('AgentCli postinstall', () => {
+describe('AgentCLI postinstall', () => {
   it('installs every bundled workflow into HERMIT_HOME/.claude/workflow', async () => {
     const { stdout } = await runPostinstall();
     const targetDir = path.join(hermitHome, '.claude/workflow');
     const files = fs.readdirSync(targetDir).filter((name) => name.endsWith('.md') || name.endsWith('.js')).sort();
 
     expect(files).toEqual(bundledWorkflowFiles());
-    expect(stdout).toContain('[AgentCli] Installed');
+    expect(stdout).toContain('[AgentCLI] Installed');
     expect(stdout).toContain('workflow(s)');
     for (const filename of files) {
       expect(fs.readFileSync(path.join(targetDir, filename), 'utf8')).toContain('hermit-builtin-workflow:v2-loop');

@@ -1,3 +1,5 @@
+import { stripInboxGoalDirective } from './inboxGoalDirective';
+
 import type { InboxMessage, TeamSummary } from '@shared/types';
 
 export interface InboxThreadProjection {
@@ -43,7 +45,13 @@ function buildLegacyConversationId(
 function toThreadSubject(messages: InboxMessage[], participant: string): string {
   const explicitSummary = messages.find((message) => message.summary?.trim())?.summary?.trim();
   if (explicitSummary) return explicitSummary;
-  const firstText = messages.find((message) => message.text.trim())?.text.trim() ?? '';
+  const firstMessage = messages.find((message) => message.text.trim());
+  const firstText = firstMessage
+    ? (firstMessage.from === 'user'
+        ? stripInboxGoalDirective(firstMessage.text)
+        : firstMessage.text
+      ).trim()
+    : '';
   const firstLine = firstText.split(/\r?\n/, 1)[0]?.trim();
   return firstLine || `与 ${participant} 的私信`;
 }
@@ -72,7 +80,12 @@ export function buildInboxThreads(params: {
 
   for (const [teamName, messages] of Object.entries(params.messagesByTeam)) {
     for (const message of messages) {
-      if (!message.text.trim() || message.source === 'system_notification') continue;
+      if (
+        !message.text.trim() ||
+        message.source === 'system_notification' ||
+        message.conversationId?.startsWith('tuning:')
+      )
+        continue;
       const participant = getCounterpart(teamName, message);
       const conversationId =
         message.conversationId?.trim() || buildLegacyConversationId(teamName, message, participant);
@@ -120,7 +133,10 @@ export function buildInboxThreads(params: {
         participant: group.participant,
         conversationId: group.conversationId,
         subject: toThreadSubject(messages, group.participant),
-        preview: latest?.text.trim() || '新私信',
+        preview: latest
+          ? (latest.from === 'user' ? stripInboxGoalDirective(latest.text) : latest.text).trim() ||
+            '新私信'
+          : '新私信',
         updatedAt: latestAt,
         messages,
         unread,

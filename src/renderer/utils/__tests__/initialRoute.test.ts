@@ -19,6 +19,7 @@ function mockState(): AppState {
     openSettingsTab: vi.fn(),
     openExtensionsTab: vi.fn(),
     openSchedulesTab: vi.fn(),
+    openInboxTab: vi.fn(),
     openTasksTab: vi.fn(),
     openDashboard: vi.fn(),
     navigateToSession: vi.fn(),
@@ -48,11 +49,12 @@ describe('restoreInitialRoute', () => {
   it.each(['/', ''])('opens the inbox for the root path %j', (pathname) => {
     const state = mockState();
     restoreInitialRoute(state, pathname);
-    expect(state.openTasksTab).toHaveBeenCalledTimes(1);
+    expect(state.openInboxTab).toHaveBeenCalledTimes(1);
     expect(state.openTeamsTab).not.toHaveBeenCalled();
   });
 
   it.each([
+    ['/inbox', 'openInboxTab'],
     ['/tasks', 'openTasksTab'],
     ['/dashboard', 'openDashboard'],
     ['/settings', 'openSettingsTab'],

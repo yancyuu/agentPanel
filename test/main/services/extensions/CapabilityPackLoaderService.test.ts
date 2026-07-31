@@ -166,7 +166,7 @@ describe('CapabilityPackLoaderService', () => {
       enabled: true,
       manifest: {
         id: 'hermit-team-ops',
-        name: 'Hermit Team Ops',
+        name: 'AgentCLI Team Ops',
         namespace: 'hermit',
       },
     });

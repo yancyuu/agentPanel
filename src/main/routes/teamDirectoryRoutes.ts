@@ -419,7 +419,7 @@ export function registerTeamDirectoryRoutes(
       async (request, reply) => {
         const teamName = request.params.name;
         if (isReservedSystemTeamName(teamName)) {
-          return reply.code(403).send({ error: 'Helm Loop 不可删除' });
+          return reply.code(403).send({ error: '诊断不可删除' });
         }
         try {
           const restartRequired = false;
@@ -433,7 +433,7 @@ export function registerTeamDirectoryRoutes(
             // Team may only exist remotely or local metadata may already be gone.
           }
           if (isReservedSystemTeamName(ccProjectName) || isReservedSystemTeamName(localTeamName)) {
-            return reply.code(403).send({ error: 'Helm Loop 不可删除' });
+            return reply.code(403).send({ error: '诊断不可删除' });
           }
           try {
             await svc.deleteTeam(localTeamName, {
@@ -469,13 +469,13 @@ export function registerTeamDirectoryRoutes(
         const teamName = request.params.name;
         const strictExternal = request.query.strictExternal === 'true';
         if (isReservedSystemTeamName(teamName)) {
-          return reply.code(403).send({ error: 'Helm Loop 不可删除' });
+          return reply.code(403).send({ error: '诊断不可删除' });
         }
         try {
           const manifest = await svc.readTeamManifestByProject(teamName);
           const ccProjectName = manifest.bindProject || teamName;
           if (isReservedSystemTeamName(ccProjectName) || isReservedSystemTeamName(manifest.slug)) {
-            return reply.code(403).send({ error: 'Helm Loop 不可删除' });
+            return reply.code(403).send({ error: '诊断不可删除' });
           }
           let restartRequired = false;
           try {

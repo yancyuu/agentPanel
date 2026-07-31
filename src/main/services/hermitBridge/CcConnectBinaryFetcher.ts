@@ -29,7 +29,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { get as httpGet } from 'node:http';
 import { get as httpsGet } from 'node:https';
 import { createRequire } from 'node:module';
@@ -323,6 +323,26 @@ export async function ensureCcConnectBinary(
 
   if (existsSync(binaryPath) && binaryReportsVersion(binaryPath, version)) {
     logger.info(`cc-connect v${version} already present at ${binaryPath}`);
+    return { binaryPath, version, newlyDownloaded: false };
+  }
+
+  const packageRoot = process.env.AGENTCLI_PACKAGE_ROOT?.trim();
+  const bundledBinary = packageRoot
+    ? path.join(
+        packageRoot,
+        'vendor',
+        'cc-connect',
+        `${target.os}-${target.arch}`,
+        target.binaryName
+      )
+    : '';
+  if (bundledBinary && existsSync(bundledBinary) && binaryReportsVersion(bundledBinary, version)) {
+    rmSync(binaryPath, { force: true });
+    copyFileSync(bundledBinary, binaryPath);
+    if (process.platform !== 'win32') {
+      execFileSync('chmod', ['+x', binaryPath], { stdio: 'pipe' });
+    }
+    logger.info(`cc-connect v${version} installed from desktop bundle to ${binaryPath}`);
     return { binaryPath, version, newlyDownloaded: false };
   }
 

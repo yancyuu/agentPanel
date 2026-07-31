@@ -957,10 +957,6 @@ export function initializeNotificationListeners(): () => void {
         return;
       }
 
-      if (event.type === 'inbox') {
-        useStore.getState().setInboxHasUnreadMessages(true);
-      }
-
       const isStaleRuntimeEvent = (() => {
         if (!event.runId) return false;
         const currentRunId = useStore.getState().currentRuntimeRunIdByTeam[event.teamName];
@@ -1263,7 +1259,8 @@ export function initializeNotificationListeners(): () => void {
         }, TEAM_LIST_REFRESH_THROTTLE_MS);
       }
 
-      const shouldRefreshGlobalTasks = event.type === 'task' || event.type === 'config';
+      const shouldRefreshGlobalTasks =
+        event.type === 'task' || event.type === 'config' || event.type === 'collaboration-run';
 
       // Throttled refresh of global tasks list for sidebar.
       if (shouldRefreshGlobalTasks && !globalTasksRefreshTimer) {

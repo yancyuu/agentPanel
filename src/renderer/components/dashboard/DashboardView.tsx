@@ -58,7 +58,7 @@ export const DashboardView = (): React.JSX.Element => {
       onClick: openTeamsTab,
     },
     {
-      label: 'Helm Loop',
+      label: '诊断',
       description: '执行全局巡检、诊断和持续改进工作流。',
       icon: Bot,
       onClick: () => void openSystemManager(),
@@ -178,7 +178,7 @@ export const DashboardView = (): React.JSX.Element => {
                   onClick={() => void openSystemManager()}
                   className="shrink-0 text-xs text-text-muted transition-colors hover:text-text"
                 >
-                  打开 Helm Loop
+                  打开诊断
                 </button>
               </div>
               <RecentProjectsSection searchQuery="" />

@@ -26,9 +26,9 @@ import {
   Ban,
   GitBranch,
   Loader2,
-  MessageSquare,
   Plus,
   RotateCcw,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 import { CurrentTaskIndicator } from './CurrentTaskIndicator';
@@ -439,17 +439,17 @@ export const MemberCard = ({
                     <button
                       type="button"
                       className="inline-flex size-7 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
-                      aria-label={`给 ${displayMemberName(member.name)} 发私信`}
+                      aria-label={`调教 ${displayMemberName(member.name)}`}
                       onClick={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
                         onSendMessage();
                       }}
                     >
-                      <MessageSquare size={13} />
+                      <SlidersHorizontal size={13} />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">发私信</TooltipContent>
+                  <TooltipContent side="bottom">调教</TooltipContent>
                 </Tooltip>
               ) : null}
               {onAssignTask ? (
@@ -657,7 +657,7 @@ export const MemberCard = ({
                     variant="secondary"
                     className="shrink-0 px-1.5 py-0.5 text-[10px] font-normal leading-none"
                   >
-                    {completed}/{totalTasks}
+                    已完成 {completed}/{totalTasks}
                   </Badge>
                   <div className="mx-0.5 mt-0.5 h-[2px] rounded-full bg-[var(--color-border)]">
                     <div

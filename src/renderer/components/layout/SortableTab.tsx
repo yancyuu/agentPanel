@@ -15,9 +15,10 @@ import { nameColorSet } from '@renderer/utils/projectColor';
 import {
   Activity,
   Bell,
-  Bot,
   Calendar,
+  ClipboardList,
   FileText,
+  Inbox,
   LayoutDashboard,
   MessageSquare,
   Network,
@@ -56,7 +57,9 @@ const TAB_ICONS = {
   report: Activity,
   extensions: Puzzle,
   schedules: Calendar,
-  tasks: Calendar,
+  inbox: Inbox,
+  tasks: ClipboardList,
+  collaboration: Users,
   graph: Network,
   chat: MessageSquare,
 } as const;

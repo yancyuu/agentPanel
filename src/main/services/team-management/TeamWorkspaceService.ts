@@ -138,8 +138,16 @@ export interface Task {
   prompt?: string;
   promptTaskRefs?: TaskRef[];
   status: TaskStatus;
-  /** 分配给哪个团队（team slug） */
+  /** 面向用户展示的负责人名称。 */
   assignee?: string | null;
+  /** 实际执行数字员工的稳定 team slug，用于协作任务路由。 */
+  assigneeAgentId?: string;
+  /** 协作总任务的父任务 ID。 */
+  parentTaskId?: string;
+  /** 所属多 Agent 协作运行 ID。 */
+  collaborationRunId?: string;
+  /** 协作任务类型。 */
+  taskKind?: 'root' | 'subtask';
   createdBy?: string;
   workIntervals?: TaskWorkInterval[];
   historyEvents?: TaskHistoryEvent[];
@@ -248,6 +256,22 @@ function nextIsoTimestamp(previous?: string): string {
 // ---------------------------------------------------------------------------
 
 export class TeamWorkspaceService {
+  private readonly boardMutationTail = new Map<string, Promise<unknown>>();
+
+  private async serializeBoardMutation<T>(
+    teamSlug: string,
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const previous = this.boardMutationTail.get(teamSlug) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(operation);
+    this.boardMutationTail.set(teamSlug, current);
+    try {
+      return await current;
+    } finally {
+      if (this.boardMutationTail.get(teamSlug) === current) this.boardMutationTail.delete(teamSlug);
+    }
+  }
+
   private async readTeamManifestByStorageSlug(storageSlug: string): Promise<TeamManifest> {
     const root = teamRoot(storageSlug);
     const manifest = await readJson<TeamManifest | null>(path.join(root, 'team.json'), null);
@@ -509,7 +533,7 @@ export class TeamWorkspaceService {
   async appendMessage(teamSlug: string, msg: AppendGroupMessageInput): Promise<GroupMessage> {
     const storageSlug = await this.resolveStorageSlug(teamSlug);
     if (storageSlug === teamSlug && isExternalPlatformSlug(teamSlug)) {
-      throw new Error(`外部平台 session_key 不能作为 Hermit team slug 写入消息: ${teamSlug}`);
+      throw new Error(`外部平台 session_key 不能作为 AgentCLI team slug 写入消息: ${teamSlug}`);
     }
     const file = path.join(teamRoot(storageSlug), 'messages', 'group.jsonl');
     await fs.promises.mkdir(path.dirname(file), { recursive: true });
@@ -597,55 +621,83 @@ export class TeamWorkspaceService {
     payload: {
       title: string;
       description?: string;
+      descriptionTaskRefs?: TaskRef[];
+      prompt?: string;
+      promptTaskRefs?: TaskRef[];
       assignee?: string | null;
+      assigneeAgentId?: string;
+      parentTaskId?: string;
+      collaborationRunId?: string;
+      taskKind?: 'root' | 'subtask';
       status?: TaskStatus;
+      blockedBy?: string[];
+      related?: string[];
+      createdBy?: string;
     }
   ): Promise<Task> {
     if (!payload?.title) throw new Error('title is required');
-    const board = await this.readBoard(teamSlug);
-    const status: TaskStatus = payload.status || 'todo';
-    const sameCol = (board.tasks || []).filter((t) => t.status === status);
-    const order = sameCol.length > 0 ? Math.max(...sameCol.map((t) => t.order || 0)) + 1 : 0;
-    const now = new Date().toISOString();
-    const task: Task = {
-      id: `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-      teamSlug,
-      title: payload.title,
-      description: payload.description || '',
-      status,
-      assignee: payload.assignee ?? null,
-      result: null,
-      createdAt: now,
-      updatedAt: now,
-      order,
-    };
-    board.tasks = [...(board.tasks || []), task];
-    await this.writeBoard(teamSlug, board);
-    return task;
+    return this.serializeBoardMutation(teamSlug, async () => {
+      const board = await this.readBoard(teamSlug);
+      const status: TaskStatus = payload.status || 'todo';
+      const sameCol = (board.tasks || []).filter((task) => task.status === status);
+      const order =
+        sameCol.length > 0 ? Math.max(...sameCol.map((task) => task.order || 0)) + 1 : 0;
+      const now = new Date().toISOString();
+      const task: Task = {
+        id: `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        teamSlug,
+        title: payload.title,
+        description: payload.description || '',
+        descriptionTaskRefs: payload.descriptionTaskRefs,
+        prompt: payload.prompt,
+        promptTaskRefs: payload.promptTaskRefs,
+        status,
+        assignee: payload.assignee ?? null,
+        assigneeAgentId: payload.assigneeAgentId,
+        parentTaskId: payload.parentTaskId,
+        collaborationRunId: payload.collaborationRunId,
+        taskKind: payload.taskKind,
+        blockedBy: payload.blockedBy,
+        related: payload.related,
+        createdBy: payload.createdBy,
+        result: null,
+        createdAt: now,
+        updatedAt: now,
+        order,
+      };
+      board.tasks = [...(board.tasks || []), task];
+      await this.writeBoard(teamSlug, board);
+      return task;
+    });
   }
 
   async patchTask(teamSlug: string, taskId: string, patch: Partial<Task>): Promise<Task> {
-    const board = await this.readBoard(teamSlug);
-    const idx = (board.tasks || []).findIndex((t) => t.id === taskId);
-    if (idx < 0) throw new Error(`task not found: ${taskId}`);
-    const next: Task = {
-      ...board.tasks[idx],
-      ...patch,
-      id: board.tasks[idx].id,
-      teamSlug: board.tasks[idx].teamSlug,
-      updatedAt: nextIsoTimestamp(board.tasks[idx].updatedAt),
-    };
-    board.tasks[idx] = next;
-    await this.writeBoard(teamSlug, board);
-    return next;
+    return this.serializeBoardMutation(teamSlug, async () => {
+      const board = await this.readBoard(teamSlug);
+      const index = (board.tasks || []).findIndex((task) => task.id === taskId);
+      if (index < 0) throw new Error(`task not found: ${taskId}`);
+      const existing = board.tasks[index];
+      const next: Task = {
+        ...existing,
+        ...patch,
+        id: existing.id,
+        teamSlug: existing.teamSlug,
+        updatedAt: nextIsoTimestamp(existing.updatedAt),
+      };
+      board.tasks[index] = next;
+      await this.writeBoard(teamSlug, board);
+      return next;
+    });
   }
 
   async deleteTask(teamSlug: string, taskId: string): Promise<boolean> {
-    const board = await this.readBoard(teamSlug);
-    const before = (board.tasks || []).length;
-    board.tasks = (board.tasks || []).filter((t) => t.id !== taskId);
-    if (board.tasks.length === before) return false;
-    await this.writeBoard(teamSlug, board);
-    return true;
+    return this.serializeBoardMutation(teamSlug, async () => {
+      const board = await this.readBoard(teamSlug);
+      const before = (board.tasks || []).length;
+      board.tasks = (board.tasks || []).filter((task) => task.id !== taskId);
+      if (board.tasks.length === before) return false;
+      await this.writeBoard(teamSlug, board);
+      return true;
+    });
   }
 }

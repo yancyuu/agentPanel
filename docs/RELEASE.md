@@ -1,17 +1,17 @@
 # Release Guide
 
-本文记录 `yancyuu/Hermit` 当前发布流程。当前包名是 `@yancyyu/agentcli`，版本事实以 `package.json` 为准；当前版本为 v1.9.13。
+本文记录 `yancyuu/agentcli` 当前发布流程。当前包名是 `@yancyyu/agentcli`，版本事实以根目录 `package.json` 为准。
 
 ## 当前发布事实
 
 | 项 | 当前值 |
 |:---|:---|
-| Repository | `https://github.com/yancyuu/Hermit` |
+| Repository | `https://github.com/yancyuu/agentcli` |
 | npm package | `@yancyyu/agentcli` |
-| CLI binaries | `agentcli`、`agentcli`、`hermit` |
+| CLI binary | `agentcli` |
 | Web build | `pnpm build:web` |
 | Release workflow | `.github/workflows/release.yml` |
-| Docker image | workflow 目标为 `ghcr.io/yancyuu/hermit`；当前仓库必须先补齐 `docker/Dockerfile` 才能实际构建 |
+| Docker image | workflow 目标为 `ghcr.io/yancyuu/agentcli`；当前仓库必须先补齐 `docker/Dockerfile` 才能实际构建 |
 | 产品形态 | Fastify API + Vite Web UI |
 | 默认入口 | `/teams` |
 | 默认数据目录 | `~/.hermit/` |
@@ -70,7 +70,7 @@ git push origin <VERSION>
 
 ```bash
 gh release create "$VERSION" \
-  --repo yancyuu/Hermit \
+  --repo yancyuu/agentcli \
   --title "$VERSION" \
   --generate-notes \
   --draft=false
@@ -79,8 +79,8 @@ gh release create "$VERSION" \
 workflow 的 Docker job 目标是构建并发布：
 
 ```text
-ghcr.io/yancyuu/hermit:latest
-ghcr.io/yancyuu/hermit:<VERSION>
+ghcr.io/yancyuu/agentcli:latest
+ghcr.io/yancyuu/agentcli:<VERSION>
 ```
 
 注意：当前 workflow 引用 `docker/Dockerfile`。发布前必须确认该文件存在并且 `docker build` 可用；否则 Docker job 会失败。npm 发布不依赖 Docker job。
@@ -105,7 +105,7 @@ npx @yancyyu/agentcli@latest --version
 ## Release notes 模板
 
 ```markdown
-## openHermit <VERSION>
+## AgentCLI <VERSION>
 
 <用 1-2 句话说明本次发布。>
 
@@ -164,7 +164,7 @@ npx @yancyyu/agentcli@latest --version
 - 默认数据目录、CLI 命令、端口或路由变化。
 - 截图变化。
 
-写渠道能力时必须区分：Hermit 控制面能力、cc-connect 平台适配能力、目标能力。不要把平台列表写成 Hermit 内置 Bot。
+写渠道能力时必须区分：AgentCLI 控制面能力、cc-connect 平台适配能力、目标能力。不要把平台列表写成 AgentCLI 内置 Bot。
 
 写 Task Bus 时必须区分：当前 Redis-backed dispatch 和目标 offer / bid / lease / event 模型。
 
@@ -173,14 +173,14 @@ npx @yancyyu/agentcli@latest --version
 Tag 推送后检查 workflow。只有 Docker job 具备 `docker/Dockerfile` 并成功构建时，才继续拉取镜像：
 
 ```bash
-gh run list --repo yancyuu/Hermit --workflow release.yml --limit 3
+gh run list --repo yancyuu/agentcli --workflow release.yml --limit 3
 docker pull ghcr.io/yancyuu/hermit:<VERSION>
 ```
 
 ## 删除或修复 release
 
 ```bash
-gh release delete <VERSION> --repo yancyuu/Hermit --yes
+gh release delete <VERSION> --repo yancyuu/agentcli --yes
 git tag -d <VERSION>
 git push origin :refs/tags/<VERSION>
 ```

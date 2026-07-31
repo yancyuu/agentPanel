@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for contributing to openHermit!
+Thanks for contributing to AgentCLI!
 
 ## Before You Start
 

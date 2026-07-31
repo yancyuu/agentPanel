@@ -2,7 +2,7 @@ import type { ExecutionTarget } from './api';
 import type { EnhancedChunk } from '@main/types';
 
 export const SYSTEM_MANAGER_TEAM_NAME = 'system-manager';
-export const SYSTEM_MANAGER_DISPLAY_NAME = 'Helm Loop';
+export const SYSTEM_MANAGER_DISPLAY_NAME = '诊断';
 export const SYSTEM_MANAGER_BIND_PROJECT = 'my-project';
 
 export interface SystemManagerSummary {
@@ -558,6 +558,14 @@ export interface TeamTask {
   prompt?: string;
   promptTaskRefs?: TaskRef[];
   owner?: string;
+  /** Stable digital employee team slug used for runtime routing. */
+  ownerAgentId?: string;
+  /** Parent task for a multi-Agent work item. */
+  parentTaskId?: string;
+  /** Persistent multi-Agent collaboration run ID. */
+  collaborationRunId?: string;
+  /** Root deliverable task or delegated work item. */
+  taskKind?: 'root' | 'subtask';
   createdBy?: string;
   status: TeamTaskStatus;
   /**
@@ -581,6 +589,8 @@ export interface TeamTask {
   /** File modification time (mtime). Used for sorting by last activity. */
   updatedAt?: string;
   projectPath?: string;
+  /** Human-facing task deliverable. Rendered as rich Markdown when available. */
+  result?: string;
   comments?: TaskComment[];
   /** Signals that the agent is blocked and needs clarification. "lead" = ask team lead, "user" = escalated to human. */
   needsClarification?: 'lead' | 'user';
@@ -1294,6 +1304,7 @@ export interface TeamChangeEvent {
     | 'tool-activity'
     | 'process'
     | 'member-spawn'
+    | 'collaboration-run'
     | 'direct-cli-stream';
   teamName: string;
   runId?: string;
@@ -1796,6 +1807,14 @@ export const DEFAULT_TOOL_APPROVAL_SETTINGS: ToolApprovalSettings = {
   autoAllowSafeBash: false,
   timeoutAction: 'wait',
   timeoutSeconds: 30,
+};
+
+/** Product default: local Workbench Agents run without interactive tool approval popups. */
+export const WORKBENCH_TOOL_APPROVAL_SETTINGS: ToolApprovalSettings = {
+  ...DEFAULT_TOOL_APPROVAL_SETTINGS,
+  autoAllowAll: true,
+  timeoutAction: 'allow',
+  timeoutSeconds: 5,
 };
 
 /** Event pushed when a pending approval was auto-resolved (timeout or auto-allow). */

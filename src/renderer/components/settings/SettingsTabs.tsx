@@ -35,7 +35,7 @@ export const SETTINGS_CATEGORIES = [
     id: 'advanced',
     label: '高级',
     icon: Wrench,
-    description: '管理原始配置、服务与版本信息。',
+    description: '连接企业服务，管理授权范围与本地服务。',
   },
 ] as const satisfies readonly SettingsCategory[];
 

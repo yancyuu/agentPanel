@@ -40,6 +40,7 @@ export interface ServerEnvironment {
   bridgeBaseUrl: string;
   bridgeWsUrl: string;
   allowedCorsOrigins: string[];
+  desktopSessionToken: string;
   logLevel: string;
 }
 
@@ -143,6 +144,7 @@ export function createServerEnvironment({
     bridgeBaseUrl,
     bridgeWsUrl,
     allowedCorsOrigins,
+    desktopSessionToken: env.AGENTCLI_DESKTOP_SESSION_TOKEN?.trim() ?? '',
     logLevel: env.HERMIT_LOG_LEVEL ?? 'warn',
   };
 }
@@ -203,7 +205,7 @@ export function createHermitConfigStore(
     }
     const normalizedConfig = normalizeBridgeConfigFileIfNeeded();
     if (migratedData || migratedConfig || normalizedConfig) {
-      console.info('[Hermit] migrated runtime files to ~/.hermit/cc-connect/');
+      console.info('[AgentCLI] migrated runtime files to ~/.hermit/cc-connect/');
     }
   };
 
@@ -262,7 +264,7 @@ export function createHermitConfigStore(
           : `读取 ${environment.hermitConfigFile} 失败: ${
               error instanceof Error ? error.message : String(error)
             }`;
-      console.warn(`[Hermit] ${message}`);
+      console.warn(`[AgentCLI] ${message}`);
       mkdirSync(environment.hermitHome, { recursive: true });
       writeFileSync(environment.hermitConfigFile, JSON.stringify(defaults, null, 2), 'utf8');
     }
@@ -305,7 +307,7 @@ export function createHermitConfigStore(
       throw error;
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('Hermit 配置必须是 JSON 对象');
+      throw new Error('AgentCLI 配置必须是 JSON 对象');
     }
     mkdirSync(environment.hermitHome, { recursive: true });
     writeFileSync(

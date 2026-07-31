@@ -6,7 +6,7 @@
  *   2. Done (success confirmation)
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { api } from '@renderer/api';
 import { providersApi } from '@renderer/api/providers';
@@ -36,6 +36,10 @@ import {
   buildSelectableProjectsWithDefaultPath,
   findProjectPathMatch,
 } from './createTeamDefaultProject';
+import {
+  type HarnessAvailabilitySnapshot,
+  selectDesktopDefaultHarness,
+} from './desktopHarnessDefault';
 import { ProjectPathSelector } from './ProjectPathSelector';
 
 import type {
@@ -134,6 +138,7 @@ export const CreateTeamDialog = ({
   // ── Wizard state ─────────────────────────────────────────────────────
   const [step, setStep] = useState<WizardStep>('name');
   const [selectedHarness, setSelectedHarness] = useState<HermitBridgeAgentType>('claudecode');
+  const harnessSelectionTouched = useRef(false);
   const [description, setDescription] = useState('');
 
   // ── bindProject (ASCII unique identifier) ────────────────────────────
@@ -257,6 +262,26 @@ export const CreateTeamDialog = ({
   useEffect(() => {
     setConflictDismissed(false);
   }, [conflictingTeam?.teamName, effectiveCwd]);
+
+  // ── Desktop runtime default ──────────────────────────────────────────
+  useEffect(() => {
+    if (!open) return;
+    harnessSelectionTouched.current = false;
+    let cancelled = false;
+    void fetch('/api/harnesses', { headers: { Accept: 'application/json' } })
+      .then(async (response) =>
+        response.ok ? ((await response.json()) as HarnessAvailabilitySnapshot[]) : []
+      )
+      .then((snapshots) => {
+        if (cancelled || harnessSelectionTouched.current) return;
+        const preferred = selectDesktopDefaultHarness(snapshots);
+        if (preferred) setSelectedHarness(preferred);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   // ── Load projects on open ────────────────────────────────────────────
   useEffect(() => {
@@ -556,7 +581,10 @@ export const CreateTeamDialog = ({
               <HarnessSelect
                 id="team-harness"
                 value={selectedHarness}
-                onChange={setSelectedHarness}
+                onChange={(nextHarness) => {
+                  harnessSelectionTouched.current = true;
+                  setSelectedHarness(nextHarness);
+                }}
                 className="w-full"
               />
             </div>

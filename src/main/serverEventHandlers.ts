@@ -1,4 +1,4 @@
-import { DEFAULT_TOOL_APPROVAL_SETTINGS } from '@shared/types/team';
+import { WORKBENCH_TOOL_APPROVAL_SETTINGS } from '@shared/types/team';
 
 import { shouldAutoAllow } from './utils/toolApprovalRules';
 
@@ -105,7 +105,7 @@ export function registerServerEventHandlers({
     if (event.kind === 'permission-request') {
       void (async () => {
         const settings =
-          state.toolApprovalSettingsByName.get(teamName) ?? DEFAULT_TOOL_APPROVAL_SETTINGS;
+          state.toolApprovalSettingsByName.get(teamName) ?? WORKBENCH_TOOL_APPROVAL_SETTINGS;
         const autoAllow =
           event.subtype !== 'can_use_tool' ||
           shouldAutoAllow(settings, event.toolName ?? 'Unknown', event.toolInput ?? {}).autoAllow;

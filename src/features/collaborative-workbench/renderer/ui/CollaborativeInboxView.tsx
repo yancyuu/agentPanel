@@ -1,41 +1,274 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
+import { ReviewDialog } from '@renderer/components/team/dialogs/ReviewDialog';
 import { TaskDetailPanel } from '@renderer/components/team/dialogs/TaskDetailPanel';
 import { useGlobalTaskDetailModel } from '@renderer/components/team/dialogs/useGlobalTaskDetailModel';
+import { AgentTuningDialog } from '@renderer/components/team/members/AgentTuningDialog';
 import { cn } from '@renderer/lib/utils';
-import { ArrowLeft, ClipboardList, Mail } from 'lucide-react';
+import { agentAvatarUrl } from '@renderer/utils/memberHelpers';
+import { getTaskInputMimeType, taskInputFileToBase64 } from '@renderer/utils/taskInputFiles';
+import {
+  ArrowLeft,
+  Bot,
+  CheckCircle2,
+  ClipboardList,
+  ListPlus,
+  MessageSquare,
+  Plus,
+  RotateCcw,
+  SlidersHorizontal,
+  UsersRound,
+} from 'lucide-react';
 
 import { useCollaborativeInbox } from '../hooks/useCollaborativeInbox';
-import { useInboxThreads } from '../hooks/useInboxThreads';
+import { useInboxTaskRecipients } from '../hooks/useInboxTaskRecipients';
+import { useTaskWorkspaceNavigation } from '../hooks/useTaskWorkspaceNavigation';
 
 import { InboxTaskList } from './InboxTaskList';
-import { InboxThreadDetail } from './InboxThreadDetail';
-import { InboxThreadList } from './InboxThreadList';
+import { InboxTaskMessageList } from './InboxTaskMessageList';
+import { TaskInputPicker } from './TaskInputPicker';
 
-type InboxMode = 'messages' | 'tasks';
+import type { InboxTaskRecipientOption } from '../hooks/useInboxTaskRecipients';
+import type { TaskRef } from '@shared/types';
 
-export function CollaborativeInboxView(): React.JSX.Element {
+type InboxMode = 'messages' | 'create' | 'tasks';
+type CollaborativeInboxSurface = 'inbox' | 'tasks';
+
+interface CollaborativeInboxViewProps {
+  surface?: CollaborativeInboxSurface;
+}
+
+interface FollowUpSource {
+  taskId: string;
+  displayId: string;
+  subject: string;
+  teamName: string;
+}
+
+function recipientKey(
+  option: Pick<InboxTaskRecipientOption, 'kind' | 'teamName' | 'memberName'>
+): string {
+  return `${option.kind ?? 'agent'}\u0000${option.teamName}\u0000${option.memberName}`;
+}
+
+async function createSquadRun(
+  collaborationTeamSlug: string,
+  title: string,
+  description: string | undefined,
+  files: File[]
+): Promise<void> {
+  const attachments = await Promise.all(
+    files.map(async (file) => ({
+      filename: file.name,
+      mimeType: getTaskInputMimeType(file),
+      base64Data: await taskInputFileToBase64(file),
+    }))
+  );
+  const response = await fetch(
+    `/api/collaboration/teams/${encodeURIComponent(collaborationTeamSlug)}/runs`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        description,
+        attachments: attachments.length > 0 ? attachments : undefined,
+      }),
+    }
+  );
+  if (response.ok) return;
+  const payload = (await response.json().catch(() => ({}))) as { error?: string };
+  throw new Error(payload.error || '小队任务创建失败，请稍后重试。');
+}
+
+export function CollaborativeInboxView({
+  surface = 'inbox',
+}: Readonly<CollaborativeInboxViewProps>): React.JSX.Element {
   const taskInbox = useCollaborativeInbox();
-  const threadInbox = useInboxThreads();
-  const [mode, setMode] = useState<InboxMode>('messages');
+  const recipientInbox = useInboxTaskRecipients();
+  const [mode, setMode] = useState<InboxMode>(surface === 'inbox' ? 'messages' : 'tasks');
+  const { openTask } = useTaskWorkspaceNavigation();
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [selectedRecipientKey, setSelectedRecipientKey] = useState('');
+  const [subject, setSubject] = useState('');
+  const [description, setDescription] = useState('');
+  const [taskInputFiles, setTaskInputFiles] = useState<File[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [followUpSource, setFollowUpSource] = useState<FollowUpSource | null>(null);
+  const [tuningOpen, setTuningOpen] = useState(false);
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
-  const selectedTask = taskInbox.selectedTask;
+  const selectedTask = mode === 'messages' ? taskInbox.selectedMessage : taskInbox.selectedTask;
+  const selectedRecipient = useMemo(
+    () =>
+      recipientInbox.recipientOptions.find(
+        (option) => recipientKey(option) === selectedRecipientKey
+      ) ?? null,
+    [recipientInbox.recipientOptions, selectedRecipientKey]
+  );
   const taskModel = useGlobalTaskDetailModel(
     selectedTask?.task.teamName ?? '',
     selectedTask?.task.id ?? ''
   );
+  const selectedTaskOwnerMember = useMemo(() => {
+    const owner = (taskModel.task ?? selectedTask?.task)?.owner?.trim();
+    if (!owner) return null;
+    return (
+      taskModel.members.find((member) => member.name === owner || member.agentId === owner) ?? null
+    );
+  }, [selectedTask?.task, taskModel.members, taskModel.task]);
+  const selectedTaskReviewState = (taskModel.task ?? selectedTask?.task)?.reviewState;
+  const selectedTaskRecipient = useMemo(() => {
+    if (!selectedTask || !selectedTaskOwnerMember) return null;
+    return (
+      recipientInbox.recipientOptions.find(
+        (option) =>
+          option.teamName === selectedTask.task.teamName &&
+          option.memberName === selectedTaskOwnerMember.name
+      ) ?? null
+    );
+  }, [recipientInbox.recipientOptions, selectedTask, selectedTaskOwnerMember]);
 
   useEffect(() => {
-    if (!threadInbox.navigationRequestAt) return;
-    setMode('messages');
+    setMode(surface === 'inbox' ? 'messages' : 'tasks');
+    setMobileDetailOpen(false);
+    setFollowUpSource(null);
+    setTuningOpen(false);
+    setReviewDialogOpen(false);
+    setReviewError(null);
+  }, [surface]);
+
+  useEffect(() => {
+    if (selectedRecipient || recipientInbox.recipientOptions.length === 0) return;
+    setSelectedRecipientKey(recipientKey(recipientInbox.recipientOptions[0]));
+  }, [recipientInbox.recipientOptions, selectedRecipient]);
+
+  useEffect(() => {
+    if (!recipientInbox.navigationRequestAt || !recipientInbox.requestedRecipient) return;
+    setSelectedRecipientKey(recipientKey(recipientInbox.requestedRecipient));
+    setFollowUpSource(null);
+    setSubject('');
+    setDescription(recipientInbox.requestedRecipient.initialText?.trim() ?? '');
+    setTaskInputFiles([]);
+    setMode('create');
     setMobileDetailOpen(true);
-  }, [threadInbox.navigationRequestAt]);
+  }, [recipientInbox.navigationRequestAt, recipientInbox.requestedRecipient]);
 
   useEffect(() => {
-    if (mode === 'tasks' && !selectedTask) setMobileDetailOpen(false);
-    if (mode === 'messages' && !threadInbox.selectedThread) setMobileDetailOpen(false);
-  }, [mode, selectedTask, threadInbox.selectedThread]);
+    if ((mode === 'messages' || mode === 'tasks') && !selectedTask) setMobileDetailOpen(false);
+  }, [mode, selectedTask]);
+
+  const submitTask = async (): Promise<void> => {
+    if (!selectedRecipient || !subject.trim() || creating) return;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const taskTitle = subject.trim();
+      const taskDescription = description.trim() || undefined;
+      if (selectedRecipient.kind === 'squad' && selectedRecipient.collaborationTeamSlug) {
+        await createSquadRun(
+          selectedRecipient.collaborationTeamSlug,
+          taskTitle,
+          taskDescription,
+          taskInputFiles
+        );
+        setMode('tasks');
+        taskInbox.refresh();
+      } else {
+        const createRequest = {
+          subject: taskTitle,
+          description: taskDescription,
+          ...(followUpSource
+            ? {
+                descriptionTaskRefs: [
+                  {
+                    taskId: followUpSource.taskId,
+                    displayId: followUpSource.displayId,
+                    teamName: followUpSource.teamName,
+                  },
+                ],
+                related: [followUpSource.taskId],
+              }
+            : {}),
+          owner: selectedRecipient.memberName,
+          startImmediately: true,
+        };
+        const task =
+          taskInputFiles.length > 0
+            ? await taskInbox.createTask(selectedRecipient.teamName, createRequest, taskInputFiles)
+            : await taskInbox.createTask(selectedRecipient.teamName, createRequest);
+        if (surface === 'tasks') {
+          taskInbox.selectTask(`${selectedRecipient.teamName}:${task.id}`);
+          setMode('tasks');
+        } else {
+          setMode('messages');
+        }
+      }
+      setSubject('');
+      setDescription('');
+      setTaskInputFiles([]);
+      setFollowUpSource(null);
+      setMobileDetailOpen(true);
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : '任务创建失败，请稍后重试。');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const approveCurrentTask = async (): Promise<void> => {
+    if (!selectedTask || reviewSubmitting) return;
+    setReviewSubmitting(true);
+    setReviewError(null);
+    try {
+      await taskInbox.approveTask(selectedTask.task.teamName, selectedTask.task.id);
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : '确认结果失败，请稍后重试。');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
+  const submitRequestedChanges = async (comment?: string, taskRefs?: TaskRef[]): Promise<void> => {
+    if (!selectedTask || reviewSubmitting) return;
+    setReviewSubmitting(true);
+    setReviewError(null);
+    try {
+      await taskInbox.requestChanges(
+        selectedTask.task.teamName,
+        selectedTask.task.id,
+        comment,
+        taskRefs
+      );
+      setReviewDialogOpen(false);
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : '提交修改要求失败，请稍后重试。');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
+  const startFollowUpTask = (): void => {
+    if (!selectedTask || !selectedTaskRecipient) return;
+    const source = selectedTask.task;
+    const displayId = source.displayId?.trim() || source.id;
+    setSelectedRecipientKey(recipientKey(selectedTaskRecipient));
+    setFollowUpSource({
+      taskId: source.id,
+      displayId,
+      subject: source.subject,
+      teamName: source.teamName,
+    });
+    setSubject('');
+    setDescription(`基于任务 #${displayId}「${source.subject}」继续：\n`);
+    setTaskInputFiles([]);
+    setCreateError(null);
+    setMode('create');
+    setMobileDetailOpen(true);
+  };
 
   return (
     <div className="size-full min-h-0 min-w-0">
@@ -43,71 +276,137 @@ export function CollaborativeInboxView(): React.JSX.Element {
         <div
           className={`${mobileDetailOpen ? 'hidden md:flex' : 'flex'} min-h-0 flex-col border-r border-[var(--surface-border-subtle)]`}
         >
-          <div
-            role="tablist"
-            aria-label="收件箱内容"
-            className="flex shrink-0 items-center gap-1 border-b border-[var(--surface-border-subtle)] bg-[var(--color-surface)] px-3 py-2"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'messages'}
-              onClick={() => {
-                setMode('messages');
-                setMobileDetailOpen(false);
-              }}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors',
-                mode === 'messages'
-                  ? 'bg-[var(--color-surface-selected)] font-medium text-[var(--color-text)]'
-                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)]'
-              )}
+          {surface === 'tasks' ? (
+            <div
+              role="tablist"
+              aria-label="任务操作"
+              className="flex shrink-0 items-center gap-1 border-b border-[var(--surface-border-subtle)] bg-[var(--color-surface)] px-3 py-2"
             >
-              <Mail size={13} />
-              私信
-              {threadInbox.threads.some((thread) => thread.unread) ? (
-                <span className="size-2 rounded-full bg-red-500" aria-label="有未读私信" />
-              ) : null}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'tasks'}
-              onClick={() => {
-                setMode('tasks');
-                setMobileDetailOpen(false);
-              }}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors',
-                mode === 'tasks'
-                  ? 'bg-[var(--color-surface-selected)] font-medium text-[var(--color-text)]'
-                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)]'
-              )}
-            >
-              <ClipboardList size={13} />
-              任务
-            </button>
-          </div>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'tasks'}
+                onClick={() => {
+                  setFollowUpSource(null);
+                  setMode('tasks');
+                  setMobileDetailOpen(false);
+                }}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors',
+                  mode === 'tasks'
+                    ? 'bg-[var(--color-surface-selected)] font-medium text-[var(--color-text)]'
+                    : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)]'
+                )}
+              >
+                <ClipboardList size={13} />
+                任务列表
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'create'}
+                onClick={() => {
+                  setFollowUpSource(null);
+                  setSubject('');
+                  setDescription('');
+                  setTaskInputFiles([]);
+                  setCreateError(null);
+                  setMode('create');
+                  setMobileDetailOpen(false);
+                }}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors',
+                  mode === 'create'
+                    ? 'bg-[var(--color-surface-selected)] font-medium text-[var(--color-text)]'
+                    : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)]'
+                )}
+              >
+                <Plus size={13} />
+                创建任务
+              </button>
+            </div>
+          ) : null}
 
           <div className="min-h-0 flex-1">
             {mode === 'messages' ? (
-              <InboxThreadList
-                threads={threadInbox.threads}
-                selectedKey={threadInbox.selectedKey}
-                query={threadInbox.query}
-                onQueryChange={threadInbox.setQuery}
-                teamFilter={threadInbox.teamFilter}
-                onTeamFilterChange={threadInbox.setTeamFilter}
-                teamOptions={threadInbox.teamOptions}
-                recipientOptions={threadInbox.recipientOptions}
-                onCreateThread={threadInbox.createThread}
+              <InboxTaskMessageList
+                messages={taskInbox.messages}
+                selectedKey={taskInbox.selectedMessageKey}
+                query={taskInbox.query}
+                onQueryChange={taskInbox.setQuery}
+                teamFilter={taskInbox.teamFilter}
+                onTeamFilterChange={taskInbox.setTeamFilter}
+                teamOptions={taskInbox.teamOptions}
                 onSelect={(key) => {
-                  threadInbox.selectThread(key);
+                  taskInbox.selectMessage(key);
                   setMobileDetailOpen(true);
                 }}
-                onRefresh={threadInbox.refresh}
-                loading={threadInbox.loading}
+                onRefresh={taskInbox.refresh}
+                loading={taskInbox.loading}
               />
+            ) : mode === 'create' ? (
+              <div className="flex h-full min-h-0 flex-col bg-[var(--color-surface)]">
+                <div className="border-b border-[var(--surface-border-subtle)] px-4 py-3">
+                  <h2 className="text-sm font-medium text-[var(--color-text)]">选择执行者</h2>
+                  <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                    可以交给一个智能体，也可以交给一个小队协作完成。
+                  </p>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto" role="listbox" aria-label="执行者">
+                  {recipientInbox.recipientOptions.map((option) => {
+                    const key = recipientKey(option);
+                    const selected = key === selectedRecipientKey;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        onClick={() => {
+                          setSelectedRecipientKey(key);
+                          setCreateError(null);
+                          setMobileDetailOpen(true);
+                        }}
+                        className={cn(
+                          'flex w-full items-center gap-3 border-b border-[var(--surface-border-subtle)] px-4 py-3 text-left transition-colors',
+                          selected
+                            ? 'bg-[var(--color-surface-selected)]'
+                            : 'hover:bg-[var(--color-surface-hover)]'
+                        )}
+                      >
+                        {option.kind === 'squad' ? (
+                          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-300">
+                            <UsersRound size={18} />
+                          </span>
+                        ) : (
+                          <img
+                            src={agentAvatarUrl(option.memberName, 36)}
+                            alt=""
+                            className="size-9 shrink-0 rounded-full bg-[var(--color-surface-raised)]"
+                          />
+                        )}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-[var(--color-text)]">
+                            {option.memberName}
+                          </span>
+                          <span className="block truncate text-[11px] text-[var(--color-text-muted)]">
+                            {option.kind === 'squad'
+                              ? `小队 · ${option.memberCount ?? 0} 名成员`
+                              : option.teamDisplayName}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {recipientInbox.recipientOptions.length === 0 ? (
+                    <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-[var(--color-text-muted)]">
+                      <Bot size={30} className="opacity-30" />
+                      <p className="text-sm">还没有可用的智能体或小队</p>
+                      <p className="text-xs opacity-70">请先创建智能体或小队，再回来分配任务。</p>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
             ) : (
               <InboxTaskList
                 view={taskInbox.view}
@@ -137,12 +436,109 @@ export function CollaborativeInboxView(): React.JSX.Element {
         <div
           className={`${mobileDetailOpen ? 'block' : 'hidden md:block'} min-h-0 min-w-0 bg-page-canvas`}
         >
-          {mode === 'messages' ? (
-            <InboxThreadDetail
-              thread={threadInbox.selectedThread}
-              inbox={threadInbox}
-              onBack={() => setMobileDetailOpen(false)}
-            />
+          {mode === 'create' ? (
+            selectedRecipient ? (
+              <div className="flex h-full min-h-0 flex-col">
+                <header className="flex shrink-0 items-center gap-3 border-b border-[var(--surface-border-subtle)] px-5 py-3.5">
+                  <button
+                    type="button"
+                    onClick={() => setMobileDetailOpen(false)}
+                    className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] md:hidden"
+                    aria-label="返回执行者列表"
+                  >
+                    <ArrowLeft size={15} />
+                  </button>
+                  {selectedRecipient.kind === 'squad' ? (
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-300">
+                      <UsersRound size={18} />
+                    </span>
+                  ) : (
+                    <img
+                      src={agentAvatarUrl(selectedRecipient.memberName, 36)}
+                      alt=""
+                      className="size-9 rounded-full bg-[var(--color-surface-raised)]"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <h2 className="truncate text-sm font-semibold text-[var(--color-text)]">
+                      {followUpSource
+                        ? `新建后续任务 · ${selectedRecipient.memberName}`
+                        : selectedRecipient.kind === 'squad'
+                          ? `交给小队 · ${selectedRecipient.memberName}`
+                          : `交给 ${selectedRecipient.memberName}`}
+                    </h2>
+                    <p className="truncate text-[11px] text-[var(--color-text-muted)]">
+                      {followUpSource
+                        ? '这是新的长周期目标，不会修改当前任务'
+                        : selectedRecipient.kind === 'squad'
+                          ? '创建后由成员圆桌选出队长、并行执行并统一交付'
+                          : '创建后会立即开始执行'}
+                    </p>
+                  </div>
+                </header>
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 lg:px-8">
+                  <div className="mx-auto w-full max-w-3xl">
+                    {followUpSource ? (
+                      <div className="mb-3 flex items-start gap-2 rounded-lg border border-indigo-500/15 bg-indigo-500/[0.04] px-3 py-2.5 text-xs text-[var(--color-text-secondary)]">
+                        <ListPlus size={14} className="mt-0.5 shrink-0 text-indigo-500" />
+                        <span className="min-w-0">
+                          来源任务 #{followUpSource.displayId} · {followUpSource.subject}
+                        </span>
+                      </div>
+                    ) : null}
+                    <label className="block border-b border-[var(--color-border-subtle)] py-3">
+                      <span className="text-xs text-[var(--color-text-muted)]">要完成什么</span>
+                      <input
+                        type="text"
+                        value={subject}
+                        onChange={(event) => setSubject(event.target.value)}
+                        placeholder={
+                          followUpSource
+                            ? '例如：继续补充 Ozon 的站点差异和落地建议'
+                            : '例如：调研 Ozon 的入驻流程、费用和风险'
+                        }
+                        className="mt-2 h-10 w-full bg-transparent text-base font-medium text-[var(--color-text)] outline-none placeholder:font-normal placeholder:text-[var(--color-text-muted)]"
+                        maxLength={160}
+                        autoFocus
+                      />
+                    </label>
+                    <label className="block py-4">
+                      <span className="text-xs text-[var(--color-text-muted)]">
+                        补充说明（可选）
+                      </span>
+                      <textarea
+                        value={description}
+                        onChange={(event) => setDescription(event.target.value)}
+                        placeholder="说明范围、目标、截止时间或你希望收到的结果形式。"
+                        className="mt-2 min-h-40 w-full resize-y bg-transparent text-sm leading-7 text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+                        maxLength={20_000}
+                      />
+                    </label>
+                    <TaskInputPicker files={taskInputFiles} onChange={setTaskInputFiles} />
+                    {createError ? (
+                      <p className="mb-3 mt-3 text-xs text-red-500">{createError}</p>
+                    ) : null}
+                    <div className="flex justify-end border-t border-[var(--color-border-subtle)] pt-4">
+                      <button
+                        type="button"
+                        disabled={!subject.trim() || creating}
+                        onClick={() => void submitTask()}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-full bg-indigo-600 px-4 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Plus size={14} />
+                        {creating ? '正在创建…' : '创建并开始'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-[var(--color-text-muted)]">
+                <Bot size={34} className="opacity-25" />
+                <p className="text-sm">选择一个智能体</p>
+                <p className="text-xs opacity-70">选择后即可填写并创建任务。</p>
+              </div>
+            )
           ) : selectedTask ? (
             <TaskDetailPanel
               key={selectedTask.key}
@@ -158,8 +554,25 @@ export function CollaborativeInboxView(): React.JSX.Element {
                   : new Map([[selectedTask.task.id, selectedTask.task]])
               }
               members={taskModel.members}
+              compactForInbox
+              commentPlaceholder={
+                mode === 'messages'
+                  ? '补充说明、回答问题，或指出当前任务需要纠正的地方…'
+                  : undefined
+              }
+              commentSendLabel={mode === 'messages' ? '回复当前任务' : undefined}
+              commentContextHint={
+                mode === 'messages'
+                  ? '回复会添加到当前任务并继续推进，不会创建新任务。要改变智能体长期的做事方式，请使用“调教员工”。'
+                  : undefined
+              }
               onScrollToTask={(taskRef) => {
+                if (surface === 'inbox') {
+                  openTask(taskRef.teamName ?? selectedTask.task.teamName, taskRef.taskId);
+                  return;
+                }
                 taskInbox.selectReferencedTask(taskRef);
+                setMode('tasks');
                 setMobileDetailOpen(true);
               }}
               onOwnerChange={
@@ -184,25 +597,118 @@ export function CollaborativeInboxView(): React.JSX.Element {
                     <ArrowLeft size={13} />
                     返回列表
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => taskModel.openTeam()}
-                    className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
-                  >
-                    打开团队
-                  </button>
+                  {mode === 'messages' ? (
+                    <>
+                      {selectedTaskReviewState === 'review' ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={reviewSubmitting}
+                            onClick={() => void approveCurrentTask()}
+                            className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+                          >
+                            <CheckCircle2 size={12} />
+                            满意并归档
+                          </button>
+                          <button
+                            type="button"
+                            disabled={reviewSubmitting}
+                            onClick={() => setReviewDialogOpen(true)}
+                            className="inline-flex items-center gap-1 rounded-md border border-rose-500/25 bg-rose-500/[0.04] px-2.5 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-500/10 disabled:opacity-50 dark:text-rose-300"
+                          >
+                            <RotateCcw size={12} />
+                            需要修改
+                          </button>
+                        </>
+                      ) : null}
+                      {selectedTaskOwnerMember ? (
+                        <button
+                          type="button"
+                          onClick={() => setTuningOpen(true)}
+                          className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
+                          title="改变智能体长期的回答和做事方式，不修改当前任务"
+                        >
+                          <SlidersHorizontal size={12} />
+                          调教员工
+                        </button>
+                      ) : null}
+                      {selectedTaskRecipient && selectedTaskReviewState !== 'review' ? (
+                        <button
+                          type="button"
+                          onClick={startFollowUpTask}
+                          className="inline-flex items-center gap-1 rounded-md border border-indigo-500/25 bg-indigo-500/[0.05] px-2.5 py-1 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-500/10 dark:text-indigo-300"
+                          title="基于当前结果创建一个新的长周期任务"
+                        >
+                          <ListPlus size={12} />
+                          新建后续任务
+                        </button>
+                      ) : null}
+                      {reviewError ? (
+                        <span
+                          className="max-w-40 truncate text-[10px] text-rose-500"
+                          title={reviewError}
+                        >
+                          {reviewError}
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          openTask(selectedTask.task.teamName, selectedTask.task.id);
+                        }}
+                        className="rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
+                      >
+                        打开完整任务
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode('messages');
+                        taskInbox.selectMessage(selectedTask.key);
+                      }}
+                      className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
+                    >
+                      打开收件箱
+                    </button>
+                  )}
                 </div>
               }
             />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-[var(--color-text-muted)]">
-              <ClipboardList size={34} className="opacity-25" />
-              <p className="text-sm">选择一个任务开始协作</p>
-              <p className="text-xs opacity-70">任务描述、评论和执行记录会显示在这里。</p>
+              {mode === 'messages' ? (
+                <MessageSquare size={34} className="opacity-25" />
+              ) : (
+                <ClipboardList size={34} className="opacity-25" />
+              )}
+              <p className="text-sm">
+                {mode === 'messages' ? '选择一条任务反馈' : '选择一个任务查看详情'}
+              </p>
+              <p className="text-xs opacity-70">
+                {mode === 'messages'
+                  ? '你可以在当前任务内补充、纠正或继续推进。'
+                  : '执行进度、问题和交付结果会显示在这里。'}
+              </p>
             </div>
           )}
         </div>
       </div>
+      <AgentTuningDialog
+        open={tuningOpen}
+        teamName={selectedTask?.task.teamName ?? ''}
+        member={selectedTaskOwnerMember}
+        onClose={() => setTuningOpen(false)}
+      />
+      <ReviewDialog
+        open={reviewDialogOpen}
+        teamName={selectedTask?.task.teamName ?? ''}
+        taskId={selectedTask?.task.id ?? null}
+        members={taskModel.members}
+        onCancel={() => setReviewDialogOpen(false)}
+        onSubmit={(comment, taskRefs) => void submitRequestedChanges(comment, taskRefs)}
+      />
     </div>
   );
 }

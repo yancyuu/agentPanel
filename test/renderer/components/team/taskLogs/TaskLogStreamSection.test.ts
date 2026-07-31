@@ -6,9 +6,8 @@ import type { TeamChangeEvent } from '../../../../../src/shared/types';
 import type { BoardTaskLogStreamResponse } from '../../../../../src/shared/types';
 
 const apiState = {
-  getTaskLogStream: vi.fn<
-    (teamName: string, taskId: string) => Promise<BoardTaskLogStreamResponse>
-  >(),
+  getTaskLogStream:
+    vi.fn<(teamName: string, taskId: string) => Promise<BoardTaskLogStreamResponse>>(),
   onTeamChange: vi.fn<(callback: (event: unknown, data: TeamChangeEvent) => void) => () => void>(),
   setTaskLogStreamTracking: vi.fn<(teamName: string, enabled: boolean) => Promise<void>>(),
 };
@@ -122,12 +121,38 @@ describe('TaskLogStreamSection', () => {
     const root = createRoot(host);
 
     await act(async () => {
-      root.render(React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' }));
+      root.render(
+        React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' })
+      );
       await flushMicrotasks();
     });
 
     expect(host.textContent).toContain('任务日志流');
     expect(host.textContent).toContain('暂无任务日志流');
+
+    await act(async () => {
+      root.unmount();
+      await flushMicrotasks();
+    });
+  });
+
+  it('normalizes legacy browser responses instead of exposing a TypeError', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    apiState.getTaskLogStream.mockResolvedValueOnce({ chunks: [] } as never);
+
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(
+        React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' })
+      );
+      await flushMicrotasks();
+    });
+
+    expect(host.textContent).toContain('暂无任务日志流');
+    expect(host.textContent).not.toContain('Cannot read properties');
 
     await act(async () => {
       root.unmount();
@@ -206,7 +231,9 @@ describe('TaskLogStreamSection', () => {
     const root = createRoot(host);
 
     await act(async () => {
-      root.render(React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' }));
+      root.render(
+        React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' })
+      );
       await flushMicrotasks();
     });
 
@@ -257,7 +284,9 @@ describe('TaskLogStreamSection', () => {
     const root = createRoot(host);
 
     await act(async () => {
-      root.render(React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' }));
+      root.render(
+        React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' })
+      );
       await flushMicrotasks();
     });
 
@@ -300,7 +329,9 @@ describe('TaskLogStreamSection', () => {
     const root = createRoot(host);
 
     await act(async () => {
-      root.render(React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' }));
+      root.render(
+        React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' })
+      );
       await flushMicrotasks();
     });
 
@@ -349,7 +380,9 @@ describe('TaskLogStreamSection', () => {
     const root = createRoot(host);
 
     await act(async () => {
-      root.render(React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' }));
+      root.render(
+        React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' })
+      );
       await flushMicrotasks();
     });
 
@@ -457,7 +490,9 @@ describe('TaskLogStreamSection', () => {
     const root = createRoot(host);
 
     await act(async () => {
-      root.render(React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' }));
+      root.render(
+        React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' })
+      );
       await flushMicrotasks();
     });
 
@@ -472,7 +507,9 @@ describe('TaskLogStreamSection', () => {
     });
 
     expect(
-      [...host.querySelectorAll('[data-testid="member-execution-log"]')].map((node) => node.textContent)
+      [...host.querySelectorAll('[data-testid="member-execution-log"]')].map(
+        (node) => node.textContent
+      )
     ).toEqual(['tom:1']);
 
     expect(handler).toBeTypeOf('function');
@@ -501,7 +538,9 @@ describe('TaskLogStreamSection', () => {
 
     expect(apiState.getTaskLogStream).toHaveBeenCalledTimes(2);
     expect(
-      [...host.querySelectorAll('[data-testid="member-execution-log"]')].map((node) => node.textContent)
+      [...host.querySelectorAll('[data-testid="member-execution-log"]')].map(
+        (node) => node.textContent
+      )
     ).toEqual(['tom:1', 'tom:1']);
 
     await act(async () => {
@@ -565,7 +604,9 @@ describe('TaskLogStreamSection', () => {
     const root = createRoot(host);
 
     await act(async () => {
-      root.render(React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' }));
+      root.render(
+        React.createElement(TaskLogStreamSection, { teamName: 'demo', taskId: 'task-a' })
+      );
       await flushMicrotasks();
     });
 

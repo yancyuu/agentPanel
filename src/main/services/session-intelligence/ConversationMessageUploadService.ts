@@ -968,6 +968,69 @@ function objectRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
 }
 
+const GENERIC_CODEX_MODEL_LABELS = new Set([
+  'openai',
+  'azure',
+  'azure-openai',
+  'codex',
+  'chatgpt',
+  'anthropic',
+  'google',
+  'gemini',
+]);
+
+function exactCodexModel(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim();
+  if (!normalized || GENERIC_CODEX_MODEL_LABELS.has(normalized.toLowerCase())) return undefined;
+  return normalized;
+}
+
+interface RecoveredCodexContext {
+  model?: string;
+  projectPath?: string;
+  startedAt?: string;
+}
+
+async function recoverCodexContextBeforeOffset(
+  filePath: string,
+  fromOffset: number
+): Promise<RecoveredCodexContext> {
+  if (fromOffset <= 0) return {};
+  const recovered: RecoveredCodexContext = {};
+  const stream = createReadStream(filePath, {
+    encoding: 'utf-8',
+    start: 0,
+    end: Math.max(0, fromOffset - 1),
+  });
+  const rl = createInterface({ input: stream, crlfDelay: Infinity });
+  for await (const rawLine of rl) {
+    let obj: Record<string, unknown>;
+    try {
+      obj = JSON.parse(rawLine) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const payload = objectRecord(obj.payload);
+    if (!payload) continue;
+    if (typeof payload.cwd === 'string' && payload.cwd) recovered.projectPath = payload.cwd;
+    if (Array.isArray(payload.workspace_roots)) {
+      const firstRoot = payload.workspace_roots.find((root) => typeof root === 'string' && root);
+      if (typeof firstRoot === 'string') recovered.projectPath = firstRoot;
+    }
+    if (payload.type === 'turn_context') {
+      recovered.model = exactCodexModel(payload.model) ?? recovered.model;
+    }
+    if (!recovered.startedAt && typeof payload.started_at === 'string') {
+      recovered.startedAt = payload.started_at;
+    }
+    if (!recovered.startedAt && typeof payload.timestamp === 'string') {
+      recovered.startedAt = payload.timestamp;
+    }
+  }
+  return recovered;
+}
+
 async function collectCodexMessages(
   serverCursor: ServerCursor | null | undefined,
   limit: number,
@@ -1010,10 +1073,13 @@ async function collectCodexMessages(
       }
 
       const sessionId = path.basename(filePath, '.jsonl');
+      const recoveredContext = await recoverCodexContextBeforeOffset(filePath, fromOffset);
+      const fileMessageStart = messages.length;
       let consumedOffset = fromOffset;
-      let startedAt: string | undefined;
-      let codexProjectPath = filePath;
-      let codexModel: string | undefined;
+      let startedAt: string | undefined = recoveredContext.startedAt;
+      let codexProjectPath = recoveredContext.projectPath ?? filePath;
+      let codexModel: string | undefined = recoveredContext.model;
+      let missingModelAtOffset: number | null = null;
       // Per-session accumulator: cumulative `total_token_usage` snapshots are
       // converted to per-turn deltas so the server never double-counts prior
       // turns when summing `message.usage.totalTokens`. A fresh scan (offset 0)
@@ -1088,14 +1154,20 @@ async function collectCodexMessages(
             );
             if (typeof firstRoot === 'string') codexProjectPath = firstRoot;
           }
-          if (typeof payload.model === 'string' && payload.model) codexModel = payload.model;
-          if (!codexModel && typeof payload.model_provider === 'string' && payload.model_provider) {
-            codexModel = payload.model_provider;
-          }
+          codexModel = exactCodexModel(payload.model) ?? codexModel;
           if (!startedAt && typeof payload.started_at === 'string') startedAt = payload.started_at;
           if (!startedAt && typeof payload.timestamp === 'string') startedAt = payload.timestamp;
         }
         const payloadType = String(payload?.type ?? '');
+        if (
+          (payloadType === 'token_count' ||
+            payloadType === 'user_message' ||
+            payloadType === 'agent_message') &&
+          !codexModel
+        ) {
+          missingModelAtOffset = consumedOffset;
+          break;
+        }
         if (payloadType === 'token_count') {
           const usage: CodexUsage | null = usageAccumulator.consume(obj);
           if (!usage) continue;
@@ -1143,6 +1215,19 @@ async function collectCodexMessages(
         // response_item/* and other record types are intentionally skipped:
         // their `message` content duplicates the user_message/agent_message rows
         // above, and the rest is system noise with no reporting value.
+      }
+
+      if (missingModelAtOffset !== null) {
+        messages.splice(fileMessageStart);
+        await appendUploadLog(hermitHome(), 'codex file quarantined: exact model unavailable', {
+          fileKey: key,
+          pathHash,
+          fromOffset,
+          blockedAtOffset: missingModelAtOffset,
+        });
+        filesScanned += 1;
+        await reportProgress(filesScanned, messages.length);
+        continue;
       }
 
       const toOffset =
@@ -1768,12 +1853,9 @@ function isConversationUploadEnabled(cfg: ConversationUploadConfig): boolean {
   const telemetry = cfg.telemetry;
   const canonical = telemetry?.conversationUploadEnabled;
   const legacy = telemetry?.conversations?.uploadEnabled;
-  // DEFAULT-ON: fresh installs have neither field. Explicit false remains an
-  // opt-out, while an explicit true from either supported field enables upload.
+  // Message content is explicit opt-in. A missing setting is always OFF.
   // This must stay aligned with UsageTelemetryService and bin/lib/uploadState.
-  if (canonical === true || legacy === true) return true;
-  if (canonical === false || legacy === false) return false;
-  return true;
+  return canonical === true || legacy === true;
 }
 
 async function uploadConversationMessagesLocked(

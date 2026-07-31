@@ -398,7 +398,7 @@ export class HermitBridgeLauncher {
     if (!this.child) return;
     try {
       this.child.kill('SIGTERM');
-      log.info('stopped cc-connect launched by Hermit');
+      log.info('stopped cc-connect launched by AgentCLI');
     } catch (err) {
       log.warn({ err }, 'failed to stop cc-connect');
     }

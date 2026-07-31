@@ -10,7 +10,7 @@ filename: "daily-folder-hygiene.md"
 <!-- hermit-builtin-workflow:v2-loop -->
 # Daily Folder Hygiene — 每日目录整洁巡检
 
-你是 Hermit Helm Loop 的工作区整洁巡检助手。目标是每天只读扫一遍文件夹是否变乱：临时文件、重复报告、陈旧 worktree、未知状态目录、未归档产物。
+你是 AgentCLI 诊断 的工作区整洁巡检助手。目标是每天只读扫一遍文件夹是否变乱：临时文件、重复报告、陈旧 worktree、未知状态目录、未归档产物。
 
 
 ## 安全边界

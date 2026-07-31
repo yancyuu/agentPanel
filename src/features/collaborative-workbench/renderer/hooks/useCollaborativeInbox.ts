@@ -3,42 +3,79 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import {
   getSnapshot as getCommentReadSnapshot,
   getUnreadCount,
+  markCommentsRead,
   subscribe as subscribeCommentRead,
 } from '@renderer/services/commentReadStorage';
 import { useStore } from '@renderer/store';
+import { getTaskInputMimeType, taskInputFileToBase64 } from '@renderer/utils/taskInputFiles';
 import { useShallow } from 'zustand/react/shallow';
 
 import {
   findReferencedTask,
   getGlobalTaskKey,
+  getInboxTaskView,
+  getTaskFeedbackComments,
+  type InboxTaskMessageProjection,
   type InboxTaskProjection,
   type InboxTaskView,
+  projectInboxTaskMessages,
   projectInboxTasks,
 } from '../utils/inboxProjection';
 
 import type { ParsedTaskLinkHref } from '@renderer/utils/taskReferenceUtils';
+import type { CreateTaskRequest, TaskRef, TeamTask } from '@shared/types';
+
+async function uploadTaskInputFiles(
+  files: File[],
+  upload: (file: { name: string; type: string; base64: string }) => Promise<void>
+): Promise<void> {
+  const [file, ...remaining] = files;
+  if (!file) return;
+  await upload({
+    name: file.name,
+    type: getTaskInputMimeType(file),
+    base64: await taskInputFileToBase64(file),
+  });
+  await uploadTaskInputFiles(remaining, upload);
+}
 
 export interface CollaborativeInboxState {
   view: InboxTaskView;
-  setView(view: InboxTaskView): void;
+  setView: (view: InboxTaskView) => void;
   query: string;
-  setQuery(query: string): void;
+  setQuery: (query: string) => void;
   teamFilter: string;
-  setTeamFilter(teamName: string): void;
+  setTeamFilter: (teamName: string) => void;
   ownerFilter: string;
-  setOwnerFilter(owner: string): void;
+  setOwnerFilter: (owner: string) => void;
   teamOptions: [string, string][];
   ownerOptions: string[];
   tasks: InboxTaskProjection[];
+  messages: InboxTaskMessageProjection[];
   selectedKey: string | null;
   selectedTask: InboxTaskProjection | null;
-  selectTask(key: string): void;
-  selectReferencedTask(target: ParsedTaskLinkHref): void;
+  selectedMessageKey: string | null;
+  selectedMessage: InboxTaskMessageProjection | null;
+  selectTask: (key: string) => void;
+  selectMessage: (key: string) => void;
+  selectReferencedTask: (target: ParsedTaskLinkHref) => void;
   loading: boolean;
   initialized: boolean;
   error: string | null;
-  refresh(): void;
-  updateOwner(teamName: string, taskId: string, owner: string | null): Promise<void>;
+  refresh: () => void;
+  createTask: (
+    teamName: string,
+    request: CreateTaskRequest,
+    inputFiles?: File[]
+  ) => Promise<TeamTask>;
+  updateOwner: (teamName: string, taskId: string, owner: string | null) => Promise<void>;
+  approveTask: (teamName: string, taskId: string) => Promise<void>;
+  requestChanges: (
+    teamName: string,
+    taskId: string,
+    comment?: string,
+    taskRefs?: TaskRef[]
+  ) => Promise<void>;
 }
 
 export function useCollaborativeInbox(): CollaborativeInboxState {
@@ -48,7 +85,12 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
     globalTasksInitialized,
     globalTasksError,
     fetchAllTasks,
+    createTeamTask,
+    saveTaskAttachment,
+    startTaskByUser,
     updateTaskOwner,
+    updateKanban,
+    setInboxHasUnreadMessages,
   } = useStore(
     useShallow((state) => ({
       globalTasks: state.globalTasks,
@@ -56,7 +98,12 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
       globalTasksInitialized: state.globalTasksInitialized,
       globalTasksError: state.globalTasksError,
       fetchAllTasks: state.fetchAllTasks,
+      createTeamTask: state.createTeamTask,
+      saveTaskAttachment: state.saveTaskAttachment,
+      startTaskByUser: state.startTaskByUser,
       updateTaskOwner: state.updateTaskOwner,
+      updateKanban: state.updateKanban,
+      setInboxHasUnreadMessages: state.setInboxHasUnreadMessages,
     }))
   );
   const readState = useSyncExternalStore(
@@ -64,11 +111,12 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
     getCommentReadSnapshot,
     getCommentReadSnapshot
   );
-  const [view, setView] = useState<InboxTaskView>('inbox');
+  const [view, setView] = useState<InboxTaskView>('in_progress');
   const [query, setQuery] = useState('');
   const [teamFilter, setTeamFilter] = useState('all');
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedMessageKey, setSelectedMessageKey] = useState<string | null>(null);
 
   useEffect(() => {
     void fetchAllTasks();
@@ -89,7 +137,7 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
         readState,
         task.teamName,
         task.id,
-        task.comments ?? []
+        getTaskFeedbackComments(task.comments ?? [])
       );
     }
     return result;
@@ -107,6 +155,30 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
       }),
     [ownerFilter, query, teamFilter, unreadCountByTask, view, visibleBaseTasks]
   );
+
+  const messages = useMemo(
+    () =>
+      projectInboxTaskMessages({
+        tasks: visibleBaseTasks,
+        query,
+        teamName: teamFilter,
+        unreadCountByTask,
+      }),
+    [query, teamFilter, unreadCountByTask, visibleBaseTasks]
+  );
+
+  useEffect(() => {
+    setInboxHasUnreadMessages(messages.some((entry) => entry.unreadCount > 0));
+  }, [messages, setInboxHasUnreadMessages]);
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      setSelectedMessageKey(null);
+      return;
+    }
+    if (selectedMessageKey && messages.some((entry) => entry.key === selectedMessageKey)) return;
+    setSelectedMessageKey(messages[0].key);
+  }, [messages, selectedMessageKey]);
 
   useEffect(() => {
     if (tasks.length === 0) {
@@ -139,6 +211,34 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
     void fetchAllTasks();
   }, [fetchAllTasks]);
 
+  const markTaskFeedbackRead = useCallback(
+    (key: string) => {
+      const task = visibleBaseTasks.find((candidate) => getGlobalTaskKey(candidate) === key);
+      if (!task) return;
+      const commentIds = getTaskFeedbackComments(task.comments ?? [])
+        .map((comment) => comment.id)
+        .filter((id): id is string => Boolean(id));
+      markCommentsRead(task.teamName, task.id, commentIds);
+    },
+    [visibleBaseTasks]
+  );
+
+  const selectTask = useCallback(
+    (key: string) => {
+      setSelectedKey(key);
+      markTaskFeedbackRead(key);
+    },
+    [markTaskFeedbackRead]
+  );
+
+  const selectMessage = useCallback(
+    (key: string) => {
+      setSelectedMessageKey(key);
+      markTaskFeedbackRead(key);
+    },
+    [markTaskFeedbackRead]
+  );
+
   const selectReferencedTask = useCallback(
     (taskRef: ParsedTaskLinkHref) => {
       const target = findReferencedTask(visibleBaseTasks, taskRef);
@@ -146,10 +246,29 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
       setQuery('');
       setTeamFilter('all');
       setOwnerFilter('all');
-      setView(target.status === 'completed' ? 'completed' : 'inbox');
+      setView(getInboxTaskView(target));
       setSelectedKey(getGlobalTaskKey(target));
     },
     [visibleBaseTasks]
+  );
+
+  const createTask = useCallback(
+    async (teamName: string, request: CreateTaskRequest, inputFiles: File[] = []) => {
+      const hasInputFiles = inputFiles.length > 0;
+      const task = await createTeamTask(teamName, {
+        ...request,
+        startImmediately: hasInputFiles ? false : request.startImmediately,
+      });
+      if (hasInputFiles) {
+        await uploadTaskInputFiles(inputFiles, (file) =>
+          saveTaskAttachment(teamName, task.id, file)
+        );
+        await startTaskByUser(teamName, task.id);
+      }
+      await fetchAllTasks();
+      return task;
+    },
+    [createTeamTask, fetchAllTasks, saveTaskAttachment, startTaskByUser]
   );
 
   const updateOwner = useCallback(
@@ -157,6 +276,22 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
       await updateTaskOwner(teamName, taskId, owner);
     },
     [updateTaskOwner]
+  );
+
+  const approveTask = useCallback(
+    async (teamName: string, taskId: string) => {
+      await updateKanban(teamName, taskId, { op: 'set_column', column: 'approved' });
+      await fetchAllTasks();
+    },
+    [fetchAllTasks, updateKanban]
+  );
+
+  const requestChanges = useCallback(
+    async (teamName: string, taskId: string, comment?: string, taskRefs?: TaskRef[]) => {
+      await updateKanban(teamName, taskId, { op: 'request_changes', comment, taskRefs });
+      await fetchAllTasks();
+    },
+    [fetchAllTasks, updateKanban]
   );
 
   return {
@@ -171,14 +306,21 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
     teamOptions,
     ownerOptions,
     tasks,
+    messages,
     selectedKey,
     selectedTask: tasks.find((entry) => entry.key === selectedKey) ?? null,
-    selectTask: setSelectedKey,
+    selectedMessageKey,
+    selectedMessage: messages.find((entry) => entry.key === selectedMessageKey) ?? null,
+    selectTask,
+    selectMessage,
     selectReferencedTask,
     loading: globalTasksLoading,
     initialized: globalTasksInitialized,
     error: globalTasksError,
     refresh,
+    createTask,
     updateOwner,
+    approveTask,
+    requestChanges,
   };
 }

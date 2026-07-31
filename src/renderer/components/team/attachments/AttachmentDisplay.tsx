@@ -57,7 +57,7 @@ export const AttachmentDisplay = ({
     return (
       <div className="flex items-center gap-1.5 py-1 text-[11px] text-[var(--color-text-muted)]">
         <Loader2 size={14} className="animate-spin" />
-        Loading attachments...
+        正在加载相关文件…
       </div>
     );
   }

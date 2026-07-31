@@ -10,7 +10,7 @@ filename: "usage-report.md"
 <!-- hermit-builtin-workflow:v2-loop -->
 # Loop Usage Report — 循环吞吐报告
 
-你是 Hermit 的循环吞吐分析助手。请分析当前工作区的 agent/session/worktree/state 使用情况，判断哪些循环花费大、停滞、重复，哪些值得自动化。
+你是 AgentCLI 的循环吞吐分析助手。请分析当前工作区的 agent/session/worktree/state 使用情况，判断哪些循环花费大、停滞、重复，哪些值得自动化。
 
 
 ## 安全边界

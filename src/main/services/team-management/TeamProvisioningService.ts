@@ -211,12 +211,12 @@ export class TeamProvisioningService {
 
   /**
    * 任务调度：当任务有 assignee 时，通过 Bridge 推送通知给目标团队的 agent。
-   * 目标团队通过 Hermit CLI 任务总线认领、评论、澄清并提交任务。
+   * 目标团队通过 AgentCLI 任务总线认领、评论、澄清并提交任务。
    */
   async dispatchTask(sourceTeamSlug: string, task: Task): Promise<void> {
     if (!task.assignee) return;
 
-    const targetSlug = task.assignee;
+    const targetSlug = task.assigneeAgentId?.trim() || task.assignee;
 
     // 检查来源团队协同开关（本地 manifest 可选）
     try {
@@ -257,7 +257,7 @@ export class TeamProvisioningService {
       `标题: ${task.title}`,
       task.description ? `描述: ${task.description}` : null,
       ``,
-      `请通过 Hermit CLI 任务总线处理，不要使用 MCP、Skills 或运行时自带任务系统：`,
+      `请通过 AgentCLI 任务总线处理，不要使用 MCP、Skills 或运行时自带任务系统：`,
       `  ${cli} claim --team ${targetSlug} --id ${task.id}`,
       `  ${cli} comment --team ${targetSlug} --id ${task.id} --text "进度说明"`,
       `  ${cli} clarify --team ${targetSlug} --id ${task.id} --target user`,
@@ -366,14 +366,14 @@ export class TeamProvisioningService {
 
 ${TEAM_INSTRUCTIONS_BEGIN}
 
-## Hermit Team Context
+## AgentCLI Team Context
 
 Current team slug: \`${teamSlug}\`
 
 Available teams:
 ${availableTeams.length > 0 ? availableTeams.join('\n') : '- No other teams currently registered.'}
 
-Cross-team collaboration is handled through Hermit's CLI task bus. Hermit task state is the single source of truth.
+Cross-team collaboration is handled through AgentCLI's task bus. AgentCLI task state is the single source of truth.
 Do not use MCP, Skills, or the harness's native task/todo tools for collaborative task management.
 
 Use these commands for collaborative tasks:
@@ -383,7 +383,7 @@ Use these commands for collaborative tasks:
 - Request clarification: \`agentcli --port ${process.env.PORT ?? '5680'} tasks clarify --team ${teamSlug} --id <task-id> --target user\`
 - Submit the result: \`agentcli --port ${process.env.PORT ?? '5680'} tasks complete --team ${teamSlug} --id <task-id> --result "<result>"\`
 
-Do not call cross-team dispatch APIs yourself and do not invent task IDs. Use only task IDs returned by the CLI or supplied by Hermit.
+Do not call cross-team dispatch APIs yourself and do not invent task IDs. Use only task IDs returned by the CLI or supplied by AgentCLI.
 
 ${opsRunbookContext}
 ${TEAM_INSTRUCTIONS_END}

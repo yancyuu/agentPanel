@@ -1,4 +1,16 @@
+import { timingSafeEqual } from 'node:crypto';
+
 import cors from '@fastify/cors';
+import {
+  AdvancedConnectionService,
+  registerAdvancedConnectionRoutes,
+} from '@features/advanced-connections/main';
+import {
+  CollaborationOrchestrator,
+  CollaborationWorkspaceService,
+  registerCollaborationRoutes,
+} from '@features/team-collaboration/main';
+import { DESKTOP_SESSION_HEADER } from '@shared/constants/desktop';
 import Fastify from 'fastify';
 
 import {
@@ -10,6 +22,7 @@ import { registerAppConfigRoutes } from './routes/appConfigRoutes';
 import { registerBridgeConfigRoutes } from './routes/bridgeConfigRoutes';
 import { registerBridgeProxyRoutes } from './routes/bridgeProxyRoutes';
 import { registerCapabilityPackRoutes } from './routes/capabilityPackRoutes';
+import { registerCommentReadStateRoutes } from './routes/commentReadStateRoutes';
 import { registerConversationTelemetryRoutes } from './routes/conversationTelemetryRoutes';
 import { registerEditorRoutes } from './routes/editorRoutes';
 import { registerExtensionCredentialRoutes } from './routes/extensionCredentialRoutes';
@@ -56,6 +69,7 @@ import { registerVersionUpdateRoutes } from './routes/versionUpdateRoutes';
 import { registerWorkbenchStatusRoutes } from './routes/workbenchStatusRoutes';
 import { registerWorkerRoutes } from './routes/workerRoutes';
 import { registerWorkspaceRoutes } from './routes/workspaceRoutes';
+import { resolveLoopbackWorkbenchUrl } from './services/agentcli/workbenchRuntimeEnv';
 import { buildTeamCapabilityTelemetrySnapshots } from './services/extensions/capability-packs/CapabilityPackLoaderService';
 import {
   getTelemetryRuntimeStatus,
@@ -67,7 +81,11 @@ import {
 import { DEFAULT_HERMIT_CC_SETTINGS } from './services/settings/HermitCcSettingsService';
 import { getRuntimeReadiness } from './services/system/RuntimeReadiness';
 import { ensureGlobalWorkflows } from './services/system-manager/BuiltinWorkflowSeeder';
+import { SystemDiagnosticRunService } from './services/system-manager/SystemDiagnosticRunService';
+import { WorkspaceCleanupService } from './services/system-manager/WorkspaceCleanupService';
 import { ClaudeBinaryResolver } from './services/team/ClaudeBinaryResolver';
+import { CommentReadStateService } from './services/team-management/CommentReadStateService';
+import { materializeTaskInputs } from './services/team-management/TaskInputMaterializer';
 import { readUsageTelemetryWorkerStatus } from './telemetry/worker';
 import { createServerOperations } from './serverOperations';
 import { createWorkbenchShutdown } from './serverProcessLifecycle';
@@ -144,12 +162,55 @@ async function createWorkbenchServerUncached(
   const { services, state } = context;
   const svc = services.teamProvisioning;
   const cc = services.bridgeClient;
+  const collaborationWorkspace = new CollaborationWorkspaceService(environment.hermitHome);
+  const collaborationOrchestrator = new CollaborationOrchestrator({
+    workspace: collaborationWorkspace,
+    teams: svc,
+    directCli: services.directCli,
+    workbenchUrl: resolveLoopbackWorkbenchUrl(environment.host, environment.port),
+    dispatchAgentMessage: (params) =>
+      operations.teamRuntimeOperations.dispatchDirectCliMessage(params),
+    broadcastRunChange: (runId) =>
+      operations.broadcastSse('team-change', { type: 'collaboration-run', runId }),
+  });
+  context.lifecycle.listenerDisposers.push(() => collaborationOrchestrator.dispose());
+  const interruptedCollaborationRuns = await collaborationOrchestrator.recoverInterruptedRuns();
+  if (interruptedCollaborationRuns.length > 0) {
+    app.log.warn(
+      { runIds: interruptedCollaborationRuns },
+      'automatically resumed interrupted collaboration runs after service restart'
+    );
+  }
+  const diagnosticRuns = new SystemDiagnosticRunService({
+    hermitHome: environment.hermitHome,
+    directCli: services.directCli,
+    ensureSystemManager: operations.ensureSystemManager,
+    dispatchMessage: (params) => operations.teamRuntimeOperations.dispatchDirectCliMessage(params),
+    broadcast: (run) =>
+      operations.broadcastSse('team-change', { type: 'diagnostic-run', runId: run.id }),
+  });
+  context.lifecycle.listenerDisposers.push(() => diagnosticRuns.dispose());
+  const advancedConnections = new AdvancedConnectionService({
+    hermitHome: environment.hermitHome,
+  });
+  const commentReadState = new CommentReadStateService(environment.hermitHome);
+  const workspaceCleanup = new WorkspaceCleanupService({ hermitHome: environment.hermitHome });
 
   await app.register(cors, {
     origin: environment.allowedCorsOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
+  const desktopSessionToken = environment.desktopSessionToken;
   app.addHook('preHandler', async (request, reply) => {
+    if (desktopSessionToken) {
+      const rawToken = request.headers[DESKTOP_SESSION_HEADER];
+      const presentedToken = Array.isArray(rawToken) ? rawToken[0] : rawToken;
+      const expected = Buffer.from(desktopSessionToken);
+      const presented = Buffer.from(typeof presentedToken === 'string' ? presentedToken : '');
+      if (expected.length !== presented.length || !timingSafeEqual(expected, presented)) {
+        return reply.code(401).send({ ok: false, error: 'Desktop session required' });
+      }
+    }
     const rawOrigin: unknown = request.headers.origin;
     const origin = Array.isArray(rawOrigin)
       ? typeof rawOrigin[0] === 'string'
@@ -163,6 +224,59 @@ async function createWorkbenchServerUncached(
     }
   });
 
+  app.get('/api/health', async () => ({
+    ok: true,
+    service: 'agentcli-workbench',
+    version: environment.version,
+  }));
+
+  registerAdvancedConnectionRoutes(app, {
+    service: advancedConnections,
+    localSnapshot: async () => {
+      const manifests = (await svc.listTeams()).filter((manifest) => !manifest.deletedAt);
+      const taskGroups = await Promise.all(
+        manifests.map(async (manifest) => ({
+          teamSlug: manifest.slug,
+          tasks: await svc.readTasks(manifest.slug),
+        }))
+      );
+      const telemetryStatus = await readUsageTelemetryWorkerStatus(environment.hermitHome);
+      const capabilityPacks = await getCapabilityPacks().list();
+      return {
+        generatedAt: new Date().toISOString(),
+        teams: manifests.map((manifest) => ({
+          slug: manifest.slug,
+          displayName: manifest.displayName,
+          description: manifest.description,
+          harness: manifest.harness,
+          online: true,
+        })),
+        tasks: taskGroups.flatMap(({ teamSlug, tasks }) =>
+          tasks
+            .filter((task) => task.taskKind !== 'subtask')
+            .map((task) => ({
+              id: task.id,
+              teamSlug,
+              title: task.title,
+              status: task.status,
+              updatedAt: task.updatedAt,
+            }))
+        ),
+        usage: telemetryStatus as unknown as Record<string, unknown>,
+        capabilities: capabilityPacks.packs.map((pack) => ({
+          id: pack.manifest.id,
+          name: pack.manifest.name,
+          description: pack.manifest.description,
+        })),
+      };
+    },
+  });
+  registerCommentReadStateRoutes(app, { service: commentReadState });
+  registerCollaborationRoutes(app, {
+    workspace: collaborationWorkspace,
+    orchestrator: collaborationOrchestrator,
+    teams: svc,
+  });
   registerBridgeProxyRoutes(app, {
     getRuntimeConfig: () => ({
       ccBaseUrl: options.getRuntimeConfig().ccBaseUrl,
@@ -204,6 +318,8 @@ async function createWorkbenchServerUncached(
     ensureSystemManager: operations.ensureSystemManager,
     ensureAdminLoopInitialized: operations.ensureAdminLoopInitialized,
     systemManagerConfig: services.systemManagerConfig,
+    diagnosticRuns,
+    workspaceCleanup,
     workflowPrompt: services.workflowPrompt,
     assertTrustedBrowserOrigin: operations.assertTrustedBrowserOrigin,
   });
@@ -235,11 +351,60 @@ async function createWorkbenchServerUncached(
       taskId: string,
       patch: Parameters<TeamProvisioningService['patchTask']>[2]
     ) => svc.patchTask(teamName, taskId, patch),
-    dispatchTask: (
+    dispatchTask: async (
       teamName: string,
       task: Parameters<TeamProvisioningService['dispatchTask']>[1]
-    ) => svc.dispatchTask(teamName, task),
+    ) => {
+      if (!task.assignee) return;
+      const targetTeamName = task.assigneeAgentId?.trim() || teamName;
+      const workDir = await operations.teamRuntimeOperations
+        .resolveDirectCliWorkDir(targetTeamName)
+        .catch(() => '');
+      if (!workDir) {
+        await svc.dispatchTask(teamName, task);
+        return;
+      }
+      const inputs = await materializeTaskInputs(task, workDir);
+      const inputSummary = inputs.map((input) => `- ${input.filename}: ${input.path}`).join('\n');
+      const comments = (task.comments ?? [])
+        .map((comment) => `- ${comment.author}: ${comment.text}`)
+        .join('\n');
+      const hermitHome = process.env.HERMIT_HOME ?? `${process.env.HOME ?? '~'}/.hermit`;
+      const cliPath = `${hermitHome}/bin/agentcli`;
+      const taskCommand = `${JSON.stringify(cliPath)} --port ${process.env.PORT ?? '5680'} tasks`;
+      const text = [
+        `/goal 请执行任务：${task.title}`,
+        `任务 ID：${task.id}`,
+        task.description ? `描述：${task.description}` : null,
+        task.prompt ? `补充要求：${task.prompt}` : null,
+        inputSummary
+          ? `用户提供的本地输入文件已经复制到当前项目的 input/${task.id}/ 目录：\n${inputSummary}\n请先读取这些文件，再开始处理任务。`
+          : null,
+        comments ? `用户与执行记录：\n${comments}` : null,
+        '',
+        '请使用内置 AgentCLI 更新任务状态，不要使用其他任务系统：',
+        `${taskCommand} claim --team ${targetTeamName} --id ${task.id}`,
+        `${taskCommand} comment --team ${targetTeamName} --id ${task.id} --text "进度或问题"`,
+        `${taskCommand} clarify --team ${targetTeamName} --id ${task.id} --target user`,
+        `${taskCommand} complete --team ${targetTeamName} --id ${task.id} --result "交付结果"`,
+        '',
+        '如果信息不足：先评论写清问题，再标记等待用户回复并停止执行。收到用户回复后继续。完成后必须提交交付结果。',
+      ]
+        .filter((line): line is string => line !== null)
+        .join('\n');
+      await operations.teamRuntimeOperations.dispatchDirectCliMessage({
+        teamName: targetTeamName,
+        sessionKey: `${targetTeamName}:task:${task.id}`,
+        workDir,
+        from: task.assignee,
+        to: 'user',
+        text,
+        messageId: `task-${task.id}-${Date.now()}`,
+        conversationId: `task:${task.id}`,
+      });
+    },
     listProjects: () => cc.listProjects(),
+    listTeams: () => svc.listTeams(),
     readTeamManifest: (teamName: string) => svc.readTeamManifest(teamName),
     broadcastTaskChange: (teamName: string, taskId: string) =>
       operations.broadcastSse('team-change', { type: 'task', teamName, taskId }),
@@ -265,6 +430,7 @@ async function createWorkbenchServerUncached(
   registerHarnessRoutes(app, {
     agentTypes: CC_AGENT_TYPES,
     listProjects: () => cc.listProjects(),
+    packagedDesktop: process.env.AGENTCLI_PACKAGED_DESKTOP === '1',
   });
   registerTeamRuntimeRoutes(app, teamRuntimeRouteDependencies, { routes: ['runtime'] });
   registerPlatformSetupRoutes(app, {

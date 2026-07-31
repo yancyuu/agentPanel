@@ -448,7 +448,7 @@ export const CapabilityPacksPanel = (): React.JSX.Element => {
               <p className="mt-1 text-xs leading-5 text-text-secondary">
                 能力包是项目级资产集合，汇总当前项目的{' '}
                 <span className="font-mono">.claude/skills</span>、workflows/commands、cron 和 MCP
-                配置；Hermit 运行时与全局资产单独归类展示，不再按团队启用。
+                配置；AgentCLI 运行时与全局资产单独归类展示，不再按团队启用。
               </p>
             </div>
           </div>
@@ -581,7 +581,7 @@ export const CapabilityPacksPanel = (): React.JSX.Element => {
         </div>
       ) : capabilityPacks.length === 0 ? (
         <div className="bg-surface/60 rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-text-muted">
-          还没有可用能力包。官方 Hermit 运维包会自动预装。
+          还没有可用能力包。官方 AgentCLI 运维包会自动预装。
         </div>
       ) : filteredPacks.length === 0 ? (
         <div className="bg-surface/60 rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-text-muted">

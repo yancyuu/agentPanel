@@ -20,11 +20,11 @@ import { describe, expect, it } from 'vitest';
 import { describeUploadToggle, resolveConversationUploadEnabled } from '../uploadState.mjs';
 
 describe('resolveConversationUploadEnabled — canonical boolean matching the worker gate', () => {
-  it('defaults to ON for empty / missing telemetry (消息总线 default-on)', () => {
-    expect(resolveConversationUploadEnabled(undefined)).toBe(true);
-    expect(resolveConversationUploadEnabled(null)).toBe(true);
-    expect(resolveConversationUploadEnabled({})).toBe(true);
-    expect(resolveConversationUploadEnabled('nope')).toBe(true);
+  it('defaults to OFF for empty / missing telemetry (message content requires opt-in)', () => {
+    expect(resolveConversationUploadEnabled(undefined)).toBe(false);
+    expect(resolveConversationUploadEnabled(null)).toBe(false);
+    expect(resolveConversationUploadEnabled({})).toBe(false);
+    expect(resolveConversationUploadEnabled('nope')).toBe(false);
   });
 
   it('reads the canonical conversationUploadEnabled field', () => {
@@ -49,12 +49,10 @@ describe('resolveConversationUploadEnabled — canonical boolean matching the wo
   });
 
   it('ignores the dead top-level uploadEnabled field (worker never reads it)', () => {
-    // The dead field must not be what flips the result. Under default-on both
-    // {uploadEnabled:true} and {uploadEnabled:false} resolve to ON — proving the
-    // default (not the dead field) is the cause. Only an explicit
-    // conversationUploadEnabled:false opts out.
-    expect(resolveConversationUploadEnabled({ uploadEnabled: true })).toBe(true);
-    expect(resolveConversationUploadEnabled({ uploadEnabled: false })).toBe(true);
+    // The dead field must not flip the result. Without an explicit conversation
+    // upload opt-in, both values remain OFF.
+    expect(resolveConversationUploadEnabled({ uploadEnabled: true })).toBe(false);
+    expect(resolveConversationUploadEnabled({ uploadEnabled: false })).toBe(false);
     expect(
       resolveConversationUploadEnabled({ uploadEnabled: true, conversationUploadEnabled: false, conversations: {} }),
     ).toBe(false);

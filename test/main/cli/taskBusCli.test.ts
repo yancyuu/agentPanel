@@ -60,7 +60,7 @@ afterEach(async () => {
   );
 });
 
-describe('Hermit CLI task bus', () => {
+describe('AgentCLI task bus', () => {
   it('uses the injected Workbench URL when no explicit port is provided', async () => {
     const { port, task } = await startTaskBusServer();
     const response = await execFileAsync(

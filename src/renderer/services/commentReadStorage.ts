@@ -4,6 +4,7 @@ const IDB_KEY = 'comment-read-state-v2';
 const LS_KEY = 'comment-read-state-v2';
 const LEGACY_IDB_KEY = 'comment-read-state';
 const LEGACY_LS_KEY = 'comment-read-state';
+const REMOTE_ENDPOINT = '/api/workbench/comment-read-state';
 const SAVE_DEBOUNCE_MS = 300;
 const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -92,7 +93,10 @@ if (v2Data && Object.keys(v2Data).length > 0) {
   }
 }
 
-let loaded = Object.keys(cache).length > 0;
+// Browser storage is scoped to the loopback origin (including its dynamic desktop port),
+// so every renderer session also hydrates from the stable workbench-side store.
+let loaded = false;
+let loadingPromise: Promise<void> | null = null;
 let idbAvailable = true; // flips to false on first IndexedDB failure
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<() => void>();
@@ -100,6 +104,47 @@ const taskListeners = new Map<string, Set<() => void>>();
 
 function buildTaskKey(teamName: string, taskId: string): string {
   return `${teamName}/${taskId}`;
+}
+
+function mergeReadState(base: ReadState, incoming: ReadState): ReadState {
+  const merged = { ...base };
+  for (const [key, entry] of Object.entries(incoming)) {
+    if (!entry || !Array.isArray(entry.readIds) || typeof entry.lastUpdated !== 'number') continue;
+    const previous = merged[key];
+    if (!previous) {
+      merged[key] = entry;
+      continue;
+    }
+    merged[key] = {
+      readIds: [...new Set([...previous.readIds, ...entry.readIds])],
+      lastUpdated: Math.max(previous.lastUpdated, entry.lastUpdated),
+    };
+  }
+  return merged;
+}
+
+async function loadRemoteState(): Promise<ReadState | null> {
+  if (typeof fetch === 'undefined') return null;
+  try {
+    const response = await fetch(REMOTE_ENDPOINT, { headers: { accept: 'application/json' } });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as { state?: unknown };
+    if (!payload.state || typeof payload.state !== 'object' || Array.isArray(payload.state))
+      return null;
+    return payload.state as ReadState;
+  } catch {
+    return null;
+  }
+}
+
+function saveRemoteState(state: ReadState): void {
+  if (typeof fetch === 'undefined') return;
+  void fetch(REMOTE_ENDPOINT, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ state }),
+    keepalive: true,
+  }).catch(() => undefined);
 }
 
 // --- useSyncExternalStore API ---
@@ -161,6 +206,8 @@ export function markCommentsRead(teamName: string, taskId: string, commentIds: s
       lastUpdated: Date.now(),
     },
   };
+  lsSave(cache);
+  saveRemoteState(cache);
   notify(key);
   scheduleSave();
 }
@@ -182,6 +229,8 @@ export function markAsRead(teamName: string, taskId: string, latestTimestamp: nu
       lastUpdated: Math.max(prevLastUpdated, latestTimestamp),
     },
   };
+  lsSave(cache);
+  saveRemoteState(cache);
   notify(key);
   scheduleSave();
 }
@@ -284,47 +333,33 @@ function scheduleSave(): void {
 
 async function load(): Promise<void> {
   if (loaded) return;
+  if (loadingPromise) return loadingPromise;
+  loadingPromise = loadOnce().finally(() => {
+    loadingPromise = null;
+  });
+  return loadingPromise;
+}
+
+async function loadOnce(): Promise<void> {
+  const remoteState = await loadRemoteState();
+  if (remoteState) {
+    cache = mergeReadState(cache, remoteState);
+    notify();
+  }
 
   if (hasIndexedDB() && idbAvailable) {
     try {
       // Try v2 format first
       const stored = await get<ReadState>(IDB_KEY);
       if (stored && typeof stored === 'object') {
-        const merged = { ...cache };
-        for (const [k, v] of Object.entries(stored)) {
-          if (!v || typeof v !== 'object') continue;
-          const entry = v;
-          const prev = merged[k];
-          if (!prev) {
-            merged[k] = entry;
-          } else {
-            // Merge: union of readIds, max lastUpdated
-            const mergedIds = new Set([...prev.readIds, ...entry.readIds]);
-            merged[k] = {
-              readIds: Array.from(mergedIds),
-              lastUpdated: Math.max(prev.lastUpdated, entry.lastUpdated),
-            };
-          }
-        }
-        cache = merged;
+        cache = mergeReadState(cache, stored);
         notify();
       } else {
         // Try legacy IDB format
         const legacy = await get<LegacyReadState>(LEGACY_IDB_KEY);
         if (legacy && typeof legacy === 'object') {
           const migrated = migrateLegacy(legacy);
-          const merged = { ...cache };
-          for (const [k, v] of Object.entries(migrated)) {
-            if (!merged[k]) {
-              merged[k] = v;
-            } else {
-              merged[k] = {
-                readIds: [...new Set([...merged[k].readIds, ...v.readIds])],
-                lastUpdated: Math.max(merged[k].lastUpdated, v.lastUpdated),
-              };
-            }
-          }
-          cache = merged;
+          cache = mergeReadState(cache, migrated);
           notify();
         }
       }
@@ -334,6 +369,8 @@ async function load(): Promise<void> {
   }
 
   loaded = true;
+  lsSave(cache);
+  if (Object.keys(cache).length > 0) saveRemoteState(cache);
 }
 
 async function save(): Promise<void> {
@@ -368,8 +405,9 @@ export async function cleanupStale(): Promise<void> {
   cache = result;
   notify();
 
-  // Persist to both storages
+  // Persist to local browser storage and the stable workbench store.
   lsSave(result);
+  saveRemoteState(result);
   if (idbAvailable && hasIndexedDB()) {
     try {
       await set(IDB_KEY, result);

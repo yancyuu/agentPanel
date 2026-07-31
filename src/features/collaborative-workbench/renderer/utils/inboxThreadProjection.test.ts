@@ -57,6 +57,28 @@ describe('inbox thread projection', () => {
     expect(threads[0].messages.map((entry) => entry.from)).toEqual(['user', 'alice']);
   });
 
+  it('keeps the internal /goal directive out of subjects and previews', () => {
+    const threads = buildInboxThreads({
+      teams: [team],
+      messagesByTeam: {
+        'team-a': [
+          message({
+            from: 'user',
+            to: 'alice',
+            text: '/goal 请准备季度汇报',
+            conversationId: 'conversation-goal',
+          }),
+        ],
+      },
+      readAtByThread: {},
+    });
+
+    expect(threads[0]).toMatchObject({
+      subject: '请准备季度汇报',
+      preview: '请准备季度汇报',
+    });
+  });
+
   it('treats each conversation id as a separate mail and honors read watermarks', () => {
     const threads = buildInboxThreads({
       teams: [team],
@@ -79,6 +101,23 @@ describe('inbox thread projection', () => {
     ]);
     expect(threads[0].unread).toBe(false);
     expect(threads[1].unread).toBe(true);
+  });
+
+  it('keeps tuning conversations out of the inbox', () => {
+    const threads = buildInboxThreads({
+      teams: [team],
+      messagesByTeam: {
+        'team-a': [
+          message({
+            conversationId: 'tuning:team-a:alice',
+            text: '以后回答简短一点',
+          }),
+        ],
+      },
+      readAtByThread: {},
+    });
+
+    expect(threads).toEqual([]);
   });
 
   it('adds a new draft as its own mail item', () => {

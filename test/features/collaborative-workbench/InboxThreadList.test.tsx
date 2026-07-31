@@ -4,19 +4,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { InboxThreadList } from '../../../src/features/collaborative-workbench/renderer/ui/InboxThreadList';
 
+import type { InboxThreadProjection } from '../../../src/features/collaborative-workbench/renderer/utils/inboxThreadProjection';
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const mounted: { root: ReturnType<typeof createRoot>; host: HTMLDivElement }[] = [];
 
-function renderList(onCreateThread = vi.fn()): HTMLDivElement {
+function renderList(
+  onCreateThread = vi.fn(),
+  threads: InboxThreadProjection[] = [],
+  selectedKey: string | null = null
+): HTMLDivElement {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
   act(() => {
     root.render(
       <InboxThreadList
-        threads={[]}
-        selectedKey={null}
+        threads={threads}
+        selectedKey={selectedKey}
         query=""
         onQueryChange={vi.fn()}
         teamFilter="all"
@@ -79,5 +85,27 @@ describe('InboxThreadList', () => {
     expect(host.textContent).not.toContain('每封邮件都是一个可持续回复的对话');
     expect(host.querySelector('[placeholder="搜索发件人、主题或正文"]')).not.toBeNull();
     expect(host.querySelector('[aria-label="按团队筛选对话"]')).not.toBeNull();
+  });
+
+  it('hides the unread dot immediately for the selected mail', () => {
+    const unreadThread: InboxThreadProjection = {
+      key: 'team-a:conversation-1',
+      teamName: 'team-a',
+      teamDisplayName: '测试',
+      participant: 'alice',
+      conversationId: 'conversation-1',
+      subject: '季度汇报',
+      preview: '请查收',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      messages: [],
+      unread: true,
+      draft: false,
+    };
+
+    const selectedHost = renderList(vi.fn(), [unreadThread], unreadThread.key);
+    expect(selectedHost.querySelector('[aria-label="未读"]')).toBeNull();
+
+    const unselectedHost = renderList(vi.fn(), [unreadThread], 'another-thread');
+    expect(unselectedHost.querySelector('[aria-label="未读"]')).not.toBeNull();
   });
 });

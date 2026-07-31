@@ -3,12 +3,26 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const selectTask = vi.fn();
+const selectMessage = vi.fn();
 const selectReferencedTask = vi.fn();
-const selectThread = vi.fn();
+const createTeamTask = vi.fn(() => Promise.resolve({ id: 'task-created' }));
+const refreshTasks = vi.fn(() => Promise.resolve());
+const approveTask = vi.fn(() => Promise.resolve());
+const requestChanges = vi.fn(() => Promise.resolve());
+let selectedReviewState: 'review' | 'needsFix' | 'approved' | undefined;
+let detailMembers: { name: string; agentId: string }[] = [
+  { name: 'alice', agentId: 'agent-alice' },
+];
+let requestedRecipient: {
+  teamName: string;
+  memberName: string;
+  requestedAt: number;
+  initialText?: string;
+} | null = null;
 
 vi.mock('@features/collaborative-workbench/renderer/hooks/useCollaborativeInbox', () => ({
   useCollaborativeInbox: () => ({
-    view: 'inbox',
+    view: 'in_progress',
     setView: vi.fn(),
     query: '',
     setQuery: vi.fn(),
@@ -19,75 +33,103 @@ vi.mock('@features/collaborative-workbench/renderer/hooks/useCollaborativeInbox'
     teamOptions: [],
     ownerOptions: [],
     tasks: [],
+    messages: [
+      {
+        key: 'team-a:task-1',
+        task: {
+          id: 'task-1',
+          displayId: 'task-1',
+          subject: 'Task one',
+          status: 'pending',
+          owner: 'alice',
+          reviewState: selectedReviewState,
+          teamName: 'team-a',
+          teamDisplayName: 'Team A',
+        },
+        latestMessage: {
+          id: 'comment-1',
+          author: 'alice',
+          text: '需要你补充目标市场',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          type: 'regular',
+        },
+        unreadCount: 1,
+        updatedAtMs: Date.parse('2026-01-01T00:00:00.000Z'),
+      },
+    ],
     selectedKey: 'team-a:task-1',
     selectedTask: {
       key: 'team-a:task-1',
       task: {
         id: 'task-1',
+        displayId: 'task-1',
         subject: 'Task one',
         status: 'pending',
+        owner: 'alice',
+        reviewState: selectedReviewState,
         teamName: 'team-a',
         teamDisplayName: 'Team A',
       },
     },
+    selectedMessageKey: 'team-a:task-1',
+    selectedMessage: {
+      key: 'team-a:task-1',
+      task: {
+        id: 'task-1',
+        displayId: 'task-1',
+        subject: 'Task one',
+        status: 'pending',
+        owner: 'alice',
+        reviewState: selectedReviewState,
+        teamName: 'team-a',
+        teamDisplayName: 'Team A',
+      },
+      latestMessage: {
+        id: 'comment-1',
+        author: 'alice',
+        text: '需要你补充目标市场',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        type: 'regular',
+      },
+      unreadCount: 1,
+      updatedAtMs: Date.parse('2026-01-01T00:00:00.000Z'),
+    },
     selectTask,
+    selectMessage,
     selectReferencedTask,
     loading: false,
     error: null,
-    refresh: vi.fn(),
+    refresh: refreshTasks,
+    createTask: createTeamTask,
     updateOwner: vi.fn(() => Promise.resolve()),
+    approveTask,
+    requestChanges,
   }),
 }));
 
-vi.mock('@features/collaborative-workbench/renderer/hooks/useInboxThreads', () => ({
-  useInboxThreads: () => ({
-    threads: [
+vi.mock('@features/collaborative-workbench/renderer/hooks/useTaskWorkspaceNavigation', () => ({
+  useTaskWorkspaceNavigation: () => ({ openTask: vi.fn() }),
+}));
+
+vi.mock('@features/collaborative-workbench/renderer/hooks/useInboxTaskRecipients', () => ({
+  useInboxTaskRecipients: () => ({
+    requestedRecipient,
+    recipientOptions: [
       {
-        key: 'team-a:conversation-1',
         teamName: 'team-a',
         teamDisplayName: 'Team A',
-        participant: 'alice',
-        conversationId: 'conversation-1',
-        subject: 'Hello',
-        preview: 'Reply',
-        updatedAt: '2026-01-01T00:00:00.000Z',
-        messages: [],
-        unread: true,
-        draft: false,
+        memberName: 'alice',
+      },
+      {
+        kind: 'squad',
+        teamName: 'release-squad',
+        teamDisplayName: '小队',
+        memberName: '发版小队',
+        collaborationTeamSlug: 'release-squad',
+        memberCount: 3,
       },
     ],
-    selectedThread: {
-      key: 'team-a:conversation-1',
-      teamName: 'team-a',
-      teamDisplayName: 'Team A',
-      participant: 'alice',
-      conversationId: 'conversation-1',
-      subject: 'Hello',
-      preview: 'Reply',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-      messages: [],
-      unread: true,
-      draft: false,
-    },
-    selectedKey: 'team-a:conversation-1',
-    query: '',
-    setQuery: vi.fn(),
-    teamFilter: 'all',
-    setTeamFilter: vi.fn(),
-    teamOptions: [],
-    recipientOptions: [],
-    createThread: vi.fn(),
-    selectThread,
-    refresh: vi.fn(),
-    loading: false,
-    members: [],
-    sending: false,
-    sendError: null,
-    sendWarning: null,
-    sendDebugDetails: null,
-    lastResult: null,
-    navigationRequestAt: null,
-    sendMessage: vi.fn(),
+    navigationRequestAt: requestedRecipient?.requestedAt ?? null,
   }),
 }));
 
@@ -95,7 +137,7 @@ vi.mock('@renderer/components/team/dialogs/useGlobalTaskDetailModel', () => ({
   useGlobalTaskDetailModel: () => ({
     task: null,
     taskMap: new Map(),
-    members: [],
+    members: detailMembers,
     loading: false,
     isFullTeamLoaded: false,
     openTeam: vi.fn(),
@@ -111,36 +153,32 @@ vi.mock('@features/collaborative-workbench/renderer/ui/InboxTaskList', () => ({
   ),
 }));
 
-vi.mock('@features/collaborative-workbench/renderer/ui/InboxThreadList', () => ({
-  InboxThreadList: ({ onSelect }: { onSelect(key: string): void }) => (
-    <button type="button" onClick={() => onSelect('team-a:conversation-1')}>
-      MAIL LIST
-    </button>
-  ),
+vi.mock('@renderer/components/team/dialogs/ReviewDialog', () => ({
+  ReviewDialog: ({ open }: { open: boolean }) => (open ? <div>REVIEW DIALOG</div> : null),
 }));
 
-vi.mock('@features/collaborative-workbench/renderer/ui/InboxThreadDetail', () => ({
-  InboxThreadDetail: ({ onBack }: { onBack(): void }) => (
-    <div>
-      MAIL DETAIL
-      <button type="button" onClick={onBack}>
-        MAIL BACK
-      </button>
-    </div>
-  ),
+vi.mock('@renderer/components/team/members/AgentTuningDialog', () => ({
+  AgentTuningDialog: ({ open, member }: { open: boolean; member?: { name: string } | null }) =>
+    open ? <div>{`TUNING ${member?.name ?? ''}`}</div> : null,
 }));
 
 vi.mock('@renderer/components/team/dialogs/TaskDetailPanel', () => ({
   TaskDetailPanel: ({
     headerExtra,
     onScrollToTask,
+    commentSendLabel,
+    commentContextHint,
   }: {
     headerExtra: React.ReactNode;
     onScrollToTask?(taskId: string): void;
+    commentSendLabel?: string;
+    commentContextHint?: string;
   }) => (
     <div>
       DETAIL
       {headerExtra}
+      {commentSendLabel}
+      {commentContextHint}
       <button type="button" onClick={() => onScrollToTask?.('task-2')}>
         REF
       </button>
@@ -158,39 +196,234 @@ function buttonByText(host: HTMLElement, label: string): HTMLButtonElement {
   return button;
 }
 
+function setInputValue(input: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 afterEach(() => {
   document.body.innerHTML = '';
   selectTask.mockClear();
+  selectMessage.mockClear();
   selectReferencedTask.mockClear();
-  selectThread.mockClear();
+  createTeamTask.mockClear();
+  refreshTasks.mockClear();
+  approveTask.mockClear();
+  requestChanges.mockClear();
+  selectedReviewState = undefined;
+  detailMembers = [{ name: 'alice', agentId: 'agent-alice' }];
+  requestedRecipient = null;
   vi.unstubAllGlobals();
 });
 
 describe('CollaborativeInboxView compact navigation', () => {
-  it('uses an explicit list/detail transition and resolves referenced tasks', async () => {
+  it('renders task feedback as an inbox without private-message controls', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     const host = document.createElement('div');
     document.body.appendChild(host);
     const root = createRoot(host);
 
     await act(async () => {
-      root.render(<CollaborativeInboxView />);
+      root.render(<CollaborativeInboxView surface="inbox" />);
       await Promise.resolve();
     });
 
-    expect(buttonByText(host, 'MAIL LIST')).toBeTruthy();
+    expect(host.querySelector('[aria-label="任务反馈列表"]')).not.toBeNull();
+    expect(host.textContent).toContain('需要你补充目标市场');
+    expect(host.textContent).toContain('DETAIL');
+    expect(host.textContent).toContain('调教员工');
+    expect(host.textContent).toContain('新建后续任务');
+    expect(host.textContent).toContain('回复当前任务');
+    expect(host.textContent).toContain('不会创建新任务');
+    expect(host.textContent).not.toContain('私信');
+    expect(host.textContent).not.toContain('写私信');
+
+    act(() => root.unmount());
+  });
+
+  it('opens the inbox instead of navigating to an Agent when no owner can be resolved', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    detailMembers = [];
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
 
     await act(async () => {
-      buttonByText(host, 'MAIL LIST').click();
+      root.render(<CollaborativeInboxView surface="tasks" />);
       await Promise.resolve();
     });
-    expect(selectThread).toHaveBeenCalledWith('team-a:conversation-1');
-    expect(buttonByText(host, 'MAIL BACK')).toBeTruthy();
+    await act(async () => {
+      buttonByText(host, 'LIST').click();
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('打开收件箱');
+    expect(host.textContent).not.toContain('打开智能体');
 
     await act(async () => {
-      buttonByText(host, 'MAIL BACK').click();
-      buttonByText(host, '任务').click();
+      buttonByText(host, '打开收件箱').click();
       await Promise.resolve();
+    });
+    expect(selectMessage).toHaveBeenCalledWith('team-a:task-1');
+
+    act(() => root.unmount());
+  });
+
+  it('uses human review actions for a submitted deliverable', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    selectedReviewState = 'review';
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(<CollaborativeInboxView surface="inbox" />);
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('满意并归档');
+    expect(host.textContent).toContain('需要修改');
+    expect(host.textContent).not.toContain('新建后续任务');
+
+    await act(async () => {
+      buttonByText(host, '满意并归档').click();
+      await Promise.resolve();
+    });
+    expect(approveTask).toHaveBeenCalledWith('team-a', 'task-1');
+
+    await act(async () => {
+      buttonByText(host, '需要修改').click();
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('REVIEW DIALOG');
+
+    act(() => root.unmount());
+  });
+
+  it('separates tuning the Agent from creating a follow-up long-running task', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(<CollaborativeInboxView surface="inbox" />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      buttonByText(host, '调教员工').click();
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('TUNING alice');
+    expect(createTeamTask).not.toHaveBeenCalled();
+
+    await act(async () => {
+      buttonByText(host, '新建后续任务').click();
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('不会修改当前任务');
+
+    const subject = host.querySelector<HTMLInputElement>(
+      '[placeholder="例如：继续补充 Ozon 的站点差异和落地建议"]'
+    );
+    const description = host.querySelector<HTMLTextAreaElement>('textarea');
+    expect(subject).not.toBeNull();
+    expect(description?.value).toContain('基于任务 #task-1「Task one」继续：');
+
+    await act(async () => {
+      if (subject) setInputValue(subject, '继续调研 Ozon');
+      await Promise.resolve();
+    });
+    await act(async () => {
+      buttonByText(host, '创建并开始').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(createTeamTask).toHaveBeenCalledWith('team-a', {
+      subject: '继续调研 Ozon',
+      description: '基于任务 #task-1「Task one」继续：',
+      descriptionTaskRefs: [{ taskId: 'task-1', displayId: 'task-1', teamName: 'team-a' }],
+      related: ['task-1'],
+      owner: 'alice',
+      startImmediately: true,
+    });
+    expect(host.querySelector('[aria-label="任务反馈列表"]')).not.toBeNull();
+
+    act(() => root.unmount());
+  });
+
+  it('keeps selected context when an external action opens task creation', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    requestedRecipient = {
+      teamName: 'team-a',
+      memberName: 'alice',
+      requestedAt: Date.now(),
+      initialText: '把选中的分析继续整理成完整报告。',
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(<CollaborativeInboxView surface="inbox" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('交给 alice');
+    expect(host.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe(
+      '把选中的分析继续整理成完整报告。'
+    );
+
+    act(() => root.unmount());
+  });
+
+  it('creates a task for a selected Agent and keeps the task list/detail transition', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(<CollaborativeInboxView surface="tasks" />);
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).not.toContain('私信');
+    expect(host.textContent).not.toContain('写私信');
+    expect(buttonByText(host, '任务列表')).toBeTruthy();
+
+    await act(async () => {
+      buttonByText(host, '创建任务').click();
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('交给 alice');
+
+    const subject = host.querySelector<HTMLInputElement>(
+      '[placeholder="例如：调研 Ozon 的入驻流程、费用和风险"]'
+    );
+    expect(subject).not.toBeNull();
+    await act(async () => {
+      if (subject) setInputValue(subject, '调研 Ozon');
+      await Promise.resolve();
+    });
+    await act(async () => {
+      buttonByText(host, '创建并开始').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(createTeamTask).toHaveBeenCalledWith('team-a', {
+      subject: '调研 Ozon',
+      description: undefined,
+      owner: 'alice',
+      startImmediately: true,
+    });
+    expect(selectTask).toHaveBeenCalledWith('team-a:task-created');
+
+    await act(async () => {
       buttonByText(host, 'LIST').click();
       await Promise.resolve();
     });
@@ -203,12 +436,95 @@ describe('CollaborativeInboxView compact navigation', () => {
     });
     expect(selectReferencedTask).toHaveBeenCalledWith('task-2');
 
+    act(() => root.unmount());
+  });
+
+  it('creates a collaboration run when a squad is selected', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
+    fetchMock.mockResolvedValue({ ok: true } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
     await act(async () => {
-      buttonByText(host, '返回列表').click();
+      root.render(<CollaborativeInboxView surface="tasks" />);
       await Promise.resolve();
     });
-    expect(buttonByText(host, 'LIST')).toBeTruthy();
+    await act(async () => {
+      buttonByText(host, '创建任务').click();
+      await Promise.resolve();
+      buttonByText(host, '发版小队').click();
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('交给小队 · 发版小队');
 
+    const subject = host.querySelector<HTMLInputElement>(
+      '[placeholder="例如：调研 Ozon 的入驻流程、费用和风险"]'
+    );
+    await act(async () => {
+      if (subject) setInputValue(subject, '准备发布说明');
+      await Promise.resolve();
+      buttonByText(host, '创建并开始').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/collaboration/teams/release-squad/runs');
+    const requestBody = fetchMock.mock.calls[0]?.[1]?.body;
+    expect(typeof requestBody).toBe('string');
+    expect(JSON.parse(typeof requestBody === 'string' ? requestBody : '{}')).toEqual({
+      title: '准备发布说明',
+    });
+    expect(createTeamTask).not.toHaveBeenCalled();
+    expect(refreshTasks).toHaveBeenCalled();
+
+    act(() => root.unmount());
+  });
+
+  it('passes selected local input files with a newly created task', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(<CollaborativeInboxView surface="tasks" />);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      buttonByText(host, '创建任务').click();
+      await Promise.resolve();
+    });
+    const subject = host.querySelector<HTMLInputElement>(
+      '[placeholder="例如：调研 Ozon 的入驻流程、费用和风险"]'
+    );
+    const fileInput = host.querySelector<HTMLInputElement>('input[type="file"]');
+    const inputFile = new File(['# 客户资料'], '客户资料.md', { type: 'text/markdown' });
+
+    await act(async () => {
+      if (subject) setInputValue(subject, '整理客户资料');
+      if (fileInput) {
+        Object.defineProperty(fileInput, 'files', { configurable: true, value: [inputFile] });
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('客户资料.md');
+
+    await act(async () => {
+      buttonByText(host, '创建并开始').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(createTeamTask).toHaveBeenCalledWith(
+      'team-a',
+      expect.objectContaining({ subject: '整理客户资料' }),
+      [inputFile]
+    );
     act(() => root.unmount());
   });
 });

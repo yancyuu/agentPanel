@@ -52,7 +52,7 @@ describe('buildWorkflowCommandSuggestion', () => {
     expect(suggestion.searchText).toContain('/loop-scan');
   });
 
-  it('falls back to a useful Chinese description for known Hermit workflows', () => {
+  it('falls back to a useful Chinese description for known AgentCLI workflows', () => {
     const suggestion = buildWorkflowCommandSuggestion(
       prompt({ label: 'loop scan', description: undefined, safety: 'unknown' })
     );
@@ -73,7 +73,7 @@ describe('buildWorkflowCommandSuggestion', () => {
       })
     );
     expect(suggestion.description).toBe(
-      '诊断 Hermit、Claude Code、hermit-bridge 和 Loop runtime 健康。'
+      '诊断 AgentCLI、Claude Code、hermit-bridge 和 Loop runtime 健康。'
     );
   });
 });

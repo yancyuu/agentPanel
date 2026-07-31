@@ -14,7 +14,7 @@ async function createFixture() {
   const packageRoot = path.join(root, 'package with spaces');
   const hermitHome = path.join(root, '.hermit');
   await mkdir(path.join(packageRoot, 'bin'), { recursive: true });
-  await writeFile(path.join(packageRoot, 'bin', 'hermit.mjs'), '#!/usr/bin/env node\n');
+  await writeFile(path.join(packageRoot, 'bin', 'agentcli.mjs'), '#!/usr/bin/env node\n');
   return { packageRoot, hermitHome };
 }
 
@@ -29,20 +29,20 @@ describe('provisionAgentCliShim', () => {
       ...fixture,
       version: '1.0.0',
       platform: 'darwin',
-      nodeExecutable: '/Applications/Hermit Desktop.app/Contents/MacOS/Hermit Desktop',
+      nodeExecutable: '/Applications/AgentCLI Desktop.app/Contents/MacOS/AgentCLI Desktop',
     });
     const second = await provisionAgentCliShim({
       ...fixture,
       version: '1.0.0',
       platform: 'darwin',
-      nodeExecutable: '/Applications/Hermit Desktop.app/Contents/MacOS/Hermit Desktop',
+      nodeExecutable: '/Applications/AgentCLI Desktop.app/Contents/MacOS/AgentCLI Desktop',
     });
 
     expect(first.status).toBe('created');
     expect(second.status).toBe('unchanged');
     expect(await readFile(first.targetPath, 'utf8')).toContain('ELECTRON_RUN_AS_NODE=1');
     expect(await readFile(first.targetPath, 'utf8')).toContain(
-      "exec '/Applications/Hermit Desktop.app/Contents/MacOS/Hermit Desktop'"
+      "exec '/Applications/AgentCLI Desktop.app/Contents/MacOS/AgentCLI Desktop'"
     );
     expect((await stat(first.targetPath)).mode & 0o777).toBe(0o755);
     expect(
@@ -74,7 +74,7 @@ describe('provisionAgentCliShim', () => {
       ...fixture,
       version: '1.0.0',
       platform: 'win32',
-      nodeExecutable: 'C:\\Program Files\\Hermit\\Hermit.exe',
+      nodeExecutable: 'C:\\Program Files\\AgentCLI\\AgentCLI.exe',
     });
 
     expect(result.targetPath).toMatch(/agentcli\.cmd$/u);

@@ -22,6 +22,31 @@ function createHarness() {
       selectedWorkDir: patch.selectedWorkDir ?? '/code/project',
     })),
   };
+  const diagnosticRuns = {
+    getCurrent: vi.fn(async () => null),
+    start: vi.fn(
+      async (input: { actionId: string; title: string; prompt: string; workDir: string }) => ({
+        id: 'diag-1',
+        ...input,
+        status: 'running',
+      })
+    ),
+  };
+  const workspaceCleanup = {
+    scan: vi.fn(async (selectedWorkDir?: string) => ({
+      scannedAt: '2026-01-01T00:00:00.000Z',
+      selectedWorkDir,
+      candidates: [],
+      totalBytes: 0,
+      totalItems: 0,
+      scannedWorkspaces: 1,
+      warnings: [],
+    })),
+    clean: vi.fn(async (ids: string[], selectedWorkDir?: string) => ({
+      removedIds: ids,
+      selectedWorkDir,
+    })),
+  };
   const workflowPrompt = {
     list: vi.fn(async (folder: string) => ({ folder, prompts: [], warnings: [] })),
     read: vi.fn(async (folder: string, id: string) => ({ folder, id, content: '# workflow' })),
@@ -32,6 +57,8 @@ function createHarness() {
     ensureSystemManager,
     ensureAdminLoopInitialized,
     systemManagerConfig,
+    diagnosticRuns,
+    workspaceCleanup,
     workflowPrompt,
     assertTrustedBrowserOrigin,
   });
@@ -42,6 +69,8 @@ function createHarness() {
     ensureAdminLoopInitialized,
     ensureSystemManager,
     systemManagerConfig,
+    diagnosticRuns,
+    workspaceCleanup,
     workflowPrompt,
   };
 }
@@ -91,6 +120,57 @@ describe('system manager routes', () => {
     expect(harness.systemManagerConfig.updateConfig).toHaveBeenCalledWith({
       selectedWorkDir: '/code/next',
     });
+  });
+
+  it('persists and starts diagnostic runs through dedicated endpoints', async () => {
+    const harness = createHarness();
+
+    const current = await harness.app.inject({
+      method: 'GET',
+      url: '/api/system-manager/diagnostics/current',
+    });
+    const started = await harness.app.inject({
+      method: 'POST',
+      url: '/api/system-manager/diagnostics/run',
+      payload: {
+        actionId: 'task-health',
+        title: '任务积压检查',
+        prompt: '只读检查任务积压',
+      },
+    });
+
+    expect(current.statusCode).toBe(200);
+    expect(current.json()).toBeNull();
+    expect(started.statusCode).toBe(202);
+    expect(harness.diagnosticRuns.start).toHaveBeenCalledWith({
+      actionId: 'task-health',
+      title: '任务积压检查',
+      prompt: '只读检查任务积压',
+      workDir: '/code/project',
+    });
+  });
+
+  it('scans and cleans only through the dedicated cleanup service', async () => {
+    const harness = createHarness();
+
+    const scan = await harness.app.inject({
+      method: 'GET',
+      url: '/api/system-manager/cleanup/scan',
+    });
+    const clean = await harness.app.inject({
+      method: 'POST',
+      url: '/api/system-manager/cleanup',
+      payload: { ids: ['candidate-1', 'candidate-2'] },
+    });
+
+    expect(scan.statusCode).toBe(200);
+    expect(harness.workspaceCleanup.scan).toHaveBeenCalledWith('/code/project');
+    expect(clean.statusCode).toBe(200);
+    expect(harness.assertTrustedBrowserOrigin).toHaveBeenCalled();
+    expect(harness.workspaceCleanup.clean).toHaveBeenCalledWith(
+      ['candidate-1', 'candidate-2'],
+      '/code/project'
+    );
   });
 
   it('uses the configured commands folder for workflow list and read', async () => {

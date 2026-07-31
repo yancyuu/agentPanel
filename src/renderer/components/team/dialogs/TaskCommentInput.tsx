@@ -43,6 +43,9 @@ interface TaskCommentInputProps {
   replyTo: { author: string; text: string } | null;
   onClearReply: () => void;
   attachmentCapability?: TaskCommentAttachmentCapability;
+  placeholder?: string;
+  sendLabel?: string;
+  contextHint?: string;
 }
 
 interface PendingAttachment {
@@ -62,17 +65,9 @@ export const TaskCommentAttachmentPicker = ({
   capability: TaskCommentAttachmentCapability;
   disabled: boolean;
   onPick(): void;
-}>): React.JSX.Element => {
+}>): React.JSX.Element | null => {
   if (!capability.available) {
-    return (
-      <span
-        data-testid="task-comment-attachment-unavailable"
-        className="text-[10px] text-[var(--color-text-muted)]"
-        title={capability.unavailableReason}
-      >
-        {capability.unavailableReason ?? '当前环境不支持评论附件'}
-      </span>
-    );
+    return null;
   }
 
   return (
@@ -100,6 +95,9 @@ export const TaskCommentInput = ({
   replyTo,
   onClearReply,
   attachmentCapability = rendererApiCapabilities.taskCommentAttachments,
+  placeholder = '补充要求、回答问题，或指出需要纠正的地方…',
+  sendLabel = '发送',
+  contextHint,
 }: TaskCommentInputProps): React.JSX.Element => {
   const addTaskComment = useStore((s) => s.addTaskComment);
   const addingComment = useStore((s) => s.addingComment);
@@ -392,6 +390,10 @@ export const TaskCommentInput = ({
 
       {attachError ? <p className="mb-1 text-[10px] text-red-400">{attachError}</p> : null}
 
+      {contextHint ? (
+        <p className="mb-2 text-[11px] leading-5 text-[var(--color-text-muted)]">{contextHint}</p>
+      ) : null}
+
       <div className="relative" onPaste={handlePaste}>
         {attachmentCapability.available ? (
           <input
@@ -410,7 +412,7 @@ export const TaskCommentInput = ({
         <MentionableTextarea
           id={`task-comment-${taskId}`}
           className={replyTo ? 'rounded-t-none' : undefined}
-          placeholder="添加评论...（Enter 发送）"
+          placeholder={placeholder}
           value={draft.value}
           onValueChange={draft.setValue}
           suggestions={mentionSuggestions}
@@ -451,7 +453,7 @@ export const TaskCommentInput = ({
                 onClick={() => void handleSubmit()}
               >
                 <Send size={12} />
-                评论
+                {sendLabel}
               </button>
             </div>
           }

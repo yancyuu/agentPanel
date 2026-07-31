@@ -34,6 +34,8 @@ import { stripAgentBlocks } from '@shared/constants/agentBlocks';
 import { formatDistanceToNow } from 'date-fns';
 import { CheckCircle2, Eye, File, Loader2, MessageSquare, Reply, Send, X } from 'lucide-react';
 
+import { getVisibleTaskComments, sortTaskCommentsChronologically } from './taskCommentChronology';
+
 import type { MentionSuggestion } from '@renderer/types/mention';
 import type { ResolvedTeamMember, TaskAttachmentMeta, TaskComment } from '@shared/types';
 
@@ -125,14 +127,13 @@ export const TaskCommentsSection = ({
     return comments.slice(-MAX_COMMENTS_TO_RENDER);
   }, [comments]);
 
-  const sortedComments = useMemo(() => {
-    const list = [...cappedComments];
-    list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return list;
-  }, [cappedComments]);
+  const sortedComments = useMemo(
+    () => sortTaskCommentsChronologically(cappedComments),
+    [cappedComments]
+  );
 
   const visibleComments = useMemo(
-    () => sortedComments.slice(0, Math.min(visibleCount, sortedComments.length)),
+    () => getVisibleTaskComments(sortedComments, visibleCount),
     [sortedComments, visibleCount]
   );
 
@@ -209,6 +210,22 @@ export const TaskCommentsSection = ({
             <div className="mb-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2 text-[11px] text-[var(--color-text-muted)]">
               Showing the most recent {MAX_COMMENTS_TO_RENDER.toLocaleString()} comments to keep the
               UI responsive.
+            </div>
+          ) : null}
+
+          {sortedComments.length > visibleComments.length ? (
+            <div className="flex items-center justify-center pb-2">
+              <button
+                type="button"
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-[11px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)]"
+                onClick={() =>
+                  setVisibleCount((value) =>
+                    Math.min(sortedComments.length, value + VISIBLE_COMMENTS_STEP)
+                  )
+                }
+              >
+                显示更早的协作记录（{visibleComments.length}/{sortedComments.length}）
+              </button>
             </div>
           ) : null}
 
@@ -365,20 +382,6 @@ export const TaskCommentsSection = ({
               </AnimatedHeightReveal>
             ))}
           </div>
-
-          {sortedComments.length > visibleComments.length ? (
-            <div className="flex items-center justify-center pt-2">
-              <button
-                type="button"
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-[11px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)]"
-                onClick={() =>
-                  setVisibleCount((v) => Math.min(sortedComments.length, v + VISIBLE_COMMENTS_STEP))
-                }
-              >
-                显示更多评论（{visibleComments.length}/{sortedComments.length}）
-              </button>
-            </div>
-          ) : null}
         </div>
       ) : null}
 

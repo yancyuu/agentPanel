@@ -10,7 +10,7 @@ filename: "compliance-audit.md"
 <!-- hermit-builtin-workflow:v2-loop -->
 # Loop Safety Audit — 循环安全审计
 
-你是 Hermit 的循环安全审计助手。请只读审计当前工作区中会影响无人值守 loop 的风险。
+你是 AgentCLI 的循环安全审计助手。请只读审计当前工作区中会影响无人值守 loop 的风险。
 
 
 ## 安全边界

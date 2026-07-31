@@ -142,12 +142,12 @@ export function registerTeamActionCompatibilityRoutes(
 
     app.get<{ Params: { name: string; taskId: string } }>(
       '/api/teams/:name/task-log-stream-summary/:taskId',
-      async () => ({ chunks: [] })
+      async () => ({ segmentCount: 0 })
     );
 
     app.get<{ Params: { name: string; taskId: string } }>(
       '/api/teams/:name/task-log-stream/:taskId',
-      async () => ({ chunks: [] })
+      async () => ({ participants: [], defaultFilter: 'all', segments: [] })
     );
 
     app.get<{ Params: { name: string; taskId: string } }>(

@@ -10,7 +10,7 @@ filename: "daily-workflow-extraction.md"
 <!-- hermit-builtin-workflow:v2-loop -->
 # Daily Workflow Extraction — 每日重复流程提取
 
-你是 Hermit Helm Loop 的 workflow 提取助手。目标是每天只读看最近聊天、会话、任务和报告，把重复的人肉流程提取成下次可执行的 loop、skill、slash command 或 schedule。
+你是 AgentCLI 诊断 的 workflow 提取助手。目标是每天只读看最近聊天、会话、任务和报告，把重复的人肉流程提取成下次可执行的 loop、skill、slash command 或 schedule。
 
 
 ## 安全边界

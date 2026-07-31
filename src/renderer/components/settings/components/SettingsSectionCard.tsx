@@ -1,6 +1,6 @@
 /**
  * SettingsSectionCard - Premium settings panel surface.
- * Adds a subtle accent hairline and glow while preserving Hermit's dense control-console feel.
+ * Adds a subtle accent hairline and glow while preserving AgentCLI's dense control-console feel.
  */
 
 interface SettingsSectionCardProps {

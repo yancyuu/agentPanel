@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { AdvancedConnectionsFeature } from '@features/advanced-connections/renderer';
 import { api } from '@renderer/api';
 import { Button } from '@renderer/components/ui/button';
 import {
@@ -167,6 +168,8 @@ export const AdvancedSection = (_props: AdvancedSectionProps): React.JSX.Element
 
   return (
     <div className="space-y-5">
+      <AdvancedConnectionsFeature />
+
       <SettingsSectionCard
         title="服务配置"
         description={`编辑 ${PRODUCT_NAME} 运行配置，或在配置变更后重启本地服务。`}

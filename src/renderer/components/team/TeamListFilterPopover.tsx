@@ -117,7 +117,7 @@ export const TeamListFilterPopover = ({
               />
               <span className="flex items-center gap-1.5">
                 <span className="size-1.5 rounded-full bg-emerald-400" />
-                在线
+                可用
                 <span className="text-[var(--color-text-muted)]">({runningCount})</span>
               </span>
             </label>

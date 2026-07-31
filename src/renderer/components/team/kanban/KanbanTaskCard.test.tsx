@@ -86,7 +86,7 @@ describe('KanbanTaskCard change badge', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders the No changes badge when changePresence is no_changes', async () => {
+  it('does not show a final no-changes badge while the task is still running', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     const host = document.createElement('div');
     document.body.appendChild(host);
@@ -115,7 +115,7 @@ describe('KanbanTaskCard change badge', () => {
       await Promise.resolve();
     });
 
-    expect(host.textContent).toContain('无变更');
+    expect(host.textContent).not.toContain('无文件变更');
 
     await act(async () => {
       root.unmount();

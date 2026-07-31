@@ -130,12 +130,12 @@ describe('renderRowsPanel', () => {
 
   it('renders array values as multiple rows without dropping later lines', () => {
     const lines = renderRowsPanel('在线说明书', [
-      ['交给 Claude Code', ['请先阅读 AgentCli 在线说明书：https://yancyuu.github.io/agentcli/', '后续回答和操作请以这份说明书为准'], 'ok'],
+      ['交给 Claude Code', ['请先阅读 AgentCLI 在线说明书：https://yancyuu.github.io/agentcli/', '后续回答和操作请以这份说明书为准'], 'ok'],
     ]);
 
     const joined = lines.join('\n');
     expect(joined).toContain('交给 Claude Code');
-    expect(joined).toContain('请先阅读 AgentCli 在线说明书');
+    expect(joined).toContain('请先阅读 AgentCLI 在线说明书');
     expect(joined).toContain('后续回答和操作请以这份说明书为准');
   });
 });

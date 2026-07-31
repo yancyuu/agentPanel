@@ -1,12 +1,24 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
-import type { Task, TaskStatus } from '../services/team-management/TeamWorkspaceService';
+import { TEXT_FILE_EXTENSIONS } from '@shared/constants/attachments';
+
+import { archiveTaskDeliverable } from '../services/team-management/TaskDeliverableArchiveService';
+import {
+  type Task,
+  type TaskStatus,
+  teamRoot,
+} from '../services/team-management/TeamWorkspaceService';
+
 import type {
   GlobalTask,
+  TaskAttachmentMeta,
   TaskComment,
   TaskRef,
   TeamTask,
   TeamTaskStatus,
+  UpdateKanbanPatch,
 } from '@shared/types/team';
 import type { FastifyInstance } from 'fastify';
 
@@ -17,13 +29,20 @@ interface TeamTaskRouteDependencies {
     payload: {
       title: string;
       description?: string;
+      descriptionTaskRefs?: TaskRef[];
+      prompt?: string;
+      promptTaskRefs?: TaskRef[];
       assignee?: string | null;
       status?: TaskStatus;
+      blockedBy?: string[];
+      related?: string[];
+      createdBy?: string;
     }
   ): Promise<Task>;
   patchTask(teamName: string, taskId: string, patch: Partial<Task>): Promise<Task>;
   dispatchTask(teamName: string, task: Task): Promise<void>;
   listProjects(): Promise<{ name: string }[]>;
+  listTeams?(): Promise<{ slug: string }[]>;
   readTeamManifest(teamName: string): Promise<{
     slug: string;
     displayName?: string;
@@ -86,8 +105,15 @@ export function toTeamTask(task: Task): TeamTaskResponse {
     activeForm: task.activeForm,
     prompt: task.prompt,
     promptTaskRefs: task.promptTaskRefs,
-    status: statusMap[task.status] ?? 'pending',
+    status:
+      task.reviewState === 'review' || task.reviewState === 'approved'
+        ? 'completed'
+        : (statusMap[task.status] ?? 'pending'),
     owner: task.assignee ?? undefined,
+    ownerAgentId: task.assigneeAgentId,
+    parentTaskId: task.parentTaskId,
+    collaborationRunId: task.collaborationRunId,
+    taskKind: task.taskKind,
     createdBy: task.createdBy,
     workIntervals: task.workIntervals,
     historyEvents: task.historyEvents,
@@ -97,7 +123,7 @@ export function toTeamTask(task: Task): TeamTaskResponse {
     comments: task.comments,
     needsClarification: task.needsClarification,
     deletedAt: task.deletedAt,
-    attachments: task.attachments,
+    attachments: task.attachments?.map(({ filePath: _filePath, ...attachment }) => attachment),
     reviewState: task.reviewState,
     sourceMessageId: task.sourceMessageId,
     sourceMessage: task.sourceMessage,
@@ -115,6 +141,24 @@ export function activeTasks<T extends Pick<Task, 'result'>>(tasks: T[]): T[] {
   return tasks.filter((task) => !isSoftDeletedTask(task));
 }
 
+function isTaskCancellationComment(text: string): boolean {
+  const normalized = text
+    .trim()
+    .replace(/[\s，。！？、,.!?]/gu, '')
+    .toLocaleLowerCase();
+  return new Set(['任务取消', '取消任务', '不用做了', '停止任务', '终止任务']).has(normalized);
+}
+
+async function listTaskBoardNames(dependencies: TeamTaskRouteDependencies): Promise<string[]> {
+  const [projects, teams] = await Promise.all([
+    dependencies.listProjects(),
+    dependencies.listTeams?.() ?? Promise.resolve([]),
+  ]);
+  return [
+    ...new Set([...projects.map((project) => project.name), ...teams.map((team) => team.slug)]),
+  ];
+}
+
 interface TaskBusMatch {
   task: Task;
   ownerTeamName: string;
@@ -126,24 +170,24 @@ async function resolveTaskBusTask(
   taskId: string
 ): Promise<TaskBusMatch | 'ambiguous' | null> {
   const matches: TaskBusMatch[] = [];
-  const projects = await dependencies.listProjects();
-  for (const project of projects) {
+  const taskBoardNames = await listTaskBoardNames(dependencies);
+  for (const taskBoardName of taskBoardNames) {
     try {
       const [tasks, manifest] = await Promise.all([
-        dependencies.readTasks(project.name),
-        dependencies.readTeamManifest(project.name).catch(() => null),
+        dependencies.readTasks(taskBoardName),
+        dependencies.readTeamManifest(taskBoardName).catch(() => null),
       ]);
       for (const task of activeTasks(tasks)) {
         if (task.id === taskId || task.id.startsWith(taskId)) {
           matches.push({
             task,
-            ownerTeamName: project.name,
-            ownerTeamSlug: manifest?.slug || task.teamSlug || project.name,
+            ownerTeamName: taskBoardName,
+            ownerTeamSlug: manifest?.slug || task.teamSlug || taskBoardName,
           });
         }
       }
     } catch {
-      // Ignore projects without a readable local task board.
+      // Ignore teams without a readable local task board.
     }
   }
   if (matches.length === 0) return null;
@@ -151,12 +195,16 @@ async function resolveTaskBusTask(
   return matches[0];
 }
 
+function taskAssigneeIdentity(task: Task): string | null | undefined {
+  return task.assigneeAgentId ?? task.assignee;
+}
+
 function canReadTaskBusTask(match: TaskBusMatch, actorTeam: string): boolean {
-  return match.ownerTeamSlug === actorTeam || match.task.assignee === actorTeam;
+  return match.ownerTeamSlug === actorTeam || taskAssigneeIdentity(match.task) === actorTeam;
 }
 
 function canExecuteTaskBusTask(match: TaskBusMatch, actorTeam: string): boolean {
-  return (match.task.assignee ?? match.ownerTeamSlug) === actorTeam;
+  return taskAssigneeIdentity(match.task) === actorTeam || match.ownerTeamSlug === actorTeam;
 }
 
 function normalizeTaskBusActor(value: unknown): string | null {
@@ -212,6 +260,64 @@ function hasUnsupportedCommentAttachments(value: unknown): boolean {
   return value !== undefined && (!Array.isArray(value) || value.length > 0);
 }
 
+const TASK_ATTACHMENT_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  'application/json',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/zip',
+  'application/octet-stream',
+]);
+const TASK_ATTACHMENT_EXTENSIONS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'pdf',
+  'txt',
+  'md',
+  'csv',
+  'tsv',
+  'json',
+  'jsonl',
+  'docx',
+  'xlsx',
+  'pptx',
+  'zip',
+]);
+
+function isSupportedTaskAttachment(filename: string, mimeType: string): boolean {
+  const extension = filename.split('.').pop()?.toLocaleLowerCase() ?? '';
+  return (
+    TASK_ATTACHMENT_MIME_TYPES.has(mimeType) &&
+    (TASK_ATTACHMENT_EXTENSIONS.has(extension) || TEXT_FILE_EXTENSIONS.has(extension))
+  );
+}
+const MAX_TASK_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+function isSafeAttachmentToken(value: string): boolean {
+  return /^[a-zA-Z0-9_-]+$/u.test(value);
+}
+
+function taskAttachmentPath(teamName: string, taskId: string, attachmentId: string): string {
+  if (![teamName, taskId, attachmentId].every(isSafeAttachmentToken)) {
+    throw new Error('invalid attachment path');
+  }
+  const root = path.resolve(teamRoot(teamName), 'tasks', 'attachments');
+  const filePath = path.resolve(root, taskId, `${attachmentId}.data`);
+  if (!filePath.startsWith(`${root}${path.sep}`)) throw new Error('invalid attachment path');
+  return filePath;
+}
+
 function appendUnique(values: string[] | undefined, value: string): string[] {
   return values?.includes(value) ? values : [...(values ?? []), value];
 }
@@ -237,12 +343,26 @@ function registerCoreRoutes(app: FastifyInstance, dependencies: TeamTaskRouteDep
       const body = request.body ?? {};
       const title = (body.subject ?? body.title) as string | undefined;
       if (!title) return reply.code(400).send({ error: 'title/subject required' });
+      const assignee = (body.owner ?? body.assignee) as string | null | undefined;
+      const shouldStart = Boolean(assignee) && body.startImmediately !== false;
       const task = await dependencies.createTask(request.params.name, {
         title,
         description: body.description as string | undefined,
-        assignee: (body.owner ?? body.assignee) as string | null | undefined,
-        status: body.status ? toTaskStatus(body.status as string) : 'todo',
+        descriptionTaskRefs: normalizeTaskRefs(body.descriptionTaskRefs),
+        prompt: body.prompt as string | undefined,
+        promptTaskRefs: normalizeTaskRefs(body.promptTaskRefs),
+        assignee,
+        status: shouldStart ? 'doing' : body.status ? toTaskStatus(body.status as string) : 'todo',
+        blockedBy: Array.isArray(body.blockedBy)
+          ? body.blockedBy.filter((value): value is string => typeof value === 'string')
+          : undefined,
+        related: Array.isArray(body.related)
+          ? body.related.filter((value): value is string => typeof value === 'string')
+          : undefined,
+        createdBy: 'user',
       });
+      if (shouldStart) await dependencies.dispatchTask(request.params.name, task).catch(() => {});
+      dependencies.broadcastTaskChange?.(request.params.name, task.id);
       return toTeamTask(task);
     }
   );
@@ -267,7 +387,7 @@ function registerCoreRoutes(app: FastifyInstance, dependencies: TeamTaskRouteDep
       if (isManualInProgressExitBlocked(existingTask?.status, nextStatus)) {
         return reply.code(409).send({
           ok: false,
-          error: 'Agent 正在处理中，不能手动完成或取消。请等待 agent 通过 Hermit CLI 提交结果。',
+          error: 'Agent 正在处理中，不能手动完成或取消。请等待 Agent 通过 AgentCLI 提交结果。',
         });
       }
 
@@ -327,7 +447,7 @@ function createRequestReviewHandler(dependencies: TeamTaskRouteDependencies): Re
       if (existingTask?.status === 'doing') {
         return reply.code(409).send({
           ok: false,
-          error: 'Agent 正在处理中，不能手动提交审核。请等待 agent 通过 Hermit CLI 提交结果。',
+          error: 'Agent 正在处理中，不能手动提交审核。请等待 Agent 通过 AgentCLI 提交结果。',
         });
       }
       const task = await dependencies.patchTask(request.params.name, request.params.id, {
@@ -340,17 +460,157 @@ function createRequestReviewHandler(dependencies: TeamTaskRouteDependencies): Re
   };
 }
 
+type UpdateKanbanHandler = (
+  request: { params: { name: string; id: string }; body?: unknown },
+  reply: { code(statusCode: number): { send(payload: unknown): unknown } }
+) => Promise<unknown>;
+
+function isUpdateKanbanPatch(value: unknown): value is UpdateKanbanPatch {
+  if (!value || typeof value !== 'object') return false;
+  const patch = value as Record<string, unknown>;
+  if (patch.op === 'remove') return true;
+  if (patch.op === 'set_column') {
+    return patch.column === 'review' || patch.column === 'approved';
+  }
+  return patch.op === 'request_changes';
+}
+
+function createUpdateKanbanHandler(dependencies: TeamTaskRouteDependencies): UpdateKanbanHandler {
+  return async (request, reply): Promise<unknown> => {
+    if (!isUpdateKanbanPatch(request.body)) {
+      return reply.code(400).send({ ok: false, error: 'invalid kanban update' });
+    }
+    const tasks = await dependencies.readTasks(request.params.name);
+    const existingTask = tasks.find((task) => task.id === request.params.id);
+    if (!existingTask) return reply.code(404).send({ ok: false, error: 'task not found' });
+
+    const now = new Date();
+    const timestamp = now.toISOString();
+    const historyEvents = existingTask.historyEvents ?? [];
+
+    if (request.body.op === 'remove') {
+      if (existingTask.status === 'doing') {
+        return reply.code(409).send({ ok: false, error: 'Agent 正在处理中，不能删除任务。' });
+      }
+      await dependencies.patchTask(request.params.name, existingTask.id, {
+        status: 'done',
+        result: '__deleted__',
+        deletedAt: timestamp,
+      });
+      dependencies.broadcastTaskChange?.(request.params.name, existingTask.id);
+      return { ok: true };
+    }
+
+    if (request.body.op === 'set_column' && request.body.column === 'approved') {
+      if (!existingTask.result?.trim() || existingTask.result === '__deleted__') {
+        return reply.code(409).send({ ok: false, error: '任务还没有可归档的交付结果。' });
+      }
+      await archiveTaskDeliverable({
+        teamName: request.params.name,
+        task: existingTask,
+        approvedAt: now,
+      });
+      const task = await dependencies.patchTask(request.params.name, existingTask.id, {
+        status: 'done',
+        reviewState: 'approved',
+        historyEvents: [
+          ...historyEvents,
+          {
+            id: randomUUID(),
+            type: 'review_approved',
+            from: existingTask.reviewState ?? 'review',
+            to: 'approved',
+            actor: 'user',
+            timestamp,
+            note: '用户确认交付结果并归档。',
+          },
+        ],
+        comments: [
+          ...(existingTask.comments ?? []),
+          {
+            id: randomUUID(),
+            author: 'user',
+            text: '交付结果已确认并归档。',
+            createdAt: timestamp,
+            type: 'review_approved',
+          },
+        ],
+      });
+      dependencies.broadcastTaskChange?.(request.params.name, existingTask.id);
+      return { ok: true, task: toTeamTask(task) };
+    }
+
+    if (request.body.op === 'set_column' && request.body.column === 'review') {
+      const task = await dependencies.patchTask(request.params.name, existingTask.id, {
+        status: 'done',
+        reviewState: 'review',
+        historyEvents: [
+          ...historyEvents,
+          {
+            id: randomUUID(),
+            type: 'review_started',
+            from: existingTask.reviewState ?? 'none',
+            to: 'review',
+            actor: 'user',
+            timestamp,
+          },
+        ],
+      });
+      dependencies.broadcastTaskChange?.(request.params.name, existingTask.id);
+      return { ok: true, task: toTeamTask(task) };
+    }
+
+    if (request.body.op !== 'request_changes') {
+      return reply.code(400).send({ ok: false, error: 'unsupported kanban update' });
+    }
+    const comment = request.body.comment?.trim() || '请根据反馈修改当前交付结果。';
+    const taskRefs = normalizeTaskRefs(request.body.taskRefs);
+    const task = await dependencies.patchTask(request.params.name, existingTask.id, {
+      status: existingTask.assignee ? 'doing' : 'todo',
+      reviewState: 'needsFix',
+      needsClarification: undefined,
+      historyEvents: [
+        ...historyEvents,
+        {
+          id: randomUUID(),
+          type: 'review_changes_requested',
+          from: existingTask.reviewState ?? 'review',
+          to: 'needsFix',
+          actor: 'user',
+          timestamp,
+          note: comment,
+        },
+      ],
+      comments: [
+        ...(existingTask.comments ?? []),
+        {
+          id: randomUUID(),
+          author: 'user',
+          text: comment,
+          createdAt: timestamp,
+          type: 'regular',
+          taskRefs,
+        },
+      ],
+    });
+    if (task.assignee) await dependencies.dispatchTask(request.params.name, task);
+    dependencies.broadcastTaskChange?.(request.params.name, existingTask.id);
+    return { ok: true, task: toTeamTask(task) };
+  };
+}
+
 function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteDependencies): void {
   app.get('/api/teams/tasks', async () => {
     try {
       const allTasks: GlobalTaskResponse[] = [];
-      const projects = await dependencies.listProjects();
-      for (const project of projects) {
+      const taskBoardNames = await listTaskBoardNames(dependencies);
+      for (const taskBoardName of taskBoardNames) {
         try {
-          const tasks = activeTasks(await dependencies.readTasks(project.name));
-          const manifest = await dependencies.readTeamManifest(project.name).catch(() => null);
+          const tasks = activeTasks(await dependencies.readTasks(taskBoardName));
+          const manifest = await dependencies.readTeamManifest(taskBoardName).catch(() => null);
           for (const task of tasks) {
-            const teamName = manifest?.slug || task.teamSlug || project.name;
+            if (task.taskKind === 'subtask') continue;
+            const teamName = manifest?.slug || task.teamSlug || taskBoardName;
             allTasks.push({
               ...toTeamTask(task),
               teamName,
@@ -359,7 +619,7 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
             });
           }
         } catch {
-          // Skip projects without a readable local task board.
+          // Skip teams without a readable local task board.
         }
       }
       return allTasks;
@@ -373,16 +633,16 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
     if (!actorTeam) return reply.code(400).send({ ok: false, error: 'team required' });
     try {
       const visibleTasks: GlobalTaskResponse[] = [];
-      const projects = await dependencies.listProjects();
-      for (const project of projects) {
+      const taskBoardNames = await listTaskBoardNames(dependencies);
+      for (const taskBoardName of taskBoardNames) {
         try {
           const [tasks, manifest] = await Promise.all([
-            dependencies.readTasks(project.name),
-            dependencies.readTeamManifest(project.name).catch(() => null),
+            dependencies.readTasks(taskBoardName),
+            dependencies.readTeamManifest(taskBoardName).catch(() => null),
           ]);
-          const ownerTeamSlug = manifest?.slug || project.name;
+          const ownerTeamSlug = manifest?.slug || taskBoardName;
           for (const task of activeTasks(tasks)) {
-            const match = { task, ownerTeamName: project.name, ownerTeamSlug };
+            const match = { task, ownerTeamName: taskBoardName, ownerTeamSlug };
             if (!canReadTaskBusTask(match, actorTeam)) continue;
             visibleTasks.push({
               ...toTeamTask(task),
@@ -392,7 +652,7 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
             });
           }
         } catch {
-          // Ignore projects without a readable local task board.
+          // Ignore teams without a readable local task board.
         }
       }
       return visibleTasks;
@@ -445,7 +705,7 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
     }
     const comment: TaskComment = {
       id: randomUUID(),
-      author: actorTeam,
+      author: match.task.assignee ?? actorTeam,
       text,
       createdAt: new Date().toISOString(),
       type: 'regular',
@@ -507,6 +767,7 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
       status: 'done',
       result,
       needsClarification: undefined,
+      reviewState: 'review',
     });
     dependencies.broadcastTaskChange?.(match.ownerTeamSlug, match.task.id);
     return { ok: true, task: toTeamTask(task), teamName: match.ownerTeamSlug };
@@ -517,9 +778,9 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
     createRequestReviewHandler(dependencies)
   );
 
-  app.patch<{ Params: { name: string; id: string }; Body: Record<string, unknown> }>(
+  app.patch<{ Params: { name: string; id: string }; Body: UpdateKanbanPatch }>(
     '/api/teams/:name/tasks/:id/kanban',
-    async () => ({ ok: true })
+    createUpdateKanbanHandler(dependencies)
   );
 
   app.patch<{ Params: { name: string; id: string }; Body: { status?: string } }>(
@@ -533,7 +794,7 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
         if (isManualInProgressExitBlocked(existingTask?.status, nextStatus)) {
           return reply.code(409).send({
             ok: false,
-            error: 'Agent 正在处理中，不能手动完成或取消。请等待 agent 通过 Hermit CLI 提交结果。',
+            error: 'Agent 正在处理中，不能手动完成或取消。请等待 Agent 通过 AgentCLI 提交结果。',
           });
         }
         const task = await dependencies.patchTask(request.params.name, request.params.id, {
@@ -649,6 +910,125 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
 
   app.post<{
     Params: { name: string; id: string };
+    Body: {
+      attachmentId?: string;
+      filename?: string;
+      mimeType?: string;
+      base64Data?: string;
+    };
+  }>(
+    '/api/teams/:name/tasks/:id/attachments',
+    { bodyLimit: 30 * 1024 * 1024 },
+    async (request, reply) => {
+      const attachmentId = request.body?.attachmentId?.trim() ?? '';
+      const filename = request.body?.filename?.trim() ?? '';
+      const mimeType = request.body?.mimeType?.trim() ?? '';
+      const base64Data = request.body?.base64Data?.trim() ?? '';
+      if (
+        !isSafeAttachmentToken(request.params.id) ||
+        !isSafeAttachmentToken(attachmentId) ||
+        !filename ||
+        !isSupportedTaskAttachment(filename, mimeType) ||
+        !base64Data
+      ) {
+        return reply.code(400).send({ error: 'invalid attachment payload' });
+      }
+
+      const data = Buffer.from(base64Data, 'base64');
+      if (data.length === 0 || data.length > MAX_TASK_ATTACHMENT_BYTES) {
+        return reply.code(400).send({ error: 'attachment must be between 1 byte and 20 MB' });
+      }
+
+      try {
+        const tasks = await dependencies.readTasks(request.params.name);
+        const existingTask = tasks.find((task) => task.id === request.params.id);
+        if (!existingTask) return reply.code(404).send({ error: 'not found' });
+        const filePath = taskAttachmentPath(request.params.name, request.params.id, attachmentId);
+        await mkdir(path.dirname(filePath), { recursive: true });
+        await writeFile(filePath, data, { mode: 0o600 });
+        const attachment: TaskAttachmentMeta = {
+          id: attachmentId,
+          filename,
+          mimeType,
+          size: data.length,
+          addedAt: new Date().toISOString(),
+          filePath,
+        };
+        await dependencies.patchTask(request.params.name, request.params.id, {
+          attachments: [
+            ...(existingTask.attachments ?? []).filter((item) => item.id !== attachmentId),
+            attachment,
+          ],
+        });
+        return {
+          id: attachment.id,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+          addedAt: attachment.addedAt,
+        };
+      } catch (error) {
+        return reply.code(500).send(dependencies.reply500(error));
+      }
+    }
+  );
+
+  app.get<{ Params: { name: string; id: string; attachmentId: string } }>(
+    '/api/teams/:name/tasks/:id/attachments/:attachmentId',
+    async (request, reply) => {
+      if (
+        !isSafeAttachmentToken(request.params.id) ||
+        !isSafeAttachmentToken(request.params.attachmentId)
+      ) {
+        return reply.code(400).send({ error: 'invalid attachment id' });
+      }
+      try {
+        const tasks = await dependencies.readTasks(request.params.name);
+        const task = tasks.find((entry) => entry.id === request.params.id);
+        const attachment = task?.attachments?.find(
+          (entry) => entry.id === request.params.attachmentId
+        );
+        if (!task || !attachment) return reply.code(404).send({ error: 'not found' });
+        const data = await readFile(
+          taskAttachmentPath(request.params.name, request.params.id, request.params.attachmentId)
+        );
+        return { base64Data: data.toString('base64') };
+      } catch (error) {
+        return reply.code(404).send(dependencies.reply500(error));
+      }
+    }
+  );
+
+  app.delete<{ Params: { name: string; id: string; attachmentId: string } }>(
+    '/api/teams/:name/tasks/:id/attachments/:attachmentId',
+    async (request, reply) => {
+      if (
+        !isSafeAttachmentToken(request.params.id) ||
+        !isSafeAttachmentToken(request.params.attachmentId)
+      ) {
+        return reply.code(400).send({ error: 'invalid attachment id' });
+      }
+      try {
+        const tasks = await dependencies.readTasks(request.params.name);
+        const task = tasks.find((entry) => entry.id === request.params.id);
+        if (!task) return reply.code(404).send({ error: 'not found' });
+        const attachments = (task.attachments ?? []).filter(
+          (entry) => entry.id !== request.params.attachmentId
+        );
+        await rm(
+          taskAttachmentPath(request.params.name, request.params.id, request.params.attachmentId),
+          { force: true }
+        );
+        await dependencies.patchTask(request.params.name, request.params.id, { attachments });
+        return { ok: true };
+      } catch (error) {
+        return reply.code(500).send(dependencies.reply500(error));
+      }
+    }
+  );
+
+  app.post<{
+    Params: { name: string; id: string };
     Body: { text?: string; taskRefs?: unknown[]; attachments?: unknown[] };
   }>('/api/teams/:name/tasks/:id/comments', async (request, reply) => {
     const text = request.body?.text?.trim();
@@ -671,9 +1051,18 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
         type: 'regular',
         taskRefs: normalizeTaskRefs(request.body?.taskRefs),
       };
-      await dependencies.patchTask(request.params.name, request.params.id, {
+      const cancellationRequested = isTaskCancellationComment(text);
+      const task = await dependencies.patchTask(request.params.name, request.params.id, {
         comments: [...(existingTask.comments ?? []), comment],
+        needsClarification: undefined,
+        ...(cancellationRequested
+          ? { status: 'done', result: '__deleted__', reviewState: undefined }
+          : { status: existingTask.assignee ? 'doing' : existingTask.status }),
       });
+      if (task.assignee && !cancellationRequested) {
+        await dependencies.dispatchTask(request.params.name, task).catch(() => {});
+      }
+      dependencies.broadcastTaskChange?.(request.params.name, request.params.id);
       return comment;
     } catch (error) {
       return reply.code(500).send(dependencies.reply500(error));
@@ -732,9 +1121,9 @@ function registerReviewAliasRoutes(
     createRequestReviewHandler(dependencies)
   );
 
-  app.patch<{ Params: { name: string; id: string }; Body: Record<string, unknown> }>(
+  app.patch<{ Params: { name: string; id: string }; Body: UpdateKanbanPatch }>(
     '/api/teams/:name/kanban/:id',
-    async () => ({ ok: true })
+    createUpdateKanbanHandler(dependencies)
   );
 
   app.put<{ Params: { name: string } }>('/api/teams/:name/kanban/column-order', async () => ({

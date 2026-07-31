@@ -1,7 +1,7 @@
 /**
  * Renderer API client for cc-connect /api/v1/providers endpoints.
  *
- * Hermit intentionally does not keep a local providers fallback. The
+ * AgentCLI intentionally does not keep a local providers fallback. The
  * cc-connect sidecar is the source of truth for provider/channel management.
  */
 
@@ -64,7 +64,7 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
       throw new Error(`Provider API 请求超时：${path}`);
     }
     if (error instanceof TypeError && error.message === 'Failed to fetch') {
-      throw new Error(`无法连接 Provider API：${url}。请确认 Hermit 本地后端正在运行。`);
+      throw new Error(`无法连接 Provider API：${url}。请确认 AgentCLI 本地后端正在运行。`);
     }
     throw error;
   } finally {

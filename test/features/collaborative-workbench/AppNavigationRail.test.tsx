@@ -12,18 +12,15 @@ import type { AppNavigationRailProps } from '@features/collaborative-workbench/r
 function createProps(overrides: Partial<AppNavigationRailProps> = {}): AppNavigationRailProps {
   return {
     activeArea: 'inbox',
-    unreadCount: 3,
     inboxHasUnread: true,
     onOpenInbox: vi.fn(),
+    onOpenTasks: vi.fn(),
     onOpenOverview: vi.fn(),
     onOpenAgents: vi.fn(),
+    onOpenCollaboration: vi.fn(),
     onOpenSchedules: vi.fn(),
-    onOpenExtensions: vi.fn(),
-    onOpenNotifications: vi.fn(),
     onOpenSystemManager: vi.fn(),
     onOpenSettings: vi.fn(),
-    onOpenSearch: vi.fn(),
-    onOpenCommunity: vi.fn(),
     ...overrides,
   };
 }
@@ -53,7 +50,8 @@ describe('AppNavigationRail', () => {
   });
 
   it('maps every existing tab family to the correct application area', () => {
-    expect(getWorkbenchNavigationArea({ type: 'tasks' })).toBe('inbox');
+    expect(getWorkbenchNavigationArea({ type: 'inbox' })).toBe('inbox');
+    expect(getWorkbenchNavigationArea({ type: 'tasks' })).toBe('tasks');
     expect(getWorkbenchNavigationArea({ type: 'dashboard' })).toBe('overview');
     expect(getWorkbenchNavigationArea({ type: 'session' })).toBe('overview');
     expect(getWorkbenchNavigationArea({ type: 'report' })).toBe('overview');
@@ -64,6 +62,7 @@ describe('AppNavigationRail', () => {
       'system-manager'
     );
     expect(getWorkbenchNavigationArea({ type: 'graph' })).toBe('agents');
+    expect(getWorkbenchNavigationArea({ type: 'collaboration' })).toBe('collaboration');
     expect(getWorkbenchNavigationArea({ type: 'schedules' })).toBe('schedules');
     expect(getWorkbenchNavigationArea({ type: 'extensions' })).toBe('extensions');
     expect(getWorkbenchNavigationArea({ type: 'notifications' })).toBe('notifications');
@@ -71,12 +70,33 @@ describe('AppNavigationRail', () => {
     expect(getWorkbenchNavigationArea(null)).toBeNull();
   });
 
-  it('shows the community entry as active for the existing chat tab area', async () => {
-    const { host, root } = await renderRail(createProps({ activeArea: 'community' }));
+  it('shows a task-feedback dot outside the inbox and hides it while the inbox is open', async () => {
+    const outside = await renderRail(createProps({ activeArea: 'overview' }));
+    expect(outside.host.querySelector('[aria-label="有新任务反馈"]')).not.toBeNull();
+    await act(async () => {
+      outside.root.unmount();
+      await Promise.resolve();
+    });
 
-    expect(host.querySelector('[aria-current="page"]')?.getAttribute('aria-label')).toBe(
-      '加入飞书群'
-    );
+    const inside = await renderRail(createProps({ activeArea: 'inbox' }));
+    expect(inside.host.querySelector('[aria-label="有新任务反馈"]')).toBeNull();
+    await act(async () => {
+      inside.root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('keeps overview and diagnostics visible while hiding low-value entries', async () => {
+    const { host, root } = await renderRail(createProps({ activeArea: 'overview' }));
+
+    expect(host.querySelector('[aria-label="概览"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="诊断"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="通知"]')).toBeNull();
+    expect(host.querySelector('[aria-label="定时任务"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="扩展能力"]')).toBeNull();
+    expect(host.querySelector('[aria-label="搜索"]')).toBeNull();
+    expect(host.querySelector('[aria-label="加入飞书群"]')).toBeNull();
+    expect(host.querySelector('.lucide-circle-help')).toBeNull();
 
     await act(async () => {
       root.unmount();
@@ -89,30 +109,25 @@ describe('AppNavigationRail', () => {
     const { host, root } = await renderRail(props);
 
     expect(host.querySelector('[aria-current="page"]')?.getAttribute('aria-label')).toBe('收件箱');
-    expect(host.textContent).toContain('3');
-    expect(host.querySelector('[aria-label="有新对话"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="有新任务反馈"]')).toBeNull();
 
-    click(host, '收件箱');
     click(host, '概览');
-    click(host, '数字员工');
+    click(host, '收件箱');
+    click(host, '任务');
     click(host, '定时任务');
-    click(host, '扩展');
-    click(host, '通知');
-    click(host, 'Helm Loop');
+    click(host, '智能体');
+    click(host, '小队');
+    click(host, '诊断');
     click(host, '设置');
-    click(host, '搜索');
-    click(host, '加入飞书群');
 
     expect(props.onOpenInbox).toHaveBeenCalledOnce();
+    expect(props.onOpenTasks).toHaveBeenCalledOnce();
     expect(props.onOpenOverview).toHaveBeenCalledOnce();
-    expect(props.onOpenAgents).toHaveBeenCalledOnce();
     expect(props.onOpenSchedules).toHaveBeenCalledOnce();
-    expect(props.onOpenExtensions).toHaveBeenCalledOnce();
-    expect(props.onOpenNotifications).toHaveBeenCalledOnce();
+    expect(props.onOpenAgents).toHaveBeenCalledOnce();
+    expect(props.onOpenCollaboration).toHaveBeenCalledOnce();
     expect(props.onOpenSystemManager).toHaveBeenCalledOnce();
     expect(props.onOpenSettings).toHaveBeenCalledOnce();
-    expect(props.onOpenSearch).toHaveBeenCalledOnce();
-    expect(props.onOpenCommunity).toHaveBeenCalledOnce();
 
     await act(async () => {
       root.unmount();

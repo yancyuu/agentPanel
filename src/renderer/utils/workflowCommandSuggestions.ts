@@ -17,13 +17,13 @@ function formatWorkflowCommand(prompt: WorkflowPromptSummary): string {
 const KNOWN_HERMIT_WORKFLOW_DESCRIPTIONS: Record<string, string> = {
   'compliance-audit': '审计循环、连接器、hooks、worktrees 中的安全风险。',
   'connector-scan': '扫描 MCP、插件、连接器和外部工具配置。',
-  'create-team': '通过 Hermit HTTP API 快速创建团队，不自动启动 agent。',
+  'create-team': '通过 AgentCLI HTTP API 快速创建团队，不自动启动 Agent。',
   'daily-folder-hygiene': '只读检查工作区临时文件、陈旧报告、脏 worktree 和可清理产物。',
   'daily-loop': '执行每日 Loop 巡检，把诊断、摘要和改进建议串成闭环。',
   'daily-memory-conflict-check': '检查 CLAUDE、AGENTS、记忆和设置里的重复、过期、冲突指令。',
   'daily-verifier': '验证近期任务、报告和循环输出是否真实完成且可复现。',
   'daily-workflow-extraction': '从近期会话中提炼可复用的 prompt、workflow 和操作流程。',
-  doctor: '诊断 Hermit、Claude Code、hermit-bridge 和 Loop runtime 健康。',
+  doctor: '诊断 AgentCLI、Claude Code、hermit-bridge 和 Loop runtime 健康。',
   'loop-design': '根据现有资产设计一个可运行、可验证、可恢复的 Agent 循环。',
   'loop-scan': '扫描自动化、工作树、技能、连接器、子 Agent 和状态资产。',
   'memory-config-health': '检查 loop 相关 memory、配置、commands、skills 和状态分层。',
@@ -116,7 +116,7 @@ function isAdminCommandReserved(name: string): boolean {
 
 /**
  * Merge local-project workflow suggestions with capability-pack ("Claude common")
- * suggestions for the Helm Loop console. Local-project commands always take
+ * suggestions for the 诊断 console. Local-project commands always take
  * priority — an operator's own `.claude/commands` surface ahead of the builtin
  * pack commands — and the reserved `loop` / `system` runtime namespaces are
  * dropped so they cannot be dispatched from the console.

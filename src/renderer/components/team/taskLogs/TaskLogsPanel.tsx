@@ -121,7 +121,11 @@ export const TaskLogsPanel = ({
         if (countRequestSeqRef.current !== requestSeq) {
           return;
         }
-        setTaskLogSegmentCount(summary.segmentCount);
+        setTaskLogSegmentCount(
+          Number.isFinite(summary?.segmentCount) && summary.segmentCount >= 0
+            ? summary.segmentCount
+            : 0
+        );
       })
       .catch(() => {
         if (countRequestSeqRef.current !== requestSeq) {
@@ -177,7 +181,11 @@ export const TaskLogsPanel = ({
             if (countRequestSeqRef.current !== requestSeq) {
               return;
             }
-            setTaskLogSegmentCount(summary.segmentCount);
+            setTaskLogSegmentCount(
+              Number.isFinite(summary?.segmentCount) && summary.segmentCount >= 0
+                ? summary.segmentCount
+                : 0
+            );
           })
           .catch(() => undefined);
       }, TASK_LOG_COUNT_RELOAD_DEBOUNCE_MS);

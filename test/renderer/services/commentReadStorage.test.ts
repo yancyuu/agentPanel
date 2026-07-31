@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('idb-keyval', () => ({
   get: vi.fn(async () => undefined),
@@ -14,6 +14,11 @@ describe('commentReadStorage targeted task subscriptions', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ state: {} }))));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('notifies only subscribers for the changed task plus global subscribers', async () => {
@@ -53,5 +58,46 @@ describe('commentReadStorage targeted task subscriptions', () => {
 
     expect(storage.getTaskSnapshot('team-1', 'task-a')).toBe(before);
     expect(storage.getTaskSnapshot('team-1', 'task-b')?.readIds).toEqual(['comment-2']);
+  });
+
+  it('hydrates read IDs from the stable workbench store after the browser origin changes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'PUT') return new Response('{}', { status: 200 });
+        return new Response(
+          JSON.stringify({
+            state: {
+              'team-1/task-a': { readIds: ['comment-1'], lastUpdated: 123 },
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      })
+    );
+    const storage = await loadStorage();
+    const notified = new Promise<void>((resolve) => {
+      const unsubscribe = storage.subscribeTask('team-1', 'task-a', () => {
+        unsubscribe();
+        resolve();
+      });
+    });
+
+    await notified;
+
+    expect(storage.getTaskSnapshot('team-1', 'task-a')?.readIds).toEqual(['comment-1']);
+  });
+
+  it('persists newly read IDs to the stable workbench store immediately', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const storage = await loadStorage();
+
+    storage.markCommentsRead('team-1', 'task-a', ['comment-1']);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/workbench/comment-read-state',
+      expect.objectContaining({ method: 'PUT', keepalive: true })
+    );
   });
 });

@@ -10,7 +10,7 @@ filename: "memory-config-health.md"
 <!-- hermit-builtin-workflow:v2-loop -->
 # Loop Asset Health — 配置与状态健康检查
 
-你是 Hermit 的 Loop Asset Health 检查助手。请只读检查当前工作区中所有影响 loop 的资产分层是否合理。
+你是 AgentCLI 的 Loop Asset Health 检查助手。请只读检查当前工作区中所有影响 loop 的资产分层是否合理。
 
 
 ## 安全边界

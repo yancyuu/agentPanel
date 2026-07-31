@@ -106,7 +106,8 @@ async function startFakeOAuthServer() {
     server.once('error', reject);
   });
   const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Fake OAuth server did not bind a port');
+  if (!address || typeof address === 'string')
+    throw new Error('Fake OAuth server did not bind a port');
   const baseUrl = `http://127.0.0.1:${address.port}`;
   return {
     baseUrl,
@@ -121,7 +122,10 @@ async function startFakeDeviceAuthServer() {
   const server = createServer((req, res) => {
     const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
     requests.push({ path: requestUrl.pathname, query: requestUrl.searchParams });
-    if (requestUrl.pathname === '/api/v1/auth/start' || requestUrl.pathname === '/api/cli-auth/start') {
+    if (
+      requestUrl.pathname === '/api/v1/auth/start' ||
+      requestUrl.pathname === '/api/cli-auth/start'
+    ) {
       let body = '';
       req.setEncoding('utf8');
       req.on('data', (chunk) => {
@@ -130,7 +134,8 @@ async function startFakeDeviceAuthServer() {
       req.on('end', () => {
         requests.push({ path: '/api/cli-auth/start-body', body });
         const address = server.address();
-        if (!address || typeof address === 'string') throw new Error('Fake device server did not bind a port');
+        if (!address || typeof address === 'string')
+          throw new Error('Fake device server did not bind a port');
         const baseUrl = `http://127.0.0.1:${address.port}`;
         const deviceCode = 'device-code-123';
         const userCode = 'ABCD-EFGH';
@@ -158,7 +163,8 @@ async function startFakeDeviceAuthServer() {
         return;
       }
       const address = server.address();
-      if (!address || typeof address === 'string') throw new Error('Fake device server did not bind a port');
+      if (!address || typeof address === 'string')
+        throw new Error('Fake device server did not bind a port');
       const baseUrl = `http://127.0.0.1:${address.port}`;
       const authorizeUrl = new URL(`${baseUrl}/feishu/oauth/authorize`);
       authorizeUrl.searchParams.set('client_id', 'openhermit-debug-feishu-app');
@@ -171,7 +177,9 @@ async function startFakeDeviceAuthServer() {
       return;
     }
     if (requestUrl.pathname === '/feishu/oauth/authorize') {
-      const callbackUrl = new URL(requestUrl.searchParams.get('redirect_uri') || 'http://127.0.0.1');
+      const callbackUrl = new URL(
+        requestUrl.searchParams.get('redirect_uri') || 'http://127.0.0.1'
+      );
       callbackUrl.searchParams.set('code', 'debug-feishu-auth-code-should-not-print');
       callbackUrl.searchParams.set('state', requestUrl.searchParams.get('state') || '');
       callbackUrl.searchParams.set('device', requestUrl.searchParams.get('device') || '');
@@ -192,7 +200,10 @@ async function startFakeDeviceAuthServer() {
       res.end('feishu approved');
       return;
     }
-    if (requestUrl.pathname === '/api/v1/auth/poll' || requestUrl.pathname === '/api/cli-auth/token') {
+    if (
+      requestUrl.pathname === '/api/v1/auth/poll' ||
+      requestUrl.pathname === '/api/cli-auth/token'
+    ) {
       let body = '';
       req.setEncoding('utf8');
       req.on('data', (chunk) => {
@@ -211,7 +222,11 @@ async function startFakeDeviceAuthServer() {
                   tokenType: 'Bearer',
                   expiresIn: 3600,
                   scope: 'openid profile email usage:write',
-                  account: { id: 'device-union-id-123', email: 'device@example.com', name: 'Device User' },
+                  account: {
+                    id: 'device-union-id-123',
+                    email: 'device@example.com',
+                    name: 'Device User',
+                  },
                 }
               : { error: 'authorization_pending' }
           )
@@ -235,7 +250,11 @@ async function startFakeDeviceAuthServer() {
             tokenType: 'Bearer',
             expiresIn: 3600,
             scope: 'openid profile email usage:write',
-            account: { id: 'device-union-id-123', email: 'refreshed@example.com', name: 'Refreshed User' },
+            account: {
+              id: 'device-union-id-123',
+              email: 'refreshed@example.com',
+              name: 'Refreshed User',
+            },
           })
         );
       });
@@ -255,7 +274,8 @@ async function startFakeDeviceAuthServer() {
     server.once('error', reject);
   });
   const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Fake device auth server did not bind a port');
+  if (!address || typeof address === 'string')
+    throw new Error('Fake device auth server did not bind a port');
   const baseUrl = `http://127.0.0.1:${address.port}`;
   return {
     baseUrl,
@@ -267,7 +287,7 @@ async function startFakeDeviceAuthServer() {
 // These tests spawn the real CLI as child processes; under a full-suite
 // parallel run on a loaded Windows machine the default 15s testTimeout is not
 // enough (they pass standalone with seconds to spare).
-describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () => {
+describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
   it('prints parseable JSON for an empty teams list without starting the web UI', async () => {
     await withHermitHome(async (hermitHome) => {
       const { stdout, stderr } = await runCli(hermitHome, ['teams', 'list', '--json']);
@@ -305,11 +325,19 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
       );
       await writeFile(
         path.join(hermitHome, 'teams/deleted/team.json'),
-        JSON.stringify({ slug: 'deleted', displayName: 'Deleted Team', deletedAt: '2026-06-21T00:00:00Z' })
+        JSON.stringify({
+          slug: 'deleted',
+          displayName: 'Deleted Team',
+          deletedAt: '2026-06-21T00:00:00Z',
+        })
       );
       await writeFile(
         path.join(hermitHome, 'teams/pending-delete/team.json'),
-        JSON.stringify({ slug: 'pending-delete', displayName: 'Pending Delete Team', pendingDelete: true })
+        JSON.stringify({
+          slug: 'pending-delete',
+          displayName: 'Pending Delete Team',
+          pendingDelete: true,
+        })
       );
       await writeFile(path.join(hermitHome, 'teams/bad/team.json'), '{bad json');
 
@@ -360,7 +388,11 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
 
       expect(parsed.resolvedTeam).toBeNull();
       expect(parsed.tasks).toEqual([]);
-      expect(parsed.warnings.some((warning: { message: string }) => warning.message === 'Invalid team argument')).toBe(true);
+      expect(
+        parsed.warnings.some(
+          (warning: { message: string }) => warning.message === 'Invalid team argument'
+        )
+      ).toBe(true);
     });
   });
 
@@ -413,9 +445,18 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
         'aikey',
         'exit',
       ]);
-      expect(parsed.actions.find((action: { id: string; label: string }) => action.id === 'web')?.label).toBe('本地工作台');
-      expect(parsed.actions.find((action: { id: string; label: string }) => action.id === 'data-sync')?.label).toBe('消息总线');
-      expect(parsed.actions.find((action: { id: string; description: string }) => action.id === 'data-sync')?.description).toContain('消息上报');
+      expect(
+        parsed.actions.find((action: { id: string; label: string }) => action.id === 'web')?.label
+      ).toBe('本地工作台');
+      expect(
+        parsed.actions.find((action: { id: string; label: string }) => action.id === 'data-sync')
+          ?.label
+      ).toBe('消息总线');
+      expect(
+        parsed.actions.find(
+          (action: { id: string; description: string }) => action.id === 'data-sync'
+        )?.description
+      ).toContain('消息上报');
       expect(parsed.message).toContain('本地使用');
       expect(parsed.message).toContain('本地/自托管团队协作无需登录');
       expect(JSON.stringify(parsed.actions)).not.toContain('选择用量来源');
@@ -565,7 +606,11 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
       expect(JSON.parse(teams.stdout)).toMatchObject({ ok: true, command: 'teams list' });
 
       const tasks = await runCli(hermitHome, ['tasks', 'list', '--team', 'demo', '--json']);
-      expect(JSON.parse(tasks.stdout)).toMatchObject({ ok: true, command: 'tasks list', team: 'demo' });
+      expect(JSON.parse(tasks.stdout)).toMatchObject({
+        ok: true,
+        command: 'tasks list',
+        team: 'demo',
+      });
 
       await expect(runCli(hermitHome, ['tasks', 'list', '--json'])).rejects.toMatchObject({
         stdout: expect.stringContaining('Missing required --team <team>'),
@@ -587,11 +632,12 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
       }
       expect(JSON.parse(doctorStdout)).toMatchObject({ command: 'doctor' });
 
-      expect(`${teams.stdout}${tasks.stdout}${statusStdout}${doctorStdout}`).not.toContain('OpenHermit OAuth login required');
+      expect(`${teams.stdout}${tasks.stdout}${statusStdout}${doctorStdout}`).not.toContain(
+        'OpenHermit OAuth login required'
+      );
       expect(existsSync(path.join(hermitHome, 'hermit-bridge'))).toBe(false);
     });
   });
-
 
   it('runs usage status and today without OpenHermit auth', async () => {
     await withHermitHome(async (hermitHome) => {
@@ -617,7 +663,9 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
       // 查看同步状态 must be a read-only preview: it runs the remote
       // /usage/status probe but never uploads — no cursor file, no upload log.
       expect(parsedStatus.remoteUsage).toMatchObject({ authorized: false });
-      expect(existsSync(path.join(hermitHome, 'telemetry', 'conversation-message-scan-cursor.json'))).toBe(false);
+      expect(
+        existsSync(path.join(hermitHome, 'telemetry', 'conversation-message-scan-cursor.json'))
+      ).toBe(false);
       const uploadLogPath = path.join(hermitHome, 'telemetry', 'conversation-upload.log');
       const uploadLog = existsSync(uploadLogPath) ? await readFile(uploadLogPath, 'utf-8') : '';
       expect(uploadLog).not.toContain('upload-request');
@@ -660,11 +708,10 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
       expect(existsSync(path.join(hermitHome, 'telemetry/status.json'))).toBe(true);
       expect(existsSync(path.join(hermitHome, 'hermit-bridge'))).toBe(false);
 
-      const stopped = await runCli(
-        hermitHome,
-        ['usage', 'stop', '--json'],
-        { OPENHERMIT_USAGE_WORKER_MODE: 'test', OPENHERMIT_SKIP_LAUNCHCTL: '1' }
-      );
+      const stopped = await runCli(hermitHome, ['usage', 'stop', '--json'], {
+        OPENHERMIT_USAGE_WORKER_MODE: 'test',
+        OPENHERMIT_SKIP_LAUNCHCTL: '1',
+      });
       const parsedStop = JSON.parse(stopped.stdout);
       expect(parsedStop).toMatchObject({ ok: true, command: 'usage stop' });
       expect(parsedStop.telemetry.localScanEnabled).toBe(false);
@@ -675,7 +722,17 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
     await withHermitHome(async (hermitHome) => {
       const started = await runCli(
         hermitHome,
-        ['--port', '5999', 'usage', 'start', '--upload', '--provider', 'codex', '--no-autostart', '--json'],
+        [
+          '--port',
+          '5999',
+          'usage',
+          'start',
+          '--upload',
+          '--provider',
+          'codex',
+          '--no-autostart',
+          '--json',
+        ],
         { OPENHERMIT_USAGE_WORKER_MODE: 'test', OPENHERMIT_SKIP_LAUNCHCTL: '1' }
       );
       const parsedStart = JSON.parse(started.stdout);
@@ -690,11 +747,10 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
         conversations: { uploadEnabled: true },
       });
 
-      await runCli(
-        hermitHome,
-        ['usage', 'stop', '--json'],
-        { OPENHERMIT_USAGE_WORKER_MODE: 'test', OPENHERMIT_SKIP_LAUNCHCTL: '1' }
-      );
+      await runCli(hermitHome, ['usage', 'stop', '--json'], {
+        OPENHERMIT_USAGE_WORKER_MODE: 'test',
+        OPENHERMIT_SKIP_LAUNCHCTL: '1',
+      });
     });
   });
 
@@ -702,7 +758,17 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
     await withHermitHome(async (hermitHome) => {
       const started = await runCli(
         hermitHome,
-        ['--port', '5999', 'usage', 'start', '--upload', '--provider', 'claudecode', '--no-autostart', '--json'],
+        [
+          '--port',
+          '5999',
+          'usage',
+          'start',
+          '--upload',
+          '--provider',
+          'claudecode',
+          '--no-autostart',
+          '--json',
+        ],
         { OPENHERMIT_USAGE_WORKER_MODE: 'test', OPENHERMIT_SKIP_LAUNCHCTL: '1' }
       );
       const parsedStart = JSON.parse(started.stdout);
@@ -717,11 +783,10 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
         conversations: { uploadEnabled: true },
       });
 
-      await runCli(
-        hermitHome,
-        ['usage', 'stop', '--json'],
-        { OPENHERMIT_USAGE_WORKER_MODE: 'test', OPENHERMIT_SKIP_LAUNCHCTL: '1' }
-      );
+      await runCli(hermitHome, ['usage', 'stop', '--json'], {
+        OPENHERMIT_USAGE_WORKER_MODE: 'test',
+        OPENHERMIT_SKIP_LAUNCHCTL: '1',
+      });
     });
   });
 
@@ -729,7 +794,17 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
     await withHermitHome(async (hermitHome) => {
       const started = await runCli(
         hermitHome,
-        ['--port', '5999', 'usage', 'start', '--upload', '--provider', 'claudecode,codex', '--no-autostart', '--json'],
+        [
+          '--port',
+          '5999',
+          'usage',
+          'start',
+          '--upload',
+          '--provider',
+          'claudecode,codex',
+          '--no-autostart',
+          '--json',
+        ],
         { OPENHERMIT_USAGE_WORKER_MODE: 'test', OPENHERMIT_SKIP_LAUNCHCTL: '1' }
       );
       const parsedStart = JSON.parse(started.stdout);
@@ -744,23 +819,26 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
         conversations: { uploadEnabled: true },
       });
 
-      await runCli(
-        hermitHome,
-        ['usage', 'stop', '--json'],
-        { OPENHERMIT_USAGE_WORKER_MODE: 'test', OPENHERMIT_SKIP_LAUNCHCTL: '1' }
-      );
+      await runCli(hermitHome, ['usage', 'stop', '--json'], {
+        OPENHERMIT_USAGE_WORKER_MODE: 'test',
+        OPENHERMIT_SKIP_LAUNCHCTL: '1',
+      });
     });
   });
 
-  it.skipIf(process.platform !== 'darwin')('manages usage worker autostart with a launchd plist that supervises the foreground worker (macOS launchd only)', async () => {
+  it.skipIf(process.platform !== 'darwin')(
+    'manages usage worker autostart with a launchd plist that supervises the foreground worker (macOS launchd only)',
+    async () => {
     await withHermitHome(async (hermitHome) => {
-      const enabled = await runCli(
+        const enabled = await runCli(hermitHome, ['usage', 'autostart', 'enable', '--json'], {
+          HOME: hermitHome,
+          OPENHERMIT_SKIP_LAUNCHCTL: '1',
+        });
+        const parsedEnabled = JSON.parse(enabled.stdout);
+        const plistPath = path.join(
         hermitHome,
-        ['usage', 'autostart', 'enable', '--json'],
-        { HOME: hermitHome, OPENHERMIT_SKIP_LAUNCHCTL: '1' }
+          'Library/LaunchAgents/com.openhermit.telemetry.plist'
       );
-      const parsedEnabled = JSON.parse(enabled.stdout);
-      const plistPath = path.join(hermitHome, 'Library/LaunchAgents/com.openhermit.telemetry.plist');
       const plist = await readFile(plistPath, 'utf-8');
 
       expect(parsedEnabled).toMatchObject({
@@ -772,11 +850,10 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
       expect(plist).toContain(hermitHome);
       expect(plist).not.toContain('--daemon');
 
-      const disabled = await runCli(
-        hermitHome,
-        ['usage', 'autostart', 'disable', '--json'],
-        { HOME: hermitHome, OPENHERMIT_SKIP_LAUNCHCTL: '1' }
-      );
+        const disabled = await runCli(hermitHome, ['usage', 'autostart', 'disable', '--json'], {
+          HOME: hermitHome,
+          OPENHERMIT_SKIP_LAUNCHCTL: '1',
+        });
       const parsedDisabled = JSON.parse(disabled.stdout);
       expect(parsedDisabled).toMatchObject({
         ok: true,
@@ -784,7 +861,8 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
         autostart: { enabled: false },
       });
     });
-  });
+    }
+  );
 
   it('runs usage report without auth when message upload is disabled', async () => {
     await withHermitHome(async (hermitHome) => {
@@ -801,11 +879,10 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
           },
         })
       );
-      const report = await runCli(
-        hermitHome,
-        ['--port', '5999', 'usage', 'report', '--json'],
-        { OPENHERMIT_USAGE_WORKER_MODE: 'test', OPENHERMIT_SKIP_LAUNCHCTL: '1' }
-      );
+      const report = await runCli(hermitHome, ['--port', '5999', 'usage', 'report', '--json'], {
+        OPENHERMIT_USAGE_WORKER_MODE: 'test',
+        OPENHERMIT_SKIP_LAUNCHCTL: '1',
+      });
       const parsedReport = JSON.parse(report.stdout);
 
       expect(parsedReport).toMatchObject({
@@ -821,28 +898,22 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
     });
   });
 
-  it('requires login for usage report on a fresh install where upload defaults on', async () => {
+  it('runs usage report without login on a fresh install because message upload defaults off', async () => {
     await withHermitHome(async (hermitHome) => {
-      try {
-        await runCli(
-          hermitHome,
-          ['--port', '5999', 'usage', 'report', '--json'],
-          { OPENHERMIT_USAGE_WORKER_MODE: 'test', OPENHERMIT_SKIP_LAUNCHCTL: '1' }
-        );
-      } catch (err) {
-        const failure = err as { stdout?: string };
-        const parsed = JSON.parse(failure.stdout || '{}');
-        expect(parsed).toMatchObject({
-          ok: false,
-          command: 'usage report',
-          auth: { authorized: false },
-          upload: { enabled: true, authorized: false },
-        });
-        expect(parsed.error).toContain('login required');
-        expect(existsSync(path.join(hermitHome, 'hermit-bridge'))).toBe(false);
-        return;
-      }
-      throw new Error('Expected usage report to exit non-zero when upload defaults on without auth');
+      const report = await runCli(hermitHome, ['--port', '5999', 'usage', 'report', '--json'], {
+        OPENHERMIT_USAGE_WORKER_MODE: 'test',
+        OPENHERMIT_SKIP_LAUNCHCTL: '1',
+      });
+      const parsed = JSON.parse(report.stdout);
+
+      expect(parsed).toMatchObject({
+        ok: true,
+        command: 'usage report',
+        upload: { enabled: false, authorized: false },
+        daemon: { running: false },
+      });
+      expect(report.stderr).toBe('');
+      expect(existsSync(path.join(hermitHome, 'hermit-bridge'))).toBe(false);
     });
   });
 
@@ -858,13 +929,22 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
         auth: { authorized: false },
       });
       expect(typeof parsedMenu.web.running).toBe('boolean');
-      expect(parsedMenu.actions.map((action: { id: string }) => action.id)).toContain('start-local');
-      expect(parsedMenu.actions.map((action: { id: string }) => action.id)).not.toContain('start-usage-upload');
+      expect(parsedMenu.actions.map((action: { id: string }) => action.id)).toContain(
+        'start-local'
+      );
+      expect(parsedMenu.actions.map((action: { id: string }) => action.id)).not.toContain(
+        'start-usage-upload'
+      );
 
       const started = await runCli(
         hermitHome,
         ['--port', '5999', 'services', 'start', 'local', '--json'],
-        { HOME: hermitHome, OPENHERMIT_USAGE_WORKER_MODE: 'test', OPENHERMIT_SERVICE_WEB_MODE: 'test', OPENHERMIT_SKIP_LAUNCHCTL: '1' }
+        {
+          HOME: hermitHome,
+          OPENHERMIT_USAGE_WORKER_MODE: 'test',
+          OPENHERMIT_SERVICE_WEB_MODE: 'test',
+          OPENHERMIT_SKIP_LAUNCHCTL: '1',
+        }
       );
       const parsedStart = JSON.parse(started.stdout);
       const settings = JSON.parse(await readFile(path.join(hermitHome, 'settings.json'), 'utf-8'));
@@ -885,7 +965,6 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
       expect(started.stdout).not.toContain('OpenHermit OAuth login required');
     });
   });
-
 
   it('starts local collaboration without auth', async () => {
     await withHermitHome(async (hermitHome) => {
@@ -913,16 +992,19 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
       expect(started.stdout).not.toContain('OpenHermit OAuth login required');
       expect(existsSync(path.join(hermitHome, 'auth/openhermit.json'))).toBe(false);
       expect(existsSync(path.join(hermitHome, 'hermit-bridge'))).toBe(false);
-
     });
   });
 
   it('keeps dev unlock hidden and disabled unless the owner supplies a secret', async () => {
     await withHermitHome(async (hermitHome) => {
-      const failed = await execFileAsync(process.execPath, [cliPath, 'auth', 'dev-login', 'wrong', '--json'], {
+      const failed = await execFileAsync(
+        process.execPath,
+        [cliPath, 'auth', 'dev-login', 'wrong', '--json'],
+        {
         cwd: repoRoot,
         env: { ...process.env, HERMIT_HOME: hermitHome },
-      }).catch((error: { stdout: string; stderr: string }) => error);
+        }
+      ).catch((error: { stdout: string; stderr: string }) => error);
       const parsedFailed = JSON.parse(failed.stdout);
 
       expect(parsedFailed.ok).toBe(false);
@@ -1002,12 +1084,18 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
         expect(parsed.auth.account.name).toBe('Profile User');
         expect(authFile.token.accessToken).toBe('refreshed-device-access-token-should-not-print');
         expect(authFile.token.refreshToken).toBe('refreshed-device-refresh-token-should-not-print');
-        expect(oauth.requests.some((request) => request.path === '/api/v1/auth/refresh')).toBe(true);
+        expect(oauth.requests.some((request) => request.path === '/api/v1/auth/refresh')).toBe(
+          true
+        );
         expect(oauth.requests.some((request) => request.path === '/api/v1/auth/me')).toBe(true);
         expect(`${stdout}${stderr}`).not.toContain('expired-access-token-should-not-print');
         expect(`${stdout}${stderr}`).not.toContain('expired-refresh-token-should-not-print');
-        expect(`${stdout}${stderr}`).not.toContain('refreshed-device-access-token-should-not-print');
-        expect(`${stdout}${stderr}`).not.toContain('refreshed-device-refresh-token-should-not-print');
+        expect(`${stdout}${stderr}`).not.toContain(
+          'refreshed-device-access-token-should-not-print'
+        );
+        expect(`${stdout}${stderr}`).not.toContain(
+          'refreshed-device-refresh-token-should-not-print'
+        );
       } finally {
         await oauth.close();
       }
@@ -1063,14 +1151,10 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
     await withHermitHome(async (hermitHome) => {
       const oauth = await startFakeDeviceAuthServer();
       try {
-        const { stdout, stderr } = await runCli(
-          hermitHome,
-          ['auth', 'login', '--json'],
-          {
+        const { stdout, stderr } = await runCli(hermitHome, ['auth', 'login', '--json'], {
             OPENHERMIT_AUTH_BASE_URL: oauth.baseUrl,
             OPENHERMIT_AUTH_OPEN_BROWSER: 'fetch',
-          }
-        );
+        });
         const parsed = JSON.parse(stdout);
         const authPath = path.join(hermitHome, 'auth/openhermit.json');
         const authFile = JSON.parse(await readFile(authPath, 'utf-8'));
@@ -1159,7 +1243,7 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
         );
 
         expect(stdout).toContain('飞书授权');
-        expect(stdout).toContain('AgentCli');
+        expect(stdout).toContain('AgentCLI');
         expect(stdout).toContain('不会保存飞书 app secret');
         expect(`${stdout}${stderr}`).not.toContain('device-access-token-should-not-print');
         expect(`${stdout}${stderr}`).not.toContain('device-refresh-token-should-not-print');
@@ -1173,16 +1257,12 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
     await withHermitHome(async (hermitHome) => {
       const oauth = await startFakeOAuthServer();
       try {
-        const { stdout, stderr } = await runCli(
-          hermitHome,
-          ['auth', 'login', '--json'],
-          {
+        const { stdout, stderr } = await runCli(hermitHome, ['auth', 'login', '--json'], {
             OPENHERMIT_OAUTH_AUTHORIZE_URL: `${oauth.baseUrl}/authorize`,
             OPENHERMIT_OAUTH_TOKEN_URL: `${oauth.baseUrl}/token`,
             OPENHERMIT_OAUTH_USERINFO_URL: `${oauth.baseUrl}/userinfo`,
             OPENHERMIT_OAUTH_OPEN_BROWSER: 'fetch',
-          }
-        );
+        });
         const parsed = JSON.parse(stdout);
         const authPath = path.join(hermitHome, 'auth/openhermit.json');
         const authFile = JSON.parse(await readFile(authPath, 'utf-8'));
@@ -1222,12 +1302,23 @@ describe('openHermit CLI read-only workspace commands', { timeout: 30_000 }, () 
             { id: 'task-pending-123', title: 'Plan CLI', status: 'todo' },
             { id: 'task-doing-123', title: 'Build CLI', status: 'doing', assignee: 'agent' },
             { id: 'task-done-123', title: 'Verify CLI', status: 'done' },
-            { id: 'task-deleted-123', title: 'Deleted task', status: 'todo', result: '__deleted__' },
+            {
+              id: 'task-deleted-123',
+              title: 'Deleted task',
+              status: 'todo',
+              result: '__deleted__',
+            },
           ],
         })
       );
 
-      const { stdout } = await runCli(hermitHome, ['tasks', 'list', '--team', 'demo-project', '--json']);
+      const { stdout } = await runCli(hermitHome, [
+        'tasks',
+        'list',
+        '--team',
+        'demo-project',
+        '--json',
+      ]);
       const parsed = JSON.parse(stdout);
 
       expect(parsed.resolvedTeam).toBe('demo');

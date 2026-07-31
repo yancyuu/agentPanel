@@ -7,6 +7,7 @@ export {
 } from './ui/AppNavigationRail';
 export { CollaborativeInboxView } from './ui/CollaborativeInboxView';
 export { InboxTaskList, type InboxTaskListProps } from './ui/InboxTaskList';
+export { TaskInputPicker } from './ui/TaskInputPicker';
 export { InboxTaskRow, type InboxTaskRowProps } from './ui/InboxTaskRow';
 export { WorkbenchPageHeader, type WorkbenchPageHeaderProps } from './ui/WorkbenchPageHeader';
 export {

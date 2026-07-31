@@ -27,7 +27,7 @@ describe('onlineGuideRows — handoff prompt', () => {
       'info',
     ]);
     const handoff = rows.find(([label]) => label === '交给 Claude Code')?.[1];
-    expect(handoff).toContain('请先阅读 AgentCli 在线说明书：https://yancyuu.github.io/agentcli/');
+    expect(handoff).toContain('请先阅读 AgentCLI 在线说明书：https://yancyuu.github.io/agentcli/');
     expect(handoff).toContain('后续回答和操作请以这份说明书为准。');
   });
 });

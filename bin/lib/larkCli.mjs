@@ -455,7 +455,7 @@ export async function installLarkCli() {
   }
 
   // Only reached when lark-cli is missing or older than MIN_LARK_CLI_VERSION —
-  // install/upgrade to the current official release so AgentCli can rely on the
+  // install/upgrade to the current official release so AgentCLI can rely on the
   // CLI flags used by the digital worker authorization flow.
   const install = spawnLarkCli(`npm install -g ${PACKAGE}`, [], { encoding: 'utf-8', shell: true });
   if (install.status !== 0) {

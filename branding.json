@@ -1,12 +1,12 @@
 {
-  "productName": "AgentCli",
-  "productNameShort": "AgentCli",
-  "stylizedName": "AgentCli",
+  "productName": "AgentCLI",
+  "productNameShort": "AgentCLI",
+  "stylizedName": "AgentCLI",
   "cliCommand": "agentcli",
   "npmPackage": "@yancyyu/agentcli",
   "runtimeBridgeName": "hermit-bridge",
-  "authAccountLabel": "AgentCli 用户",
-  "authProviderName": "AgentCli",
+  "authAccountLabel": "AgentCLI 用户",
+  "authProviderName": "AgentCLI",
   "defaultLocalHomeName": ".hermit",
   "githubRepo": "yancyyu/agentcli",
   "publicDocsUrl": "https://yancyyu.github.io/agentcli/"

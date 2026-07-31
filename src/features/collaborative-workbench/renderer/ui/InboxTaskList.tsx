@@ -2,7 +2,7 @@ import { useRef } from 'react';
 
 import { Input } from '@renderer/components/ui/input';
 import { cn } from '@renderer/lib/utils';
-import { CheckCircle2, CircleDot, Inbox, RefreshCw, Search } from 'lucide-react';
+import { CheckCircle2, CircleDot, ClipboardCheck, Inbox, RefreshCw, Search } from 'lucide-react';
 
 import { InboxTaskRow } from './InboxTaskRow';
 
@@ -28,8 +28,8 @@ export interface InboxTaskListProps {
 }
 
 const views: { id: InboxTaskView; label: string; icon: React.ReactNode }[] = [
-  { id: 'inbox', label: '收件箱', icon: <Inbox size={13} /> },
   { id: 'in_progress', label: '进行中', icon: <CircleDot size={13} /> },
+  { id: 'review', label: '待审核', icon: <ClipboardCheck size={13} /> },
   { id: 'completed', label: '已完成', icon: <CheckCircle2 size={13} /> },
 ];
 

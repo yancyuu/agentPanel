@@ -15,8 +15,8 @@ interface TaskCommentAwaitingReplyProps {
 }
 
 /**
- * Compact indicator shown between the comment input and the comment list
- * when the human user is awaiting a reply from the task owner or creator.
+ * Compact indicator shown inside the comments section when the human user is
+ * awaiting a reply from the task owner or creator.
  */
 export const TaskCommentAwaitingReply = ({
   comments,
@@ -35,7 +35,7 @@ export const TaskCommentAwaitingReply = ({
   const since = formatDistanceToNowStrict(result.userCommentAtMs, { addSuffix: true });
 
   return (
-    <div className="my-2 flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-1.5">
+    <div className="mx-2.5 my-2 flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-1.5">
       {/* Pulsing dot */}
       <span className="relative inline-flex size-2.5 shrink-0">
         <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60" />

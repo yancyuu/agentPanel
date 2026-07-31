@@ -10,7 +10,7 @@ filename: "daily-memory-conflict-check.md"
 <!-- hermit-builtin-workflow:v2-loop -->
 # Daily Memory Conflict Check — 每日记忆冲突巡检
 
-你是 Hermit Helm Loop 的记忆一致性巡检助手。目标是每天只读检查长期指令、项目记忆、设置和状态是否互相冲突或过期。
+你是 AgentCLI 诊断 的记忆一致性巡检助手。目标是每天只读检查长期指令、项目记忆、设置和状态是否互相冲突或过期。
 
 
 ## 安全边界

@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ADMIN_INIT_MESSAGE_ID,
   type AdminLoopInitDeps,
+  AGENTCLI_OPS_GUIDE_MARKER,
   buildAdminInitMessage,
+  CURRENT_AGENTCLI_OPERATIONS_GUIDE,
   ensureAdminLoopInitialized,
   htmlToPlainText,
 } from '../AdminLoopInitializer';
@@ -56,9 +58,22 @@ describe('htmlToPlainText', () => {
 describe('buildAdminInitMessage', () => {
   it('wraps the guide text with the bootstrap instructions', () => {
     const msg = buildAdminInitMessage('MANUAL_BODY');
-    expect(msg).toContain('Helm Loop 初始化');
+    expect(msg).toContain('诊断初始化');
     expect(msg).toContain('MANUAL_BODY');
-    expect(msg).toContain('/workers');
+    expect(msg).toContain('内置 AgentCLI 任务总线');
+    expect(msg).not.toContain('/workers');
+  });
+});
+
+describe('CURRENT_AGENTCLI_OPERATIONS_GUIDE', () => {
+  it('uses the current AgentCLI product model without legacy installation instructions', () => {
+    expect(CURRENT_AGENTCLI_OPERATIONS_GUIDE).toContain(AGENTCLI_OPS_GUIDE_MARKER);
+    expect(CURRENT_AGENTCLI_OPERATIONS_GUIDE).toContain('创建任务');
+    expect(CURRENT_AGENTCLI_OPERATIONS_GUIDE).toContain('调教');
+    expect(CURRENT_AGENTCLI_OPERATIONS_GUIDE).toContain('$HERMIT_HOME/bin/agentcli');
+    expect(CURRENT_AGENTCLI_OPERATIONS_GUIDE).toContain('--team {team-id}');
+    expect(CURRENT_AGENTCLI_OPERATIONS_GUIDE).not.toContain('npm install -g @yancyyu/openhermit');
+    expect(CURRENT_AGENTCLI_OPERATIONS_GUIDE).not.toContain('openhermit # 启动');
   });
 });
 

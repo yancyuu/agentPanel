@@ -1,5 +1,5 @@
 /**
- * Notification and configuration types for Hermit.
+ * Notification and configuration types for AgentCLI.
  *
  * Re-exports types from shared for backwards compatibility.
  * The canonical definitions are in @shared/types/notifications.

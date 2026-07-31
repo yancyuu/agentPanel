@@ -108,7 +108,7 @@ const plan = await agent(
 ${JSON.stringify(classification)}
 
 输出：
-1. 推荐沉淀为 Hermit 预设动态 workflow 的资产。
+1. 推荐沉淀为 AgentCLI 预设动态 workflow 的资产。
 2. 推荐保留为团队级 .claude/commands 或 .claude/skills 的资产。
 3. 推荐只作为 docs/reference 的资产。
 4. 不建议迁移或必须重写的资产。

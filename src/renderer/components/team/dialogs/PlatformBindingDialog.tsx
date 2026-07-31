@@ -243,7 +243,7 @@ export const PlatformBindingDialog = ({
         <DialogHeader>
           <DialogTitle className="text-sm">绑定渠道</DialogTitle>
           <DialogDescription className="text-xs">
-            可选：为当前数字员工选择外部平台渠道，绑定后通过 Hermit 对外接收 Loop 指令。
+            可选：为当前数字员工选择外部平台渠道，绑定后通过 AgentCLI 对外接收 Loop 指令。
           </DialogDescription>
         </DialogHeader>
         <PlatformBindingContent

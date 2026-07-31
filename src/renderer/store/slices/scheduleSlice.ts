@@ -40,6 +40,9 @@ export interface ScheduleSlice {
   /** Open a standalone Schedules tab (or focus existing) */
   openSchedulesTab(): void;
 
+  /** Open the task-feedback inbox. */
+  openInboxTab(): void;
+
   /** Open the standalone task overview tab. */
   openTasksTab(): void;
 }
@@ -250,6 +253,23 @@ export const createScheduleSlice: StateCreator<AppState, [], [], ScheduleSlice> 
     void get().fetchSchedules();
   },
 
+  openInboxTab: () => {
+    const state = get();
+    const focusedPane = state.paneLayout.panes.find((p) => p.id === state.paneLayout.focusedPaneId);
+    const existingTab = focusedPane?.tabs.find((tab) => tab.type === 'inbox');
+    if (existingTab) {
+      state.setActiveTab(existingTab.id);
+      return;
+    }
+
+    state.openTab({
+      type: 'inbox',
+      label: '收件箱',
+    });
+
+    void get().fetchAllTasks();
+  },
+
   openTasksTab: () => {
     const state = get();
     const focusedPane = state.paneLayout.panes.find((p) => p.id === state.paneLayout.focusedPaneId);
@@ -261,7 +281,7 @@ export const createScheduleSlice: StateCreator<AppState, [], [], ScheduleSlice> 
 
     state.openTab({
       type: 'tasks',
-      label: '收件箱',
+      label: '任务',
     });
 
     void get().fetchAllTasks();

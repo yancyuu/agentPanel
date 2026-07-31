@@ -6,7 +6,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { HERMIT_OPS_GUIDE_URL } from '@main/services/team-management/OpsRunbookContext';
 import { TeamProvisioningService } from '@main/services/team-management/TeamProvisioningService';
 import { TeamWorkspaceService } from '@main/services/team-management/TeamWorkspaceService';
 
@@ -133,17 +132,19 @@ describe('createTeam', () => {
     expect(fs.existsSync(path.join(workDir, '.claude', 'settings.json'))).toBe(false);
 
     const claudeMd = fs.readFileSync(path.join(workDir, 'CLAUDE.md'), 'utf8');
-    expect(claudeMd).toContain('## Hermit Team Context');
-    expect(claudeMd).toContain("Hermit's CLI task bus");
+    expect(claudeMd).toContain('## AgentCLI Team Context');
+    expect(claudeMd).toContain("AgentCLI's task bus");
     expect(claudeMd).toContain('agentcli --port');
     expect(claudeMd).toContain('tasks claim --team');
     expect(claudeMd).toContain('tasks complete --team');
     expect(claudeMd).toContain('Do not use MCP, Skills');
-    expect(claudeMd).toContain('## Hermit Ops Runbook Context');
-    expect(claudeMd).toContain(HERMIT_OPS_GUIDE_URL);
+    expect(claudeMd).toContain('## AgentCLI Ops Runbook Context');
+    expect(claudeMd).toContain('Bundled diagnostics guide');
+    expect(claudeMd).toContain('global “创建任务” inbox');
+    expect(claudeMd).not.toContain('npm install -g @yancyyu/openhermit');
     expect(claudeMd).toContain('/hermit:doctor');
     expect(claudeMd).toContain('/hermit:loop-scan');
-    expect(claudeMd).toContain('hermit-bridge / Management API');
+    expect(claudeMd).toContain('hermit-bridge remains an internal compatibility sidecar');
     expect(claudeMd).not.toContain('cc-connect Bridge / Management API');
   });
 

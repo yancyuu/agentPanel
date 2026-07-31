@@ -769,10 +769,10 @@ export const TASK_STATUS_STYLES: Record<TeamTaskStatus, { bg: string; text: stri
 };
 
 export const TASK_STATUS_LABELS: Record<TeamTaskStatus, string> = {
-  pending: 'Pending',
-  in_progress: 'In Progress',
-  completed: 'Completed',
-  deleted: 'Deleted',
+  pending: '进行中',
+  in_progress: '进行中',
+  completed: '已完成',
+  deleted: '已删除',
 };
 
 interface MemberColorInput {
@@ -841,15 +841,15 @@ export const KANBAN_COLUMN_DISPLAY: Record<
   'review' | 'approved',
   { label: string; bg: string; text: string }
 > = {
-  review: { label: 'In Review', bg: 'bg-amber-500/15', text: 'text-amber-400' },
-  approved: { label: 'Approved', bg: 'bg-emerald-500/15', text: 'text-emerald-400' },
+  review: { label: '待审核', bg: 'bg-amber-500/15', text: 'text-amber-400' },
+  approved: { label: '已完成', bg: 'bg-emerald-500/15', text: 'text-emerald-400' },
 };
 
 export const REVIEW_STATE_DISPLAY: Record<
   Exclude<TeamReviewState, 'none'>,
   { label: string; bg: string; text: string }
 > = {
-  review: { label: 'In Review', bg: 'bg-amber-500/15', text: 'text-amber-400' },
-  needsFix: { label: 'Needs Fixes', bg: 'bg-rose-500/15', text: 'text-rose-400' },
-  approved: { label: 'Approved', bg: 'bg-emerald-500/15', text: 'text-emerald-400' },
+  review: { label: '待审核', bg: 'bg-amber-500/15', text: 'text-amber-400' },
+  needsFix: { label: '需修改', bg: 'bg-rose-500/15', text: 'text-rose-400' },
+  approved: { label: '已完成', bg: 'bg-emerald-500/15', text: 'text-emerald-400' },
 };

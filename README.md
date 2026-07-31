@@ -1,40 +1,102 @@
 <p align="center">
-  <img src="resources/icons/png/1024x1024.png" alt="AgentCli" width="96" />
+  <img src="resources/icons/png/1024x1024.png" alt="AgentCLI" width="104" />
 </p>
 
-<h1 align="center">AgentCli</h1>
-
-<p align="center"><strong>当前版本：v1.9.13</strong></p>
+<h1 align="center">AgentCLI</h1>
 
 <p align="center">
-  <strong>本地优先的 AI 数字员工工作台</strong><br/>
-  CLI 给 agent，Web 给人。自动采集 Claude Code / Codex / Cursor 等运行时用量，统一管理数字员工团队。<br/>
-  <sub>Local-first AI workforce workbench. CLI for agents, Web for humans.</sub>
-</p>
-
-<p align="center">
-  <a href="https://www.npmjs.com/package/@yancyyu/agentcli"><img src="https://img.shields.io/npm/v/@yancyyu/agentcli?style=flat-square&color=brightgreen" alt="npm version" /></a>
-  <a href="https://www.npmjs.com/package/@yancyyu/agentcli"><img src="https://img.shields.io/npm/dm/@yancyyu/agentcli?style=flat-square&color=brightgreen" alt="npm downloads" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-brightgreen?style=flat-square" alt="AGPL-3.0 license" /></a>
+  <strong>把事情交给数字员工，而不是学习一套开发工具。</strong><br/>
+  在一个本地优先的个人助手客户端里，分配任务、补充要求、检查交付并归档成果。<br/>
+  <sub>Your local-first AI assistant client — assign work, review results, keep the deliverables.</sub>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/agentcli/team-detail.png" alt="AgentCli team workspace" width="100%" />
+  <a href="https://www.npmjs.com/package/@yancyyu/agentcli"><img src="https://img.shields.io/npm/v/@yancyyu/agentcli?style=for-the-badge&color=5B5BD6" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@yancyyu/agentcli"><img src="https://img.shields.io/npm/dm/@yancyyu/agentcli?style=for-the-badge&color=18A058" alt="npm downloads" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2B2B2B?style=for-the-badge" alt="AGPL-3.0 license" /></a>
+  <img src="https://img.shields.io/badge/data-local--first-0EA5E9?style=for-the-badge" alt="local first" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/agentcli/workbench/02-deliverable-review.png" alt="AgentCLI 交付结果审核" width="100%" />
+</p>
+
+<p align="center">
+  <strong>任务反馈集中处理</strong> · <strong>交付结果直接阅读</strong> · <strong>满意后一键归档</strong> · <strong>长期调教数字员工</strong>
 </p>
 
 ---
 
 ## 这是什么
 
-AgentCli 是一个**本地优先的 AI 数字员工工作台**。它让你像管理真实团队一样管理 AI Agent：组建团队、分配任务、追踪进度、审核交付——同时自动采集多种运行时（Claude Code、Codex、Cursor…）的用量并统一上报。
+AgentCLI 是一个面向普通用户的**本地 AI 数字员工客户端**。你不需要理解命令行、API、会话或运行时：只要像给同事交代工作一样创建任务，数字员工会在需要补充、提交结果或遇到问题时回到收件箱提醒你。
 
-> **CLI for agents, Web for humans.** Web 工作台给人看和管；CLI 给 agent / operator 查询状态、上报用量、触发操作，所有命令支持 `--json` 输出机器可读结果。
+交付报告会直接显示在任务里，图片可以预览，文件可以打开。满意后点击“满意并归档”，正式成果会按版本保存到数字员工的本地 `outputs` 目录；如果不满意，直接提出修改意见，原任务会继续返工，不会产生混乱的新任务。
+
+> **Web for humans, CLI for agents.** 普通用户只需要工作台；CLI、HTTP API 和任务总线留在底层，为数字员工、自动化和高级用户提供能力。
+
+### 一次完整的工作流程
+
+1. **创建任务**：选择数字员工，用自然语言说明要完成什么；也可以直接附上图片、PDF、文本或 Office 文件。
+2. **在收件箱协作**：补充要求、回答问题，回复始终属于当前任务。
+3. **检查交付结果**：直接阅读报告、预览图片和相关文件，不必翻执行日志。
+4. **确认或返工**：满意就归档；需要调整就在原任务上继续修改。
+
+本地参考文件会按任务隔离复制到数字员工当前项目的 `input/<任务ID>/` 目录，执行者会先读取这些输入；正式成果则继续按版本归档到 `outputs`，输入和输出不会混在一起。
+
+需要多人协作时，可以创建“协作团队”并选择成员。页面采用扁平结构：团队在顶部切换，历史任务横向浏览，不再叠加“团队侧栏 → 任务侧栏”。每次任务开始前，成员会通过结构化圆桌自行推选本任务队长，再由队长分工、验收、整合并统一交付。
 
 ### 解决的问题
 
-- AI Agent 越来越多，但**谁在做什么、进展如何**没有统一视图
-- 多种运行时各自独立，**无法协调管理与统一计量**
-- 团队 AI 使用缺乏**可见性、归因和审计能力**
+- 不再需要在聊天记录、终端窗口和文件夹之间寻找任务进展
+- 不再把“当前任务回复”“长期调教”和“新建后续任务”混为一谈
+- 不再出现已有交付结果却仍显示“进行中”的状态冲突
+- 不再让成果只停留在聊天里：确认后自动归档，并保留历史版本
+
+---
+
+## 产品界面
+
+### 核心工作流
+
+<table>
+  <tr>
+    <td width="50%"><strong>任务反馈收件箱</strong><br/><sub>只展示需要你关注的提问、进展和交付。</sub><br/><img src="docs/screenshots/agentcli/workbench/01-inbox.png" alt="任务反馈收件箱" /></td>
+    <td width="50%"><strong>交付结果审核</strong><br/><sub>报告直接阅读，满意归档，不满意原任务返工。</sub><br/><img src="docs/screenshots/agentcli/workbench/02-deliverable-review.png" alt="交付结果审核" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>简洁任务列表</strong><br/><sub>按进行中、待审核和已完成组织工作。</sub><br/><img src="docs/screenshots/agentcli/workbench/03-tasks.png" alt="任务列表" /></td>
+    <td width="50%"><strong>创建任务</strong><br/><sub>选员工、说清结果，并直接附上本地参考文件。</sub><br/><img src="docs/screenshots/agentcli/workbench/04-create-task.png" alt="创建任务" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>数字员工</strong><br/><sub>统一查看员工状态、负责项目和最近活动。</sub><br/><img src="docs/screenshots/agentcli/workbench/05-assistants.png" alt="数字员工列表" /></td>
+    <td width="50%"><strong>概览</strong><br/><sub>快速了解本地数字员工的整体工作情况。</sub><br/><img src="docs/screenshots/agentcli/workbench/06-overview.png" alt="工作台概览" /></td>
+  </tr>
+</table>
+
+### 协作方式
+
+<table>
+  <tr>
+    <td width="50%"><strong>调教员工</strong><br/><sub>改变长期做事方式，不创建任务。</sub><br/><img src="docs/screenshots/agentcli/workbench/12-tuning.png" alt="调教数字员工" /></td>
+    <td width="50%"><strong>新建后续任务</strong><br/><sub>保留来源关系，把新目标交给合适的员工。</sub><br/><img src="docs/screenshots/agentcli/workbench/13-follow-up-task.png" alt="新建后续任务" /></td>
+  </tr>
+</table>
+
+<details>
+<summary><strong>查看定时任务、扩展、通知、诊断和设置页面</strong></summary>
+
+<br/>
+
+| 功能页面 | 截图                                                                                             |
+| :------- | :----------------------------------------------------------------------------------------------- |
+| 定时任务 | <img src="docs/screenshots/agentcli/workbench/07-schedules.png" alt="定时任务" width="720" />    |
+| 扩展能力 | <img src="docs/screenshots/agentcli/workbench/08-capabilities.png" alt="扩展能力" width="720" /> |
+| 通知     | <img src="docs/screenshots/agentcli/workbench/09-notifications.png" alt="通知" width="720" />    |
+| 系统诊断 | <img src="docs/screenshots/agentcli/workbench/10-diagnostics.png" alt="系统诊断" width="720" />  |
+| 设置     | <img src="docs/screenshots/agentcli/workbench/11-settings.png" alt="设置" width="720" />         |
+
+</details>
 
 ---
 
@@ -44,10 +106,10 @@ AgentCli 是一个**本地优先的 AI 数字员工工作台**。它让你像管
 
 | 产品         | 定位                                                  | 适用场景                                       |
 | :----------- | :---------------------------------------------------- | :--------------------------------------------- |
-| **AgentCli** | 本地优先的 CLI + Web 工作台。你现在就能装、立刻能用。 | 单机使用、脚本化、自动化、本地数字员工团队     |
+| **AgentCLI** | 本地优先的 CLI + Web 工作台。你现在就能装、立刻能用。 | 单机使用、脚本化、自动化、本地数字员工团队     |
 | **AgentBus** | 中心化数据总线，把单机工具升级成团队 / 企业平台。     | 多人 / 多团队协作、IM 触发任务、企业级用量看板 |
 
-> 关系一句话：**AgentCli 是本地操作面，AgentBus 是协调骨干。** 不接 Bus = 单机模式，照样完整能跑；接入 Bus 才解锁多人协作与企业能力。
+> 关系一句话：**AgentCLI 是本地操作面，AgentBus 是协调骨干。** 不接 Bus = 单机模式，照样完整能跑；接入 Bus 才解锁多人协作与企业能力。
 
 ---
 
@@ -112,17 +174,17 @@ agentcli usage today                          # 今日本地用量摘要（不�
 
 ### 启动与状态
 
-| 命令                            | 说明                                                                                                                                                                                    |
-| :------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agentcli`                      | 打开终端导航（控制面菜单）：工作台、用量同步、用户、token 池(beta)                                                                                                                      |
-| Web 工作台「创建数字员工」      | 运行 `agentcli web` 后在浏览器中创建和管理数字员工；终端工作台菜单不再提供快速创建入口                                                                                               |
-| `agentcli init`                 | 快速初始化：默认启动 Web 工作台 + 用量后台 worker（worker 默认开机自启）                                                                                                                |
-| `agentcli web`                  | 直接启动 Web 工作台（默认 127.0.0.1:5680）；加 `--daemon` 后台运行                                                                                                                      |
-| `agentcli --daemon --port 8080` | 后台运行并指定端口                                                                                                                                                                      |
-| `agentcli status`               | 查看后台 daemon / Web 运行状态                                                                                                                                                          |
-| `agentcli doctor`               | 只读本地诊断：配置、服务、路径                                                                                                                                                          |
-| `agentcli stop`                 | 显示停止指引（不会主动关闭 Web / 用量 worker）                                                                                                                                          |
-| `agentcli restart`              | 重启 Web daemon + 用量 worker（更新或改配置后用它让新代码生效；本地命令，免登录）                                                                                                       |
+| 命令                            | 说明                                                                                   |
+| :------------------------------ | :------------------------------------------------------------------------------------- |
+| `agentcli`                      | 打开终端导航（控制面菜单）：工作台、用量同步、用户、token 池(beta)                     |
+| Web 工作台「创建数字员工」      | 运行 `agentcli web` 后在浏览器中创建和管理数字员工；终端工作台菜单不再提供快速创建入口 |
+| `agentcli init`                 | 快速初始化：默认启动 Web 工作台 + 用量后台 worker（worker 默认开机自启）               |
+| `agentcli web`                  | 直接启动 Web 工作台（默认 127.0.0.1:5680）；加 `--daemon` 后台运行                     |
+| `agentcli --daemon --port 8080` | 后台运行并指定端口                                                                     |
+| `agentcli status`               | 查看后台 daemon / Web 运行状态                                                         |
+| `agentcli doctor`               | 只读本地诊断：配置、服务、路径                                                         |
+| `agentcli stop`                 | 显示停止指引（不会主动关闭 Web / 用量 worker）                                         |
+| `agentcli restart`              | 重启 Web daemon + 用量 worker（更新或改配置后用它让新代码生效；本地命令，免登录）      |
 
 ### 用户授权（上报前提）
 
@@ -169,7 +231,7 @@ agentcli web
 
 ### 本机数据来源
 
-AgentCli 无侵入扫描本地会话日志：
+AgentCLI 无侵入扫描本地会话日志：
 
 | 运行时      | 数据位置                        | 采集内容                                 |
 | :---------- | :------------------------------ | :--------------------------------------- |
@@ -184,8 +246,8 @@ AgentCli 无侵入扫描本地会话日志：
 - **Codex** `~/.codex/auth.json`（`OPENAI_API_KEY`）+ `~/.codex/config.toml`（surgical 改写 `model_provider` / `model` / wire_api 与 `[model_providers.*]`，**保留 `[projects.*]`**）。Codex 的 base_url 由网关 `proxyPaths` 按所选 wire_api 解析，与 Claude 的 endpoint 不同。
 - 同时写 `~/.hermit/aikey.env`（0600），作为已认领标记，并供外部 agent 手动 `source`。
 - **系统环境变量**：认领时会一次性更新环境变量，不安装 `precmd` / `PROMPT_COMMAND` 等每次提示符执行的 hook：
-  - **macOS**：更新 `~/.zshrc` 的 AgentCli 管理块，并通过 `launchctl setenv` 让当前登录会话中新启动的 GUI 应用可读取；已有终端请新开一个。
-  - **Linux**：更新 `~/.bashrc` 的 AgentCli 管理块；新开终端后生效。
+  - **macOS**：更新 `~/.zshrc` 的 AgentCLI 管理块，并通过 `launchctl setenv` 让当前登录会话中新启动的 GUI 应用可读取；已有终端请新开一个。
+  - **Linux**：更新 `~/.bashrc` 的 AgentCLI 管理块；新开终端后生效。
   - **Windows**：写入当前用户的 Windows 环境变量；新开终端后生效。
   - Claude Code 使用 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL`；Codex 使用 `OPENAI_API_KEY` / `OPENAI_BASE_URL`。只写入你在认领时选择的运行时对应变量。
 
@@ -218,7 +280,7 @@ AgentCli 无侵入扫描本地会话日志：
 开发者本地
   Claude Code / Codex / Cursor / Gemini / OpenCode ...
         ↓ 会话日志 & token 用量
-  AgentCli  (本地 CLI + Web 工作台)
+  AgentCLI  (本地 CLI + Web 工作台)
         ↓ 统一上报
   AgentBus (企业版 · 中心化数据总线)
         ↓ 看板 & 协作
@@ -263,7 +325,7 @@ AgentCli 无侵入扫描本地会话日志：
 
 ---
 
-## 更新 AgentCli
+## 更新 AgentCLI
 
 > **1.9.34+ 起**：更新会顺带修复 cc-connect 二进制下载问题（国内 / 企业防火墙环境下原本会静默失败，导致「同步到运行时失败：fetch failed」）。cc-connect 安装走镜像、启动时自愈下载，无需手动处理。遇到 fetch failed 的用户升级到最新版即可。
 
@@ -297,7 +359,7 @@ agentcli doctor
 - 停止服务和更新包不会删除 `~/.hermit/` 中的团队、渠道配置、登录态或用量状态。
 - 若仍提示文件被占用，只终止与 agentcli / hermit / cc-connect 明确相关的残留进程，不要批量结束所有 Node 进程。
 
-完整说明见 [在线指南 · 安全更新 AgentCli](https://yancyuu.github.io/agentcli/#update)。
+完整说明见 [在线指南 · 安全更新 AgentCLI](https://yancyuu.github.io/agentcli/#update)。
 
 ---
 
@@ -391,9 +453,9 @@ export PATH="$(npm config get prefix)/bin:$PATH"
 </details>
 
 <details>
-<summary><b>AgentCli 和 AgentBus 是什么关系？收费吗？</b></summary>
+<summary><b>AgentCLI 和 AgentBus 是什么关系？收费吗？</b></summary>
 
-**AgentCli** 是本地 CLI + Web 工作台，单机完整可用。**AgentBus** 提供团队协作、企业用量看板、IM 路由、跨团队派发、审计等能力。不接 Bus 不影响本地使用。
+**AgentCLI** 是本地 CLI + Web 工作台，单机完整可用。**AgentBus** 提供团队协作、企业用量看板、IM 路由、跨团队派发、审计等能力。不接 Bus 不影响本地使用。
 
 </details>
 

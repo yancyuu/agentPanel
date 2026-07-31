@@ -17,8 +17,8 @@ export const NAV_ACTIONS = [
     description: '打开本机 Web 工作台；数字员工请在 Web 端创建和管理',
     recommended: true,
     children: [
-      { id: 'toggle-web', label: '开启/关闭 AgentCli 工作台', toggle: 'web', description: '启动/停止本机 AgentCli Web 工作台；请在 Web 工作台创建和管理数字员工' },
-      { id: 'workbench-status', label: '查看本地工作台状态', description: '查看 AgentCli 工作台运行状态' },
+      { id: 'toggle-web', label: '开启/关闭 AgentCLI 工作台', toggle: 'web', description: '启动/停止本机 AgentCLI Web 工作台；请在 Web 工作台创建和管理数字员工' },
+      { id: 'workbench-status', label: '查看本地工作台状态', description: '查看 AgentCLI 工作台运行状态' },
     ],
   },
   {

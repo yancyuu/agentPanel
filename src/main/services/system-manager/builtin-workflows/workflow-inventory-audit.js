@@ -1,7 +1,7 @@
 export const meta = {
   name: 'workflow-inventory-audit',
   description:
-    'Read-only inventory audit for Hermit and Claude Code workflows, commands, skills, cron, hooks, and generated dynamic workflow scripts.',
+    'Read-only inventory audit for AgentCLI and Claude Code workflows, commands, skills, cron, hooks, and generated dynamic workflow scripts.',
   category: 'compliance',
   safety: 'audit',
   order: 115,
@@ -55,10 +55,10 @@ const safetyRules = [
 
 phase('Inventory');
 const inventory = await agent(
-  `只读盘点 Hermit / Claude Code / 项目自动化资产。
+  `只读盘点 AgentCLI / Claude Code / 项目自动化资产。
 
 目标项目：${options.projectRoot}
-Hermit 预设 workflow 目录：${options.hermitWorkflowDir}
+AgentCLI 预设 workflow 目录：${options.hermitWorkflowDir}
 includeGeneratedArtifacts=${options.includeGeneratedArtifacts}
 
 安全边界：
@@ -82,7 +82,7 @@ ${safetyRules.map((rule) => `- ${rule}`).join('\n')}
 
 phase('Classify');
 const classification = await agent(
-  `根据以下只读清单，把自动化资产分类并判断是否适合沉淀为 Hermit 预设动态 workflow。
+  `根据以下只读清单，把自动化资产分类并判断是否适合沉淀为 AgentCLI 预设动态 workflow。
 
 清单：
 ${JSON.stringify(inventory)}
@@ -106,14 +106,14 @@ ${JSON.stringify(inventory)}
 
 phase('Report');
 const report = await agent(
-  `用中文生成 Hermit 运维能力盘点报告。
+  `用中文生成 AgentCLI 运维能力盘点报告。
 
 分类结果：
 ${JSON.stringify(classification)}
 
 输出：
 1. 已安装/已沉淀能力。
-2. 值得产品化为 Hermit 预设动态 workflow 的候选，含建议文件名、用途、安全等级和理由。
+2. 值得产品化为 AgentCLI 预设动态 workflow 的候选，含建议文件名、用途、安全等级和理由。
 3. 重复或冲突入口。
 4. 高风险自动化和必须人工确认的边界。
 5. 不建议迁移的资产及原因。

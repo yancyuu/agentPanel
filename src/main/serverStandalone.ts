@@ -2,6 +2,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { provisionAgentCliShim } from './services/agentcli/AgentCliShimProvisioner';
+import { provisionDesktopCommandAliases } from './services/agentcli/DesktopCommandAliasProvisioner';
+import { provisionPiShim } from './services/agentcli/PiShimProvisioner';
 import { markBridgeBinaryCheck, markBridgeLaunch } from './services/system/RuntimeReadiness';
 import { getOrCreateStandaloneServerComposition } from './serverComposition';
 import { createHermitConfigStore, createServerEnvironment } from './serverConfig';
@@ -56,12 +58,21 @@ export async function startStandaloneServer(
     imLiveWatcher: composition.context.services.imLiveWatcher,
     initializeTelemetryFromSettings: server.initializeTelemetryFromSettings,
     ensureGlobalWorkflows: server.ensureGlobalWorkflows,
-    ensureAgentCliShim: () =>
-      provisionAgentCliShim({
+    ensureAgentCliShim: async () => {
+      await provisionAgentCliShim({
         hermitHome: environment.hermitHome,
         packageRoot: environment.repoRoot,
         version: environment.version,
-      }),
+      });
+      if (process.env.AGENTCLI_PACKAGED_DESKTOP === '1') {
+        await provisionPiShim({
+          hermitHome: environment.hermitHome,
+          packageRoot: environment.repoRoot,
+          version: environment.version,
+        });
+        await provisionDesktopCommandAliases({ hermitHome: environment.hermitHome });
+      }
+    },
     markBridgeBinaryCheck,
     markBridgeLaunch,
     processTarget,

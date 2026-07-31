@@ -58,7 +58,7 @@ export function registerRuntimeRoutes(
       } catch (error) {
         logger.warn(
           { err: error },
-          'cc-connect settings patch failed; saved Hermit settings locally'
+          'cc-connect settings patch failed; saved AgentCLI settings locally'
         );
       }
       return {

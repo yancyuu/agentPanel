@@ -108,9 +108,13 @@ describe('team compatibility routes', () => {
       {
         method: 'GET',
         url: '/api/teams/team-a/task-log-stream-summary/task-1',
-        expected: { chunks: [] },
+        expected: { segmentCount: 0 },
       },
-      { method: 'GET', url: '/api/teams/team-a/task-log-stream/task-1', expected: { chunks: [] } },
+      {
+        method: 'GET',
+        url: '/api/teams/team-a/task-log-stream/task-1',
+        expected: { participants: [], defaultFilter: 'all', segments: [] },
+      },
       {
         method: 'GET',
         url: '/api/teams/team-a/exact-log-summaries/task-1',

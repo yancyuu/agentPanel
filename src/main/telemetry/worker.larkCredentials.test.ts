@@ -16,6 +16,7 @@ import {
 describe('Lark credential loop', () => {
   let hermitHome: string | undefined;
   let previousPath: string | undefined;
+  let previousCredentialExport: string | undefined;
 
   beforeEach(() => {
     // Credential discovery shells out to the REAL lark-cli binary; on a dev
@@ -23,12 +24,17 @@ describe('Lark credential loop', () => {
     // live tokens against the production Feishu API and blow test timeouts.
     // Scrub PATH so discovery finds no binary and takes the fast path.
     previousPath = process.env.PATH;
+    previousCredentialExport = process.env.AGENTCLI_ENABLE_LARK_CREDENTIAL_EXPORT;
     process.env.PATH = '';
+    process.env.AGENTCLI_ENABLE_LARK_CREDENTIAL_EXPORT = '1';
   });
 
   afterEach(async () => {
     if (previousPath === undefined) delete process.env.PATH;
     else process.env.PATH = previousPath;
+    if (previousCredentialExport === undefined)
+      delete process.env.AGENTCLI_ENABLE_LARK_CREDENTIAL_EXPORT;
+    else process.env.AGENTCLI_ENABLE_LARK_CREDENTIAL_EXPORT = previousCredentialExport;
     if (hermitHome) await rm(hermitHome, { recursive: true, force: true });
     hermitHome = undefined;
   });

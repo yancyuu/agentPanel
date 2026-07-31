@@ -41,7 +41,7 @@ export const SourceMessageAttachments = ({
     <div className="mb-2">
       <div className="mb-1 flex items-center gap-1.5">
         <span className="text-[11px] font-medium text-[var(--color-text-muted)]">
-          From original message
+          来自任务参考资料
         </span>
         <Tooltip>
           <TooltipTrigger asChild>

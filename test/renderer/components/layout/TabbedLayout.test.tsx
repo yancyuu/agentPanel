@@ -12,6 +12,7 @@ interface TestPane {
 }
 
 const actions = {
+  openInboxTab: vi.fn(),
   openTasksTab: vi.fn(),
   openDashboard: vi.fn(),
   openTeamsTab: vi.fn(),
@@ -35,12 +36,12 @@ const storeState: {
       {
         id: 'pane-1',
         widthFraction: 1,
-        activeTabId: 'tasks-tab',
-        tabs: [{ id: 'tasks-tab', type: 'tasks', label: '收件箱', createdAt: 1 }],
+        activeTabId: 'inbox-tab',
+        tabs: [{ id: 'inbox-tab', type: 'inbox', label: '收件箱', createdAt: 1 }],
       },
     ],
   },
-  activeTabId: 'tasks-tab',
+  activeTabId: 'inbox-tab',
   unreadCount: 2,
   ...actions,
 };
@@ -110,12 +111,12 @@ async function renderLayout() {
 
 describe('TabbedLayout', () => {
   beforeEach(() => {
-    storeState.activeTabId = 'tasks-tab';
+    storeState.activeTabId = 'inbox-tab';
     storeState.paneLayout.panes[0] = {
       id: 'pane-1',
       widthFraction: 1,
-      activeTabId: 'tasks-tab',
-      tabs: [{ id: 'tasks-tab', type: 'tasks', label: '收件箱', createdAt: 1 }],
+      activeTabId: 'inbox-tab',
+      tabs: [{ id: 'inbox-tab', type: 'inbox', label: '收件箱', createdAt: 1 }],
     };
     Object.values(actions).forEach((action) => action.mockClear());
   });
@@ -125,11 +126,11 @@ describe('TabbedLayout', () => {
     vi.restoreAllMocks();
   });
 
-  it('keeps the tab/pane shell and all global overlays while adding persistent navigation', async () => {
+  it('uses the navigation rail without the redundant browser-style tab strip', async () => {
     const { host, root } = await renderLayout();
 
     expect(host.querySelector('[aria-label="主导航"]')).not.toBeNull();
-    expect(host.querySelector('[data-testid="tab-bar-row"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="tab-bar-row"]')).toBeNull();
     expect(host.querySelector('[data-testid="pane-container"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="command-palette"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="task-detail-dialog"]')).not.toBeNull();
@@ -137,7 +138,7 @@ describe('TabbedLayout', () => {
     expect(host.querySelector('[data-testid="workspace-sidebar"]')).toBeNull();
 
     host
-      .querySelector<HTMLButtonElement>('button[aria-label="数字员工"]')
+      .querySelector<HTMLButtonElement>('button[aria-label="智能体"]')
       ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(actions.openTeamsTab).toHaveBeenCalledOnce();
 
@@ -159,7 +160,34 @@ describe('TabbedLayout', () => {
     const { host, root } = await renderLayout();
 
     expect(host.querySelector('[aria-current="page"]')?.getAttribute('aria-label')).toBe('收件箱');
-    expect(actions.openTasksTab).not.toHaveBeenCalled();
+    expect(actions.openInboxTab).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('keeps the diagnostics page simple without the WorkspaceBrowser sidebar', async () => {
+    storeState.activeTabId = 'system-manager-tab';
+    storeState.paneLayout.panes[0] = {
+      id: 'pane-1',
+      widthFraction: 1,
+      activeTabId: 'system-manager-tab',
+      tabs: [
+        {
+          id: 'system-manager-tab',
+          type: 'team',
+          teamName: 'system-manager',
+          label: '诊断',
+          createdAt: 1,
+        },
+      ],
+    };
+
+    const { host, root } = await renderLayout();
+    expect(host.querySelector('[data-testid="workspace-sidebar"]')).toBeNull();
+    expect(host.querySelector('[aria-current="page"]')?.getAttribute('aria-label')).toBe('诊断');
 
     await act(async () => {
       root.unmount();
@@ -187,7 +215,7 @@ describe('TabbedLayout', () => {
     const { host, root } = await renderLayout();
     expect(host.querySelector('[data-testid="workspace-sidebar"]')).not.toBeNull();
     expect(host.querySelector('[aria-current="page"]')?.getAttribute('aria-label')).toBe(
-      '数字员工'
+      '智能体'
     );
 
     await act(async () => {

@@ -84,7 +84,7 @@ export const ExpandableContent = ({
             }}
           >
             <ChevronDown size={12} />
-            Show more
+            展开阅读全文
           </button>
         </div>
       ) : null}
@@ -101,7 +101,7 @@ export const ExpandableContent = ({
             }}
           >
             <ChevronUp size={12} />
-            Show less
+            收起内容
           </button>
         </div>
       ) : null}

@@ -14,15 +14,17 @@ import {
   buildWorkbenchRuntimeEnv,
   resolveLoopbackWorkbenchUrl,
 } from './services/agentcli/workbenchRuntimeEnv';
-import { httpsGetFollowRedirects } from './services/extensions/catalog/PluginCatalogService';
 import {
   type ProjectUsageStats,
   scanProjectStats,
 } from './services/session-intelligence/SessionUsageParser';
 import { DEFAULT_HERMIT_CC_SETTINGS } from './services/settings/HermitCcSettingsService';
-import { ensureAdminLoopInitialized as runAdminLoopInit } from './services/system-manager/AdminLoopInitializer';
+import {
+  AGENTCLI_OPS_GUIDE_MARKER,
+  CURRENT_AGENTCLI_OPERATIONS_GUIDE,
+  ensureAdminLoopInitialized as runAdminLoopInit,
+} from './services/system-manager/AdminLoopInitializer';
 import { adminWorkDir } from './services/system-manager/SystemManagerConfigService';
-import { HERMIT_OPS_GUIDE_URL } from './services/team-management/OpsRunbookContext';
 import { getUsageTelemetryWorkerPaths, isUsageTelemetryWorkerPidRunning } from './telemetry/worker';
 import {
   isExternalPlatformSessionKey,
@@ -37,7 +39,7 @@ import type { SystemManagerSummary, TelemetryConfig } from '@shared/types/team';
 import type { FastifyBaseLogger, FastifyRequest } from 'fastify';
 
 const SYSTEM_MANAGER_DESCRIPTION =
-  '项目级 Claude Code Helm Loop，负责插件、MCP、Env、数字员工和统计数据的托管管理。';
+  '项目级 Claude Code 诊断，负责插件、MCP、Env、数字员工和统计数据的托管管理。';
 const TEAM_STATS_CACHE_TTL_MS = 30_000;
 const BRIDGE_SESSION_TEAM_CACHE_TTL_MS = 60_000;
 const EXTERNAL_PLATFORM_ROUTE_RETRY_COUNT = 6;
@@ -487,10 +489,8 @@ export function createServerOperations({
       hasExistingBootstrap: async () => {
         try {
           return (
-            (
-              await fs.readFile(path.join(await getSystemManagerWorkDir(), 'CLAUDE.md'), 'utf8')
-            ).trim().length > 0
-          );
+            await fs.readFile(path.join(await getSystemManagerWorkDir(), 'CLAUDE.md'), 'utf8')
+          ).includes(AGENTCLI_OPS_GUIDE_MARKER);
         } catch {
           return false;
         }
@@ -502,7 +502,7 @@ export function createServerOperations({
           'utf8'
         );
       },
-      fetchGuide: () => httpsGetFollowRedirects(HERMIT_OPS_GUIDE_URL),
+      fetchGuide: async () => ({ statusCode: 200, body: CURRENT_AGENTCLI_OPERATIONS_GUIDE }),
       log: (message) => logger.warn({ sessionKey }, message),
       dispatch: async ({ text, messageId }) => {
         const workDir = await getSystemManagerWorkDir();
@@ -734,7 +734,7 @@ export function createServerOperations({
     }
     logger.warn(
       { sessionKey },
-      'external platform bridge message could not be mapped to a Hermit team slug'
+      'external platform bridge message could not be mapped to an AgentCLI team slug'
     );
     return null;
   };

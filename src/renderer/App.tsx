@@ -17,7 +17,7 @@ import type { PaneLayout } from './types/panes';
 import type { Tab } from './types/tabs';
 
 const PERSIST_KEY = 'hermit:lastTeam';
-const DEFAULT_APP_PATH = '/tasks';
+const DEFAULT_APP_PATH = '/inbox';
 
 function getActiveTabFromLayout(activeTabId: string | null, paneLayout: PaneLayout): Tab | null {
   if (!activeTabId) return null;
@@ -46,8 +46,12 @@ function buildPathForTab(activeTab: Tab | null): string {
       return '/extensions';
     case 'schedules':
       return '/schedules';
+    case 'inbox':
+      return '/inbox';
     case 'tasks':
       return '/tasks';
+    case 'collaboration':
+      return '/collaboration';
     case 'dashboard':
       return '/dashboard';
     case 'session': {

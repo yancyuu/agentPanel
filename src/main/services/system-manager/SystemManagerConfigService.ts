@@ -15,10 +15,10 @@ function hermitHome(): string {
 }
 
 /**
- * Canonical runtime path for the Helm Loop. The admin loop is a normal Claude
+ * Canonical runtime path for the 诊断. The admin loop is a normal Claude
  * Code workspace rooted at ~/.hermit: commands are read from .claude/commands
  * and CLAUDE.md from the same root. This is fixed — the workspace is not
- * user-selectable, so the Helm Loop always reports ~/.hermit as its scope.
+ * user-selectable, so the 诊断 always reports ~/.hermit as its scope.
  */
 export function adminWorkDir(): string {
   return hermitHome();
@@ -49,7 +49,7 @@ export class SystemManagerConfigService {
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
     };
 
-    // Self-heal: the Helm Loop workspace is fixed at ~/.hermit and intentionally
+    // Self-heal: the 诊断 workspace is fixed at ~/.hermit and intentionally
     // not configurable, so any other persisted selectedWorkDir is stale drift.
     // Rewrite it once so the file stops advertising a misleading path.
     if (parsed.selectedWorkDir !== undefined && parsed.selectedWorkDir !== adminWorkDir()) {
@@ -84,7 +84,7 @@ export class SystemManagerConfigService {
   async getStatus(): Promise<SystemManagerStatus> {
     const hasClaude = await commandExists('claude');
     return {
-      displayName: 'Helm Loop',
+      displayName: '诊断',
       adminWorkDir: adminWorkDir(),
       defaultWorkDir: adminWorkDir(),
       selectedWorkDir: adminWorkDir(),

@@ -577,6 +577,17 @@ export async function scanLarkCredentialsOnce(
   hermitHome = resolveHermitHome()
 ): Promise<LarkCredentialsReportStatus> {
   const attemptAt = new Date().toISOString();
+  if (process.env.AGENTCLI_ENABLE_LARK_CREDENTIAL_EXPORT !== '1') {
+    const report: LarkCredentialsReportStatus = {
+      ok: true,
+      enabled: false,
+      reason: 'config-disabled',
+      message: '飞书凭证委托默认关闭，需要单独的高风险授权',
+      lastAttemptAt: attemptAt,
+    };
+    await safeWriteLarkCredentialsStatus(hermitHome, 'idle', { report });
+    return report;
+  }
   await safeWriteLarkCredentialsStatus(hermitHome, 'reporting', { attemptAt });
   try {
     const report = await reportAllLarkCredentials({
@@ -824,7 +835,7 @@ const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1]
 if (import.meta.url === invokedPath) {
   runCli().catch((err) => {
     process.stderr.write(
-      `[openHermit] telemetry worker failed: ${err instanceof Error ? err.message : String(err)}\n`
+      `[AgentCLI] telemetry worker failed: ${err instanceof Error ? err.message : String(err)}\n`
     );
     process.exit(1);
   });

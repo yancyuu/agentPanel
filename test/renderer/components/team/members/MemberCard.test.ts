@@ -444,7 +444,7 @@ describe('MemberCard starting-state visuals', () => {
       await Promise.resolve();
     });
 
-    const messageButton = host.querySelector<HTMLButtonElement>('[aria-label="给 alice 发私信"]')!;
+    const messageButton = host.querySelector<HTMLButtonElement>('[aria-label="调教 alice"]')!;
     const assignButton = host.querySelector<HTMLButtonElement>('[aria-label="给 alice 分配任务"]')!;
 
     await act(async () => {

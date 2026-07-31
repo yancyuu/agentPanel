@@ -78,6 +78,40 @@ describe('workbench server factory', () => {
     await server.shutdown();
   });
 
+  it('requires the per-launch desktop session token and exposes an independent health check', async () => {
+    const harness = await createHarness({ AGENTCLI_DESKTOP_SESSION_TOKEN: 'desktop-secret' });
+    const server = await createWorkbenchServer(harness.composition.context, {
+      environment: harness.environment,
+      configStore: harness.configStore,
+      getRuntimeConfig: harness.composition.getRuntimeConfig,
+      updateRuntimeConfig: harness.composition.updateRuntimeConfig,
+      setRestartBridge: harness.composition.setRestartBridge,
+    });
+
+    expect((await server.app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(401);
+    expect(
+      (
+        await server.app.inject({
+          method: 'GET',
+          url: '/api/health',
+          headers: { 'x-agentcli-desktop-token': 'wrong' },
+        })
+      ).statusCode
+    ).toBe(401);
+    const healthy = await server.app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { 'x-agentcli-desktop-token': 'desktop-secret' },
+    });
+    expect(healthy.statusCode).toBe(200);
+    expect(healthy.json()).toEqual({
+      ok: true,
+      service: 'agentcli-workbench',
+      version: harness.environment.version,
+    });
+    await server.shutdown();
+  });
+
   it('assembles the complete checked static method/path manifest at runtime', async () => {
     const harness = await createHarness();
     const runtimeRoutes: string[] = [];
@@ -105,16 +139,16 @@ describe('workbench server factory', () => {
     const expectedRoutes = sortedRouteKeys();
     const actualRoutes = [...runtimeRoutes].sort((left, right) => left.localeCompare(right));
 
-    expect(actualRoutes).toHaveLength(240);
-    expect(new Set(actualRoutes).size).toBe(240);
+    expect(actualRoutes).toHaveLength(267);
+    expect(new Set(actualRoutes).size).toBe(267);
     expect(actualRoutes).toEqual(expectedRoutes);
     expect(methodCounts(actualRoutes)).toEqual({
       ALL: 3,
-      DELETE: 9,
-      GET: 98,
-      PATCH: 13,
-      POST: 112,
-      PUT: 5,
+      DELETE: 12,
+      GET: 108,
+      PATCH: 14,
+      POST: 124,
+      PUT: 6,
     });
     expect(methodCounts(actualRoutes)).toEqual(methodCounts(expectedRoutes));
     await server.shutdown();
@@ -140,7 +174,7 @@ describe('workbench server factory', () => {
       harness.composition.context.services.bridgeConnection.listenerCount('reply_stream')
     ).toBe(1);
     expect(harness.composition.context.services.bridgeConnection.listenerCount('message')).toBe(1);
-    expect(harness.composition.context.lifecycle.listenerDisposers).toHaveLength(1);
+    expect(harness.composition.context.lifecycle.listenerDisposers).toHaveLength(3);
     await first.shutdown();
   });
 

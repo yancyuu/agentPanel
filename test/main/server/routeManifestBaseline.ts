@@ -10,6 +10,14 @@ export const OPERATIONS_PATH = resolve(process.cwd(), 'src/main/serverOperations
 export const STANDALONE_PATH = resolve(process.cwd(), 'src/main/serverStandalone.ts');
 export const ROUTES_DIR = resolve(process.cwd(), 'src/main/routes');
 export const STARTUP_PATH = resolve(process.cwd(), 'src/main/serverStartup.ts');
+export const COLLABORATION_ROUTES_PATH = resolve(
+  process.cwd(),
+  'src/features/team-collaboration/main/registerCollaborationRoutes.ts'
+);
+export const ADVANCED_CONNECTION_ROUTES_PATH = resolve(
+  process.cwd(),
+  'src/features/advanced-connections/main/adapters/input/registerAdvancedConnectionRoutes.ts'
+);
 export const SERVER_SOURCE = readFileSync(SERVER_PATH, 'utf8');
 export const WORKBENCH_SOURCE = readFileSync(WORKBENCH_PATH, 'utf8');
 export const OPERATIONS_SOURCE = readFileSync(OPERATIONS_PATH, 'utf8');
@@ -39,6 +47,8 @@ export const ACTIVE_ROUTE_MODULES = ROUTE_MODULES.filter(
 
 const ROUTE_SOURCE_PATHS = [
   WORKBENCH_PATH,
+  COLLABORATION_ROUTES_PATH,
+  ADVANCED_CONNECTION_ROUTES_PATH,
   ...ACTIVE_ROUTE_MODULES.map((module) => module.sourcePath),
 ];
 

@@ -50,7 +50,7 @@ describe('InboxTaskList', () => {
     await act(async () => {
       root.render(
         <InboxTaskList
-          view="inbox"
+          view="in_progress"
           onViewChange={onViewChange}
           query=""
           onQueryChange={onQueryChange}
@@ -74,11 +74,12 @@ describe('InboxTaskList', () => {
     expect(host.querySelector('[aria-label="筛选团队"]')).not.toBeNull();
     expect(host.querySelector('[aria-label="筛选负责人"]')).not.toBeNull();
     expect(host.querySelector('[role="tablist"]')).not.toBeNull();
-    expect(buttonByText(host, '收件箱').getAttribute('aria-selected')).toBe('true');
-    expect(buttonByText(host, '进行中').getAttribute('role')).toBe('tab');
+    expect(buttonByText(host, '进行中').getAttribute('aria-selected')).toBe('true');
+    expect(buttonByText(host, '待审核').getAttribute('role')).toBe('tab');
+    expect(host.textContent).not.toContain('收件箱');
 
     await act(async () => {
-      buttonByText(host, '进行中').click();
+      buttonByText(host, '待审核').click();
       buttonByText(host, '修复登录页面').click();
       const input = host.querySelector<HTMLInputElement>('[aria-label="搜索任务"]');
       if (!input) throw new Error('Search input not found');
@@ -88,7 +89,7 @@ describe('InboxTaskList', () => {
       await Promise.resolve();
     });
 
-    expect(onViewChange).toHaveBeenCalledWith('in_progress');
+    expect(onViewChange).toHaveBeenCalledWith('review');
     expect(onSelect).toHaveBeenCalledWith(entry.key);
     expect(onQueryChange).toHaveBeenCalledWith('登录');
 

@@ -6,6 +6,9 @@ dist/
 dist-electron/
 dist-standalone/
 dist-renderer/
+dist-desktop-main/
+dist-desktop/
+desktop-runtime/
 out/
 release/
 coverage/

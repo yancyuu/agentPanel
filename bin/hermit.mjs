@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * openHermit CLI - production entry point.
+ * AgentCLI - production entry point (legacy filename retained for compatibility).
  *
  * Usage:
  *   npm install -g @yancyyu/agentcli
@@ -402,7 +402,7 @@ ${BRAND.stylizedName} - 本地 AI runtime 工作区控制面
   tasks list --team <team> [--json]
                      查看分配给数字员工或由其创建的任务
   tasks create --team <team> --title <text> [--description <text>] [--assignee <team>] [--json]
-                     在 Hermit 看板创建任务
+                     在 AgentCLI 看板创建任务
   tasks claim --team <team> --id <task-id> [--json]
                      认领并开始执行任务
   tasks comment --team <team> --id <task-id> --text <text> [--json]
@@ -471,7 +471,7 @@ if (commandArgs[0] === 'init') {
   const result = { ok: true, command: 'init', hermitHome, usage: usage.usage };
   if (jsonRequested) printJson(result);
   printCliRows(
-    'AgentCli 已初始化',
+    'AgentCLI 已初始化',
     [
       [
         '用量后台',

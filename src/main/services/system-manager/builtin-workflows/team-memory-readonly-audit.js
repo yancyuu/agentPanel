@@ -56,7 +56,7 @@ const audit = await agent(
   `只读审计团队记忆、项目指令和长期规则分层。
 
 项目根：${options.projectRoot}
-Hermit home：${options.hermitHome}
+AgentCLI home：${options.hermitHome}
 includeClaudeAutoMemory=${options.includeClaudeAutoMemory}
 includeLegacyCaches=${options.includeLegacyCaches}
 

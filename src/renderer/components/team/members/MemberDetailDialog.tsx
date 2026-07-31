@@ -4,7 +4,7 @@ import { Button } from '@renderer/components/ui/button';
 import { Dialog, DialogContent, DialogHeader } from '@renderer/components/ui/dialog';
 import { resolveMemberRuntimeSummary } from '@renderer/utils/memberRuntimeSummary';
 import { isLeadMember } from '@shared/utils/leadDetection';
-import { Mail, Plus } from 'lucide-react';
+import { Plus, SlidersHorizontal } from 'lucide-react';
 
 import { MemberCapabilitiesSummary } from './MemberCapabilitiesSummary';
 import { MemberDetailHeader } from './MemberDetailHeader';
@@ -121,8 +121,8 @@ export const MemberDetailDialog = ({
             新建任务
           </Button>
           <Button type="button" variant="outline" onClick={onSendMessage}>
-            <Mail size={15} />
-            发私信 · 进入收件箱
+            <SlidersHorizontal size={15} />
+            调教
           </Button>
         </div>
 

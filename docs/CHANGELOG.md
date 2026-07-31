@@ -1,6 +1,6 @@
 # Changelog
 
-本文件记录 openHermit 的用户可见变化。项目遵循 Semantic Versioning。
+本文件记录 AgentCLI 的用户可见变化；历史版本条目保留当时使用的兼容名称。项目遵循 Semantic Versioning。
 
 ## [Unreleased]
 

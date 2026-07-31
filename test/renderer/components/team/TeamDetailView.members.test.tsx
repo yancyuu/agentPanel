@@ -161,12 +161,18 @@ vi.mock('@renderer/store/slices/teamSlice', () => ({
     memberName === testState.member.name ? testState.member : null,
   selectResolvedMembersForTeamName: () => testState.members,
   selectTeamMemberSnapshotsForName: () => [],
+  selectTeamMessages: () => [],
 }));
 
 vi.mock('@renderer/contexts/useTabUIContext', () => ({ useTabIdOptional: () => null }));
 vi.mock('@renderer/hooks/useBranchSync', () => ({ useBranchSync: () => undefined }));
 vi.mock('@renderer/components/chat/SessionContextPanel/index', () => ({
   SessionContextPanel: () => null,
+}));
+vi.mock('@renderer/components/team/members/AgentTuningDialog', () => ({
+  AgentTuningDialog: ({ member }: { member: ResolvedTeamMember }) => (
+    <div>{`调教 ${member.name}`}</div>
+  ),
 }));
 
 vi.mock('@renderer/components/ui/dialog', () => ({
@@ -472,12 +478,9 @@ describe('TeamDetailView member roster interactions', () => {
       await Promise.resolve();
     });
     expect(host.querySelector('[aria-label="成员详情"]')).toBeNull();
-    expect(testState.setPendingInboxThreadIntent).toHaveBeenCalledWith({
-      teamName: 'team-alpha',
-      memberName: 'bob',
-      compose: true,
-    });
-    expect(testState.openTasksTab).toHaveBeenCalledOnce();
+    expect(host.textContent).toContain('调教 bob');
+    expect(testState.setPendingInboxThreadIntent).not.toHaveBeenCalled();
+    expect(testState.openTasksTab).not.toHaveBeenCalled();
 
     await openMember();
     await act(async () => {

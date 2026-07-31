@@ -134,7 +134,7 @@ describe('CapabilityPacksPanel', () => {
         manifest: {
           schemaVersion: 1,
           id: 'hermit-team-ops',
-          name: 'Hermit Team Ops',
+          name: 'AgentCLI Team Ops',
           namespace: 'hermit',
           version: '1.0.0',
           tags: ['hermit'],
@@ -195,7 +195,7 @@ describe('CapabilityPacksPanel', () => {
     expect(host.textContent).toContain('1 个筛选条件已启用');
     expect(host.textContent).toContain('Team A Local Capabilities');
     expect(host.textContent).toContain('Team B Local Capabilities');
-    expect(host.textContent).not.toContain('Hermit Team Ops');
+    expect(host.textContent).not.toContain('AgentCLI Team Ops');
 
     act(() => {
       root.unmount();

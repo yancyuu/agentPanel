@@ -1,6 +1,8 @@
-import type { GlobalTask } from '@shared/types';
+import { getReviewStateFromTask } from '@shared/utils/reviewState';
 
-export type InboxTaskView = 'inbox' | 'in_progress' | 'completed';
+import type { GlobalTask, TaskComment } from '@shared/types';
+
+export type InboxTaskView = 'in_progress' | 'review' | 'completed';
 export type InboxAttentionKind = 'clarification' | 'unread' | 'review' | 'unassigned' | 'recent';
 
 export interface InboxTaskProjection {
@@ -8,6 +10,14 @@ export interface InboxTaskProjection {
   key: string;
   attention: InboxAttentionKind;
   attentionRank: number;
+  unreadCount: number;
+  updatedAtMs: number;
+}
+
+export interface InboxTaskMessageProjection {
+  task: GlobalTask;
+  key: string;
+  latestMessage: TaskComment;
   unreadCount: number;
   updatedAtMs: number;
 }
@@ -23,6 +33,10 @@ export interface InboxProjectionOptions {
 
 export function getGlobalTaskKey(task: Pick<GlobalTask, 'teamName' | 'id'>): string {
   return `${task.teamName}:${task.id}`;
+}
+
+export function getTaskFeedbackComments(comments: readonly TaskComment[]): TaskComment[] {
+  return comments.filter((comment) => comment.author.trim().toLocaleLowerCase() !== 'user');
 }
 
 export function findReferencedTask(
@@ -43,24 +57,69 @@ function toTimestamp(raw: string | Date | null | undefined): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+export function getInboxTaskView(task: GlobalTask): InboxTaskView {
+  const reviewState = getReviewStateFromTask(task);
+  if (reviewState === 'review') return 'review';
+  if (task.status === 'completed') return 'completed';
+  return 'in_progress';
+}
+
 function matchesView(task: GlobalTask, view: InboxTaskView): boolean {
-  if (view === 'completed') return task.status === 'completed';
-  if (view === 'in_progress') return task.status === 'in_progress';
-  return task.status === 'pending' || task.status === 'in_progress';
+  return getInboxTaskView(task) === view;
 }
 
 function deriveAttention(task: GlobalTask, unreadCount: number): [InboxAttentionKind, number] {
   if (task.needsClarification === 'user') return ['clarification', 0];
   if (unreadCount > 0) return ['unread', 1];
-  if (
-    task.reviewState === 'needsFix' ||
-    task.reviewState === 'review' ||
-    task.kanbanColumn === 'review'
-  ) {
+  const reviewState = getReviewStateFromTask(task);
+  if (reviewState === 'needsFix' || reviewState === 'review') {
     return ['review', 2];
   }
   if (!task.owner?.trim()) return ['unassigned', 3];
   return ['recent', 4];
+}
+
+export function projectInboxTaskMessages({
+  tasks,
+  query = '',
+  teamName = 'all',
+  unreadCountByTask = {},
+}: Omit<InboxProjectionOptions, 'view' | 'owner'>): InboxTaskMessageProjection[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+
+  return tasks
+    .filter((task) => task.status !== 'deleted' && !task.deletedAt && !task.teamDeleted)
+    .filter((task) => teamName === 'all' || task.teamName === teamName)
+    .map((task) => {
+      const latestMessage = getTaskFeedbackComments(task.comments ?? []).at(-1);
+      if (!latestMessage) return null;
+      const key = getGlobalTaskKey(task);
+      return {
+        task,
+        key,
+        latestMessage,
+        unreadCount: unreadCountByTask[key] ?? 0,
+        updatedAtMs: toTimestamp(latestMessage.createdAt),
+      };
+    })
+    .filter((entry): entry is InboxTaskMessageProjection => entry !== null)
+    .filter((entry) => {
+      if (!normalizedQuery) return true;
+      return [
+        entry.task.subject,
+        entry.task.teamDisplayName,
+        entry.task.owner,
+        entry.latestMessage.author,
+        entry.latestMessage.text,
+      ].some((value) => value?.toLocaleLowerCase().includes(normalizedQuery));
+    })
+    .sort((left, right) => {
+      const leftUnread = left.unreadCount > 0 ? 1 : 0;
+      const rightUnread = right.unreadCount > 0 ? 1 : 0;
+      if (leftUnread !== rightUnread) return rightUnread - leftUnread;
+      if (left.updatedAtMs !== right.updatedAtMs) return right.updatedAtMs - left.updatedAtMs;
+      return left.key.localeCompare(right.key);
+    });
 }
 
 export function projectInboxTasks({
@@ -106,7 +165,7 @@ export function projectInboxTasks({
       };
     })
     .sort((a, b) => {
-      if (view === 'inbox' && a.attentionRank !== b.attentionRank) {
+      if (view === 'in_progress' && a.attentionRank !== b.attentionRank) {
         return a.attentionRank - b.attentionRank;
       }
       if (a.updatedAtMs !== b.updatedAtMs) return b.updatedAtMs - a.updatedAtMs;

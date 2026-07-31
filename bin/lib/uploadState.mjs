@@ -13,29 +13,24 @@
  * read for upload behavior — so it is deliberately ignored here; honoring it
  * would make the CLI claim "enabled" while the worker refuses to upload.
  *
- * DEFAULT-ON semantics: conversation upload is ON unless the user explicitly
- * opted out. An absent config (fresh install, never toggled) resolves to ON so
- * the 消息总线 is active without forcing the user through the toggle first. The
- * toggle's OFF path writes `conversationUploadEnabled: false` (see
- * setConversationUploadEnabled), which is honored as an explicit opt-out and is
- * not resurrected by the default. Resolution rule:
- *   • canonical `true` OR legacy `true` → ON (explicit opt-in wins over opt-out)
- *   • canonical `false` OR legacy `false` → OFF
- *   • both absent → ON (default)
+ * EXPLICIT-OPT-IN semantics: conversation upload is ON only when the user has
+ * explicitly enabled the canonical or legacy switch. A fresh install resolves
+ * to OFF, because connecting a remote service or granting a broad upload scope
+ * must not implicitly authorize message content. Resolution rule:
+ *   • canonical `true` OR legacy `true` → ON
+ *   • otherwise → OFF
  *
  * @param {unknown} telemetry
  * @returns {boolean}
  */
 export function resolveConversationUploadEnabled(telemetry) {
-  if (!telemetry || typeof telemetry !== 'object') return true;
+  if (!telemetry || typeof telemetry !== 'object') return false;
   const t = /** @type {Record<string, unknown>} */ (telemetry);
   const canonical = t.conversationUploadEnabled;
   const legacy = t.conversations && typeof t.conversations === 'object'
     ? (/** @type {Record<string, unknown>} */ (t.conversations).uploadEnabled)
     : undefined;
-  if (canonical === true || legacy === true) return true;
-  if (canonical === false || legacy === false) return false;
-  return true;
+  return canonical === true || legacy === true;
 }
 
 /**

@@ -223,8 +223,8 @@ describe('MemberDetailDialog workbench profile', () => {
     });
 
     expect(host.textContent).toContain('新建任务');
-    expect(host.textContent).toContain('发私信');
-    expect(host.textContent).toContain('进入收件箱');
+    expect(host.textContent).toContain('调教');
+    expect(host.textContent).not.toContain('进入收件箱');
     expect(host.textContent).toContain('当前任务');
     expect(host.textContent).toContain('Review patch');
     expect(host.textContent).toContain('capabilities-summary');
@@ -236,7 +236,7 @@ describe('MemberDetailDialog workbench profile', () => {
         .find((button) => button.textContent?.includes('新建任务'))
         ?.click();
       Array.from(host.querySelectorAll('button'))
-        .find((button) => button.textContent?.includes('发私信'))
+        .find((button) => button.textContent?.includes('调教'))
         ?.click();
       Array.from(host.querySelectorAll('button'))
         .find((button) => button.textContent?.includes('Review patch'))

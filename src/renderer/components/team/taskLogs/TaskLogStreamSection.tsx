@@ -47,14 +47,26 @@ function actorLabel(actor: BoardTaskLogActor): string {
   return `成员会话 ${actor.sessionId.slice(0, 8)}`;
 }
 
-function normalizeResponse(response: BoardTaskLogStreamResponse): BoardTaskLogStreamResponse {
+function normalizeResponse(response: unknown): BoardTaskLogStreamResponse {
+  const value =
+    response && typeof response === 'object'
+      ? (response as Partial<BoardTaskLogStreamResponse>)
+      : {};
+  const participants = Array.isArray(value.participants) ? value.participants : [];
+  const segments = Array.isArray(value.segments) ? value.segments : [];
+
   return {
-    participants: response.participants,
-    defaultFilter: response.defaultFilter,
-    source: response.source,
-    runtimeProjection: response.runtimeProjection,
-    segments: response.segments.map((segment) => ({
+    participants,
+    defaultFilter: typeof value.defaultFilter === 'string' ? value.defaultFilter : 'all',
+    source: value.source,
+    runtimeProjection: value.runtimeProjection,
+    segments: segments.map((segment) => ({
       ...segment,
+      actor: segment.actor ?? {
+        role: 'unknown',
+        sessionId: '',
+        isSidechain: true,
+      },
       chunks: asEnhancedChunkArray(segment.chunks) ?? [],
     })),
   };
@@ -289,9 +301,6 @@ export const TaskLogStreamSection = ({
   if (loading) {
     return (
       <div className="space-y-2">
-        <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-text-muted)]">
-          任务日志流
-        </h4>
         <div className="flex items-center gap-2 py-4 text-xs text-[var(--color-text-muted)]">
           <Loader2 size={12} className="animate-spin" />
           正在加载任务日志流...
@@ -303,9 +312,6 @@ export const TaskLogStreamSection = ({
   if (error) {
     return (
       <div className="space-y-2">
-        <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-text-muted)]">
-          任务日志流
-        </h4>
         <div className="flex items-center gap-2 py-4 text-xs text-red-400">
           <AlertCircle size={14} />
           {error}
@@ -316,9 +322,6 @@ export const TaskLogStreamSection = ({
 
   return (
     <div className="space-y-3">
-      <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-text-muted)]">
-        任务日志流
-      </h4>
       <p className="text-xs text-[var(--color-text-muted)]">{streamDescription}</p>
 
       {showChips ? (

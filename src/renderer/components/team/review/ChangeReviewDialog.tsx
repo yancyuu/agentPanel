@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect } from 'react';
 
 import { useStore } from '@renderer/store';
 import { X } from 'lucide-react';
@@ -30,6 +30,7 @@ export const ChangeReviewDialog: React.FC<ChangeReviewDialogProps> = ({
   open,
   onOpenChange,
   teamName,
+  mode,
   taskId,
   taskChangeRequestOptions,
 }) => {
@@ -38,23 +39,20 @@ export const ChangeReviewDialog: React.FC<ChangeReviewDialogProps> = ({
   const activeChangeSet = useStore((s) => s.activeChangeSet);
   const fetchTaskChanges = useStore((s) => s.fetchTaskChanges);
 
-  const [files, setFiles] = useState<FileChangeSummary[]>([]);
-
   useEffect(() => {
-    if (!open || !taskId) {
-      setFiles([]);
-      return;
-    }
-    if (taskChangeRequestOptions && fetchTaskChanges) {
+    if (open && taskId && taskChangeRequestOptions && fetchTaskChanges) {
       void fetchTaskChanges(teamName, taskId, taskChangeRequestOptions);
     }
   }, [open, teamName, taskId, taskChangeRequestOptions, fetchTaskChanges]);
 
-  useEffect(() => {
-    if (activeChangeSet?.files) {
-      setFiles(activeChangeSet.files);
-    }
-  }, [activeChangeSet]);
+  const activeTaskId =
+    activeChangeSet && 'taskId' in activeChangeSet ? activeChangeSet.taskId : undefined;
+  const files: FileChangeSummary[] =
+    mode === 'task' && activeTaskId !== taskId
+      ? []
+      : Array.isArray(activeChangeSet?.files)
+        ? activeChangeSet.files
+        : [];
 
   const handleClose = useCallback(() => {
     onOpenChange(false);

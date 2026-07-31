@@ -605,7 +605,7 @@ export const CapabilityPacksPanel = ({
         </div>
       ) : scopedCapabilityPacks.length === 0 ? (
         <div className="bg-surface/60 rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-text-muted">
-          还没有可用能力包。官方 Hermit 运维包会自动预装。
+          还没有可用能力包。官方 AgentCLI 运维包会自动预装。
         </div>
       ) : filteredPacks.length === 0 ? (
         <div className="bg-surface/60 rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-text-muted">

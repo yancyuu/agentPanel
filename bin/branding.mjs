@@ -10,14 +10,14 @@ const brandingPath = path.join(packageRoot, 'branding.json');
 // intentionally not committed) and as the seed values for that generator. Keep
 // these in sync with the `||` chains in BRAND below.
 export const DEFAULT_BRAND = Object.freeze({
-  productName: 'AgentCli',
-  productNameShort: 'AgentCli',
-  stylizedName: 'AgentCli',
+  productName: 'AgentCLI',
+  productNameShort: 'AgentCLI',
+  stylizedName: 'AgentCLI',
   cliCommand: 'agentcli',
   npmPackage: '@yancyyu/agentcli',
   runtimeBridgeName: 'cc-connect',
-  authAccountLabel: 'AgentCli 用户',
-  authProviderName: 'AgentCli',
+  authAccountLabel: 'AgentCLI 用户',
+  authProviderName: 'AgentCLI',
   defaultLocalHomeName: '.hermit',
   githubRepo: 'yancyyu/agentcli',
   publicDocsUrl: 'https://yancyyu.github.io/agentcli/',
@@ -45,8 +45,7 @@ export const BRAND = Object.freeze({
   npmPackage: rawBrand.npmPackage || DEFAULT_BRAND.npmPackage,
   runtimeBridgeName: rawBrand.runtimeBridgeName || DEFAULT_BRAND.runtimeBridgeName,
   authAccountLabel:
-    rawBrand.authAccountLabel ||
-    `${rawBrand.stylizedName || DEFAULT_BRAND.stylizedName} 用户`,
+    rawBrand.authAccountLabel || `${rawBrand.stylizedName || DEFAULT_BRAND.stylizedName} 用户`,
   authProviderName:
     rawBrand.authProviderName || rawBrand.stylizedName || DEFAULT_BRAND.authProviderName,
   defaultLocalHomeName: rawBrand.defaultLocalHomeName || DEFAULT_BRAND.defaultLocalHomeName,

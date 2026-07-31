@@ -147,7 +147,7 @@ describe('MemberCapabilitiesSummary', () => {
     expect(host.textContent).toContain('审查代码变更');
     expect(host.textContent).not.toContain('重复名称应被隐藏');
     expect(host.textContent).toContain('hermit-tasks');
-    expect(host.textContent).toContain('Hermit 内置');
+    expect(host.textContent).toContain('AgentCLI 内置');
     expect(host.textContent).not.toContain('尚未检测到 Hermit 任务 MCP');
     expect(host.querySelectorAll('button')).toHaveLength(0);
 

@@ -50,12 +50,14 @@ const DEFAULT_MIRRORS = [
   '', // raw github last resort
 ].filter((m) => m !== undefined);
 
-// Mac + Windows only (Linux users fall back to the runtime mirror download).
+// Desktop packages are self-contained on every supported OS/architecture.
 const TARGETS = [
   { os: 'darwin', arch: 'amd64', ext: '.tar.gz', binary: 'cc-connect' },
   { os: 'darwin', arch: 'arm64', ext: '.tar.gz', binary: 'cc-connect' },
   { os: 'windows', arch: 'amd64', ext: '.zip', binary: 'cc-connect.exe' },
   { os: 'windows', arch: 'arm64', ext: '.zip', binary: 'cc-connect.exe' },
+  { os: 'linux', arch: 'amd64', ext: '.tar.gz', binary: 'cc-connect' },
+  { os: 'linux', arch: 'arm64', ext: '.tar.gz', binary: 'cc-connect' },
 ];
 
 function log(...args) { console.log('[fetch-vendor]', ...args); }

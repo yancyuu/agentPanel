@@ -448,11 +448,6 @@ export const TaskActivitySection = ({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-text-muted)]">
-          任务活动
-        </h4>
-      </div>
       <p className="text-xs text-[var(--color-text-muted)]">
         从 transcript 元数据中提取并关联到该任务的关键运行活动。
       </p>

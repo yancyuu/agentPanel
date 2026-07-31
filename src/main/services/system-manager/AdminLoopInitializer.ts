@@ -1,9 +1,9 @@
 import type { SystemManagerConfig, SystemManagerConfigPatch } from '@shared/types/systemManager';
 
 /**
- * Helm Loop bootstrap.
+ * 诊断 bootstrap.
  *
- * On first open of the admin console, the GitHub Pages ops guide is fetched and
+ * On first open of the diagnostics console, the canonical local AgentCLI guide is
  * persisted as the workspace CLAUDE.md (the durable bootstrap marker), then fed
  * to the admin lead session as its first turn. The source of truth for "already
  * initialized" is the CLAUDE.md artifact itself — not a persisted boolean — so
@@ -16,7 +16,68 @@ import type { SystemManagerConfig, SystemManagerConfigPatch } from '@shared/type
  */
 
 /** Deterministic id for the bootstrap message (one-shot, never reused). */
-export const ADMIN_INIT_MESSAGE_ID = 'helm-loop-init';
+export const ADMIN_INIT_MESSAGE_ID = 'agentcli-diagnostics-init-v2';
+export const AGENTCLI_OPS_GUIDE_MARKER = 'AgentCLI Ops Guide Version: 2';
+
+/** Canonical local guide. Do not bootstrap from the legacy public openHermit installation page. */
+export const CURRENT_AGENTCLI_OPERATIONS_GUIDE = `${AGENTCLI_OPS_GUIDE_MARKER}
+# AgentCLI 诊断与任务运维指南
+
+## 产品模型
+
+- 数字员工：独立执行者。创建完成后即可接收任务。
+- 调教：短周期、多轮地调整数字员工的回答和做事方式，不创建任务。
+- 任务：长周期目标，必须有状态、澄清、进度、交付和审核。
+- 团队：由一个负责人编排多个数字员工，不是数字员工本身。
+- 诊断：只读检查本地运行环境、配置、任务总线和工作区健康状态。
+
+## Workbench 与 AgentCLI
+
+- Workbench 内置同版本 AgentCLI，用户不需要全局安装 openhermit、open-hermit 或 hermit。
+- 不要修改用户 Shell 配置或全局 PATH。
+- Agent 应优先使用 \`$HERMIT_HOME/bin/agentcli\`；默认 HERMIT_HOME 为 \`~/.hermit\`。
+- Workbench 地址由 \`HERMIT_WORKBENCH_URL\` 或当前运行端口提供，不要把 5680 当成永久固定地址。
+- \`~/.hermit\`、\`HERMIT_*\` 和旧 API 仅作为历史兼容契约保留。
+
+## 任务生命周期
+
+1. 用户在收件箱选择数字员工并创建任务。
+2. 有负责人的任务立即进入“进行中”，并以长周期目标派发。
+3. Agent 使用任务总线认领任务并持续更新进度。
+4. 信息不足时，Agent 先写清问题，再标记“等待补充说明”。
+5. 用户在任务评论区回复后，系统自动清除等待状态并继续派发。
+6. Agent 提交交付结果后，任务进入“待审核”。
+7. 用户确认后，任务才进入“已完成”。
+
+Agent 使用以下命令维护任务状态：
+
+- \`agentcli tasks list --team {team-id}\`
+- \`agentcli tasks claim --team {team-id} --id {task-id}\`
+- \`agentcli tasks comment --team {team-id} --id {task-id} --text "进度或问题"\`
+- \`agentcli tasks clarify --team {team-id} --id {task-id} --target user\`
+- \`agentcli tasks complete --team {team-id} --id {task-id} --result "交付结果"\`
+
+不要使用 MCP、Skills、TodoWrite 或运行时自带任务系统替代 AgentCLI 任务总线。
+
+## 用户交互约束
+
+- 面向用户只使用“数字员工、调教、任务、待审核、已完成、诊断”等直白概念。
+- 不向用户展示 conversationId、session、runtime、reviewState、Loop 协议或 \`/goal\` 等内部实现。
+- “创建任务”是全局长周期入口；“调教”是数字员工详情中的短周期入口。
+- 工具调用默认自动允许，不弹出 Allow / Deny / Allow all 授权框。
+
+## 诊断安全边界
+
+- 默认只读诊断，不自动删除、移动、格式化、提交、推送、发布或部署。
+- 不输出 token、cookie、私钥或完整凭据。
+- 需要修复时先给出问题、证据和验证方法，再执行用户明确批准的修改。
+- 诊断页面名称是“诊断”；内部 \`system-manager\` 标识和历史配置路径保持兼容。
+
+## 外部渠道与数据
+
+- 外部渠道只表示数字员工“可对外”，不决定它能否执行任务。
+- 飞书等渠道必须按账号或团队隔离 profile，不共享用户凭据。
+- Workbench API 和本地 \`~/.hermit\` 数据是任务状态的事实来源。`;
 
 /** Lightweight HTML → plain text: strip script/style, drop tags, decode entities, collapse whitespace. */
 export function htmlToPlainText(html: string): string {
@@ -41,9 +102,9 @@ export function htmlToPlainText(html: string): string {
 /** Build the bootstrap prompt wrapping the guide text. Pure — tested directly. */
 export function buildAdminInitMessage(guideText: string): string {
   return [
-    '【Helm Loop 初始化】以下是 Hermit 运维手册全文。请通读并据此在你的工作目录初始化 CLAUDE.md，',
-    '建立对团队治理、消息路由、Loop 工作流的整体认知。',
-    '随后可用 `/workers` 查看所有数字员工及其工作路径，用 `@workerId` 直接调度对应员工。',
+    '【诊断初始化】当前 AgentCLI 运维手册已经写入工作区 CLAUDE.md。请将它作为最新运行契约。',
+    '不要安装或调用旧 openhermit、open-hermit、hermit，也不要从历史网页复制旧安装说明。',
+    '任务通过 Workbench 和内置 AgentCLI 任务总线管理；短周期行为调整使用“调教”。',
     '',
     '--- 运维手册 ---',
     guideText,
@@ -61,7 +122,7 @@ export interface AdminLoopInitDeps {
    * fails to start. The plain-text guide body is passed through unchanged.
    */
   writeBootstrapArtifact?: (guideText: string) => Promise<void>;
-  /** Fetch the ops guide. Resolves with statusCode + raw body; rejects on network error. */
+  /** Load the canonical ops guide. Resolves with statusCode + raw body. */
   fetchGuide: () => Promise<{ statusCode: number; body: string }>;
   /** Deliver the bootstrap message to the admin lead session. */
   dispatch: (message: { text: string; messageId: string }) => Promise<void>;
@@ -95,13 +156,13 @@ export async function ensureAdminLoopInitialized(deps: AdminLoopInitDeps): Promi
     }
   } catch (err) {
     deps.log?.(
-      `helm loop init: fetch failed (${err instanceof Error ? err.message : String(err)})`
+      `diagnostics init: guide load failed (${err instanceof Error ? err.message : String(err)})`
     );
     return;
   }
 
   if (!body.trim()) {
-    deps.log?.('helm loop init: empty guide body, will retry next open');
+    deps.log?.('diagnostics init: empty guide body, will retry next open');
     return;
   }
 

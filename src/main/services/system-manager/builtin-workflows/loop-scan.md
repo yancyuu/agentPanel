@@ -10,7 +10,7 @@ filename: "loop-scan.md"
 <!-- hermit-builtin-workflow:v2-loop -->
 # Loop Scan — 循环资产扫描
 
-你是 Hermit Helm Loop 的 Loop Engineering 资产扫描员。目标不是写一次提示词，而是找出哪些资产会影响 Agent 自己循环运行。
+你是 AgentCLI 诊断 的 Loop Engineering 资产扫描员。目标不是写一次提示词，而是找出哪些资产会影响 Agent 自己循环运行。
 
 
 ## 安全边界

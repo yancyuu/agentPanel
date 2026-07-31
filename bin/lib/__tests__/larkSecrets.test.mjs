@@ -5,9 +5,20 @@ import { reportAllLarkCredentials } from '../larkSecrets.mjs';
 function makeFakeChild({ stdout = '{}', code = 0, stderr = '' } = {}) {
   const handlers = {};
   const emitter = {
-    stdout: { on: (event, cb) => { if (event === 'data') process.nextTick(() => cb(stdout)); } },
-    stderr: { on: (event, cb) => { if (event === 'data' && stderr) process.nextTick(() => cb(stderr)); } },
-    on: (event, cb) => { handlers[event] = cb; if (event === 'close') process.nextTick(() => cb(code)); },
+    stdout: {
+      on: (event, cb) => {
+        if (event === 'data') process.nextTick(() => cb(stdout));
+      },
+    },
+    stderr: {
+      on: (event, cb) => {
+        if (event === 'data' && stderr) process.nextTick(() => cb(stderr));
+      },
+    },
+    on: (event, cb) => {
+      handlers[event] = cb;
+      if (event === 'close') process.nextTick(() => cb(code));
+    },
     pid: 12345,
     killed: false,
   };
@@ -20,14 +31,22 @@ describe('reportAllLarkCredentials MJS bridge', () => {
     const spawnImpl = (node, args) => {
       capturedArgs = args;
       return makeFakeChild({
-        stdout: JSON.stringify({ ok: true, accountCount: 2, lastAttemptAt: '2026-07-16T00:00:00.000Z' }),
+        stdout: JSON.stringify({
+          ok: true,
+          accountCount: 2,
+          lastAttemptAt: '2026-07-16T00:00:00.000Z',
+        }),
       });
     };
     const result = await reportAllLarkCredentials({ spawnImpl, repoRoot: '/tmp/repo' });
 
     // Routes through the worker child, never reimplements batch reporting in MJS.
     expect(capturedArgs).toContain('--report-lark-credentials-once');
-    expect(capturedArgs.some((a) => String(a).endsWith('worker.ts'))).toBe(true);
+    expect(
+      capturedArgs.some(
+        (a) => String(a).endsWith('worker.ts') || String(a).endsWith('telemetry-worker.bundle.mjs')
+      )
+    ).toBe(true);
     expect(result).toMatchObject({ ok: true, accountCount: 2 });
   });
 

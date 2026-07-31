@@ -146,12 +146,12 @@ async function createBuiltinHermitOpsPack(): Promise<LoadedCapabilityPack> {
     manifest: {
       schemaVersion: 1,
       id: BUILTIN_HERMIT_OPS_PACK_ID,
-      name: 'Hermit Team Ops',
+      name: 'AgentCLI Team Ops',
       namespace: BUILTIN_HERMIT_OPS_PACK_NAMESPACE,
       version: '1.0.0',
-      author: 'Hermit',
+      author: 'AgentCLI',
       description:
-        'Hermit 官方预装的团队运维检测包，workflow 随包分发到 ~/.hermit/.claude/workflow，通过能力包暴露给所有团队。',
+        'AgentCLI 官方预装的团队运维检测包，workflow 随包分发到 ~/.hermit/.claude/workflow，通过能力包暴露给所有团队。',
       capabilities: {
         commands: workflows.map((workflow) => ({
           id: workflow.id,
@@ -981,7 +981,7 @@ export class CapabilityPackLoaderService {
         name: `${team.displayName} 能力`,
         namespace: LOCAL_CAPABILITY_PACK_NAMESPACE,
         version: '1.0.0',
-        author: 'Hermit',
+        author: 'AgentCLI',
         description: `${team.displayName} 工作空间的本地能力（skills、MCP、定时任务），可按运行时导出。`,
         tags: ['local'],
         teamName: team.displayName,

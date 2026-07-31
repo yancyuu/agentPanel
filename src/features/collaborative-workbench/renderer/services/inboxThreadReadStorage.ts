@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'hermit:inbox-thread-read-at';
+const INITIALIZED_KEY = 'hermit:inbox-thread-read-initialized';
 const CHANGE_EVENT = 'hermit:inbox-thread-read-change';
 
 export type InboxThreadReadState = Record<string, number>;
@@ -26,6 +27,37 @@ export function getInboxThreadReadState(): InboxThreadReadState {
     cachedState = {};
   }
   return cachedState;
+}
+
+export function isInboxThreadReadInitialized(): boolean {
+  try {
+    return localStorage.getItem(INITIALIZED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function initializeInboxThreadReadState(
+  threads: readonly { key: string; updatedAt: string }[]
+): void {
+  if (isInboxThreadReadInitialized()) return;
+  const current = getInboxThreadReadState();
+  const next = { ...current };
+  for (const thread of threads) {
+    const readAt = Date.parse(thread.updatedAt);
+    if (!thread.key || !Number.isFinite(readAt) || readAt <= 0) continue;
+    next[thread.key] = Math.max(next[thread.key] ?? 0, readAt);
+  }
+  try {
+    const raw = JSON.stringify(next);
+    localStorage.setItem(STORAGE_KEY, raw);
+    localStorage.setItem(INITIALIZED_KEY, '1');
+    cachedRaw = raw;
+    cachedState = next;
+    window.dispatchEvent(new Event(CHANGE_EVENT));
+  } catch {
+    // Initial read migration is best-effort and must never block the inbox.
+  }
 }
 
 export function markInboxThreadRead(threadKey: string, readAt: number): void {

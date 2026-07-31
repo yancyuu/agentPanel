@@ -1622,3 +1622,28 @@ a[href],
     animation: none;
   }
 }
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  [data-task-deliverable],
+  [data-task-deliverable] * {
+    visibility: visible !important;
+  }
+
+  [data-task-deliverable] {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    border: 0 !important;
+    background: #fff !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+  }
+
+  [data-task-deliverable] [data-deliverable-actions] {
+    display: none !important;
+  }
+}

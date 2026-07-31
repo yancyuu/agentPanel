@@ -30,7 +30,7 @@ export function restoreInitialRoute(state: AppState, pathname: string): void {
     .map(safeDecodeURIComponent);
 
   if (segments.length === 0) {
-    state.openTasksTab();
+    state.openInboxTab();
     return;
   }
 
@@ -54,8 +54,14 @@ export function restoreInitialRoute(state: AppState, pathname: string): void {
     case 'schedules':
       state.openSchedulesTab();
       break;
+    case 'inbox':
+      state.openInboxTab();
+      break;
     case 'tasks':
       state.openTasksTab();
+      break;
+    case 'collaboration':
+      state.openTab({ type: 'collaboration', label: '协作团队' });
       break;
     case 'dashboard':
       state.openDashboard();

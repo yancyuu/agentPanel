@@ -37,7 +37,7 @@ const log = createLogger('RuntimeReadiness');
 const DEFAULT_REMEDIATION = [
   '在终端运行: npm install -g cc-connect',
   '或设置环境变量 CC_CONNECT_MIRROR 指向可用的 GitHub release 代理（如 https://gh-proxy.com/）',
-  '安装完成后重启 AgentCli 工作台',
+  '安装完成后重启 AgentCLI 工作台',
 ];
 
 let bridgeBinary: BridgeBinaryState = {

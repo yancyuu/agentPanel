@@ -47,7 +47,8 @@ function ensureAuthStoreDir() {
 function normalizeExpiry(expiresIn, expiresAt) {
   if (expiresAt && !Number.isNaN(Date.parse(expiresAt))) return new Date(expiresAt).toISOString();
   const seconds = Number(expiresIn);
-  if (Number.isFinite(seconds) && seconds > 0) return new Date(Date.now() + seconds * 1000).toISOString();
+  if (Number.isFinite(seconds) && seconds > 0)
+    return new Date(Date.now() + seconds * 1000).toISOString();
   return null;
 }
 
@@ -64,8 +65,14 @@ const UNKNOWN_ACCESS_EXPIRY_HORIZON_MS = 5 * 60 * 1000;
 
 function resolveAccessTokenExpiry(payload, existingExpiresAt = null) {
   const normalized = normalizeExpiry(
-    payload?.access_expires_in ?? payload?.accessExpiresIn ?? payload?.expires_in ?? payload?.expiresIn,
-    payload?.access_expires_at || payload?.accessExpiresAt || payload?.expires_at || payload?.expiresAt
+    payload?.access_expires_in ??
+      payload?.accessExpiresIn ??
+      payload?.expires_in ??
+      payload?.expiresIn,
+    payload?.access_expires_at ||
+      payload?.accessExpiresAt ||
+      payload?.expires_at ||
+      payload?.expiresAt
   );
   if (normalized) return normalized;
   if (existingExpiresAt && Date.parse(existingExpiresAt) > Date.now()) return existingExpiresAt;
@@ -124,7 +131,8 @@ function authStatusFromStore(store, warning = null) {
 }
 
 function normalizeScopes(payload) {
-  if (Array.isArray(payload?.scopes)) return payload.scopes.filter((scope) => typeof scope === 'string' && scope);
+  if (Array.isArray(payload?.scopes))
+    return payload.scopes.filter((scope) => typeof scope === 'string' && scope);
   if (typeof payload?.scope === 'string') return payload.scope.split(/\s+/u).filter(Boolean);
   return null;
 }
@@ -192,15 +200,30 @@ function deleteOpenHermitAuthStore() {
 }
 
 function getOAuthConfig() {
-  const authorizeUrl = process.env.OPENHERMIT_OAUTH_AUTHORIZE_URL || process.env.OPENHERMIT_USAGE_OAUTH_AUTHORIZE_URL || process.env.OPENHERMIT_USAGE_OAUTH_URL || '';
-  const tokenUrl = process.env.OPENHERMIT_OAUTH_TOKEN_URL || process.env.OPENHERMIT_USAGE_OAUTH_TOKEN_URL || '';
+  const authorizeUrl =
+    process.env.OPENHERMIT_OAUTH_AUTHORIZE_URL ||
+    process.env.OPENHERMIT_USAGE_OAUTH_AUTHORIZE_URL ||
+    process.env.OPENHERMIT_USAGE_OAUTH_URL ||
+    '';
+  const tokenUrl =
+    process.env.OPENHERMIT_OAUTH_TOKEN_URL || process.env.OPENHERMIT_USAGE_OAUTH_TOKEN_URL || '';
   return {
     authorizeUrl,
     tokenUrl,
-    userInfoUrl: process.env.OPENHERMIT_OAUTH_USERINFO_URL || process.env.OPENHERMIT_USAGE_OAUTH_USERINFO_URL || '',
-    issuer: process.env.OPENHERMIT_OAUTH_ISSUER || (authorizeUrl ? new URL(authorizeUrl).origin : ''),
-    clientId: process.env.OPENHERMIT_OAUTH_CLIENT_ID || process.env.OPENHERMIT_USAGE_OAUTH_CLIENT_ID || 'openhermit-cli',
-    scope: process.env.OPENHERMIT_OAUTH_SCOPE || process.env.OPENHERMIT_USAGE_OAUTH_SCOPE || 'auth:user.id:read upload:read upload:write',
+    userInfoUrl:
+      process.env.OPENHERMIT_OAUTH_USERINFO_URL ||
+      process.env.OPENHERMIT_USAGE_OAUTH_USERINFO_URL ||
+      '',
+    issuer:
+      process.env.OPENHERMIT_OAUTH_ISSUER || (authorizeUrl ? new URL(authorizeUrl).origin : ''),
+    clientId:
+      process.env.OPENHERMIT_OAUTH_CLIENT_ID ||
+      process.env.OPENHERMIT_USAGE_OAUTH_CLIENT_ID ||
+      'openhermit-cli',
+    scope:
+      process.env.OPENHERMIT_OAUTH_SCOPE ||
+      process.env.OPENHERMIT_USAGE_OAUTH_SCOPE ||
+      'auth:user.id:read upload:read upload:write',
     timeoutMs: Number.parseInt(process.env.OPENHERMIT_OAUTH_TIMEOUT_MS || '120000', 10),
   };
 }
@@ -262,8 +285,12 @@ function configuredOpenHermitCloudBaseUrl({ includeDefault = true } = {}) {
   const settings = readHermitSettings();
   const cloud = settings.cloud && typeof settings.cloud === 'object' ? settings.cloud : {};
   const taskBus = settings.taskBus && typeof settings.taskBus === 'object' ? settings.taskBus : {};
-  const telemetry = taskBus.telemetry && typeof taskBus.telemetry === 'object' ? taskBus.telemetry : {};
-  const conversations = telemetry.conversations && typeof telemetry.conversations === 'object' ? telemetry.conversations : {};
+  const telemetry =
+    taskBus.telemetry && typeof taskBus.telemetry === 'object' ? taskBus.telemetry : {};
+  const conversations =
+    telemetry.conversations && typeof telemetry.conversations === 'object'
+      ? telemetry.conversations
+      : {};
   const authStore = readOpenHermitAuthStore().store;
   return (
     normalizeCloudBaseUrl(process.env.OPENHERMIT_CLOUD_BASE_URL, 'OPENHERMIT_CLOUD_BASE_URL') ||
@@ -272,7 +299,10 @@ function configuredOpenHermitCloudBaseUrl({ includeDefault = true } = {}) {
     cloudBaseUrlFromHost(cloud.host) ||
     normalizeCloudBaseUrl(authStore?.baseUrl, 'auth baseUrl') ||
     normalizeCloudBaseUrl(authStore?.issuer, 'auth issuer') ||
-    normalizeCloudBaseUrl(conversations.baseUrl, 'settings.taskBus.telemetry.conversations.baseUrl') ||
+    normalizeCloudBaseUrl(
+      conversations.baseUrl,
+      'settings.taskBus.telemetry.conversations.baseUrl'
+    ) ||
     (includeDefault ? DEFAULT_OPENHERMIT_CLOUD_BASE_URL : null)
   );
 }
@@ -284,19 +314,37 @@ function configuredOpenHermitCloudBaseUrl({ includeDefault = true } = {}) {
 // accepted for local debugging only.
 const OPENHERMIT_AUTH_BROKER_URL =
   normalizeCloudBaseUrl(process.env.OPENHERMIT_AUTH_BASE_URL, 'OPENHERMIT_AUTH_BASE_URL') ||
-  normalizeCloudBaseUrl(process.env.OPENHERMIT_USAGE_AUTH_BASE_URL, 'OPENHERMIT_USAGE_AUTH_BASE_URL') ||
-  normalizeCloudBaseUrl(process.env.OPENHERMIT_CLOUD_AUTH_BASE_URL, 'OPENHERMIT_CLOUD_AUTH_BASE_URL') ||
+  normalizeCloudBaseUrl(
+    process.env.OPENHERMIT_USAGE_AUTH_BASE_URL,
+    'OPENHERMIT_USAGE_AUTH_BASE_URL'
+  ) ||
+  normalizeCloudBaseUrl(
+    process.env.OPENHERMIT_CLOUD_AUTH_BASE_URL,
+    'OPENHERMIT_CLOUD_AUTH_BASE_URL'
+  ) ||
   configuredOpenHermitCloudBaseUrl();
 const OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL =
-  normalizeCloudBaseUrl(process.env.OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL, 'OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL') ||
-  normalizeCloudBaseUrl(process.env.OPENHERMIT_CLOUD_UPLOAD_BASE_URL, 'OPENHERMIT_CLOUD_UPLOAD_BASE_URL') ||
+  normalizeCloudBaseUrl(
+    process.env.OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL,
+    'OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL'
+  ) ||
+  normalizeCloudBaseUrl(
+    process.env.OPENHERMIT_CLOUD_UPLOAD_BASE_URL,
+    'OPENHERMIT_CLOUD_UPLOAD_BASE_URL'
+  ) ||
   configuredOpenHermitCloudBaseUrl();
 const DEV_AUTH_UNLOCK_CODE = process.env.OPENHERMIT_DEV_UNLOCK_CODE || '';
 
 function resolveConversationUploadBaseUrl(existingBaseUrl = '') {
   return (
-    normalizeCloudBaseUrl(process.env.OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL, 'OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL') ||
-    normalizeCloudBaseUrl(process.env.OPENHERMIT_CLOUD_UPLOAD_BASE_URL, 'OPENHERMIT_CLOUD_UPLOAD_BASE_URL') ||
+    normalizeCloudBaseUrl(
+      process.env.OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL,
+      'OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL'
+    ) ||
+    normalizeCloudBaseUrl(
+      process.env.OPENHERMIT_CLOUD_UPLOAD_BASE_URL,
+      'OPENHERMIT_CLOUD_UPLOAD_BASE_URL'
+    ) ||
     configuredOpenHermitCloudBaseUrl({ includeDefault: false }) ||
     normalizeCloudBaseUrl(existingBaseUrl, 'existing conversation upload base URL') ||
     OPENHERMIT_CONVERSATION_UPLOAD_BASE_URL
@@ -326,18 +374,34 @@ function getDefaultDeviceAuthBaseUrl() {
 }
 
 function getDeviceAuthConfig({ controlUrl = null } = {}) {
-  const baseUrl = normalizeControlUrl(controlUrl || process.env.OPENHERMIT_AUTH_BASE_URL || process.env.OPENHERMIT_USAGE_AUTH_BASE_URL || getDefaultDeviceAuthBaseUrl(), 'OPENHERMIT_AUTH_BASE_URL');
+  const baseUrl = normalizeControlUrl(
+    controlUrl ||
+      process.env.OPENHERMIT_AUTH_BASE_URL ||
+      process.env.OPENHERMIT_USAGE_AUTH_BASE_URL ||
+      getDefaultDeviceAuthBaseUrl(),
+    'OPENHERMIT_AUTH_BASE_URL'
+  );
   return {
     baseUrl,
     startUrl: process.env.OPENHERMIT_AUTH_START_URL || `${baseUrl}/api/v1/auth/start`,
-    startFallbackUrl: process.env.OPENHERMIT_AUTH_START_FALLBACK_URL || `${baseUrl}/api/cli-auth/start`,
+    startFallbackUrl:
+      process.env.OPENHERMIT_AUTH_START_FALLBACK_URL || `${baseUrl}/api/cli-auth/start`,
     pollUrl: process.env.OPENHERMIT_AUTH_POLL_URL || `${baseUrl}/api/v1/auth/poll`,
     refreshUrl: process.env.OPENHERMIT_AUTH_REFRESH_URL || `${baseUrl}/api/v1/auth/refresh`,
     meUrl: process.env.OPENHERMIT_AUTH_ME_URL || `${baseUrl}/api/v1/auth/me`,
     logoutUrl: process.env.OPENHERMIT_AUTH_LOGOUT_URL || `${baseUrl}/api/v1/auth/logout`,
-    clientId: process.env.OPENHERMIT_OAUTH_CLIENT_ID || process.env.OPENHERMIT_AUTH_CLIENT_ID || 'openhermit-cli',
-    scope: process.env.OPENHERMIT_OAUTH_SCOPE || process.env.OPENHERMIT_AUTH_SCOPE || 'auth:user.id:read upload:read upload:write',
-    timeoutMs: Number.parseInt(process.env.OPENHERMIT_AUTH_TIMEOUT_MS || process.env.OPENHERMIT_OAUTH_TIMEOUT_MS || '600000', 10),
+    clientId:
+      process.env.OPENHERMIT_OAUTH_CLIENT_ID ||
+      process.env.OPENHERMIT_AUTH_CLIENT_ID ||
+      'openhermit-cli',
+    scope:
+      process.env.OPENHERMIT_OAUTH_SCOPE ||
+      process.env.OPENHERMIT_AUTH_SCOPE ||
+      'auth:user.id:read upload:read upload:write',
+    timeoutMs: Number.parseInt(
+      process.env.OPENHERMIT_AUTH_TIMEOUT_MS || process.env.OPENHERMIT_OAUTH_TIMEOUT_MS || '600000',
+      10
+    ),
   };
 }
 
@@ -379,7 +443,8 @@ function buildAuthorizationUrl(config, redirectUri, state, codeChallenge) {
 }
 
 async function openExternalUrl(url) {
-  const mode = process.env.OPENHERMIT_AUTH_OPEN_BROWSER || process.env.OPENHERMIT_OAUTH_OPEN_BROWSER;
+  const mode =
+    process.env.OPENHERMIT_AUTH_OPEN_BROWSER || process.env.OPENHERMIT_OAUTH_OPEN_BROWSER;
   if (mode === '0') return { opened: false, skipped: true };
   if (mode === 'fetch') {
     await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(30_000) });
@@ -391,7 +456,8 @@ async function openExternalUrl(url) {
   // as a single argument, so query characters (& ? =) need no shell quoting.
   // The previous powershell `Start-Process -FilePath $args[0]` form exited
   // non-zero and the browser silently never opened on Windows.
-  const command = platform === 'darwin' ? 'open' : platform === 'win32' ? 'explorer.exe' : 'xdg-open';
+  const command =
+    platform === 'darwin' ? 'open' : platform === 'win32' ? 'explorer.exe' : 'xdg-open';
   const commandArgsForPlatform = [url];
 
   return new Promise((resolve) => {
@@ -429,7 +495,12 @@ function escapeHtml(value) {
 
 function buildAuthCallbackHtml({ title, eyebrow, message, tone = 'success' }) {
   const accent = tone === 'success' ? '#16a34a' : tone === 'warn' ? '#d97706' : '#dc2626';
-  const glow = tone === 'success' ? 'rgba(22, 163, 74, 0.22)' : tone === 'warn' ? 'rgba(217, 119, 6, 0.22)' : 'rgba(220, 38, 38, 0.2)';
+  const glow =
+    tone === 'success'
+      ? 'rgba(22, 163, 74, 0.22)'
+      : tone === 'warn'
+        ? 'rgba(217, 119, 6, 0.22)'
+        : 'rgba(220, 38, 38, 0.2)';
   const safeTitle = escapeHtml(title);
   return `<!doctype html>
 <html lang="zh-CN">
@@ -560,43 +631,51 @@ async function startOAuthCallbackServer(expectedState, timeoutMs) {
         const error = requestUrl.searchParams.get('error') || '';
         if (state !== expectedState) {
           res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end(buildAuthCallbackHtml({
+          res.end(
+            buildAuthCallbackHtml({
             title: '授权失败',
             eyebrow: `${BRAND.stylizedName} Auth`,
             message: 'state 校验失败，请回到终端重试。',
             tone: 'error',
-          }));
+            })
+          );
           reject(new Error('OAuth state mismatch'));
           return;
         }
         if (error) {
           res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end(buildAuthCallbackHtml({
+          res.end(
+            buildAuthCallbackHtml({
             title: '授权已取消',
             eyebrow: `${BRAND.stylizedName} Auth`,
             message: '授权流程已取消，请回到终端查看详情。',
             tone: 'warn',
-          }));
+            })
+          );
           reject(new Error(`OAuth provider returned error: ${error}`));
           return;
         }
         if (!code) {
           res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end(buildAuthCallbackHtml({
+          res.end(
+            buildAuthCallbackHtml({
             title: '授权失败',
             eyebrow: `${BRAND.stylizedName} Auth`,
             message: '缺少授权码，请回到终端重新发起登录。',
             tone: 'error',
-          }));
+            })
+          );
           reject(new Error('OAuth callback missing code'));
           return;
         }
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(buildAuthCallbackHtml({
+        res.end(
+          buildAuthCallbackHtml({
           title: '授权完成',
           eyebrow: `${BRAND.productName} is ready`,
           message: `你已经成功登录 ${BRAND.authProviderName}，可以回到 ${BRAND.productName} 继续使用。`,
-        }));
+          })
+        );
         resolve(code);
       } catch (err) {
         reject(err);
@@ -703,7 +782,12 @@ async function performRawOAuthLogin({ quiet = false } = {}) {
       console.log(`${brandLogPrefix()} 已打开浏览器，请完成 ${BRAND.authProviderName} 授权...`);
     }
     const code = await server.waitForCode();
-    const tokenPayload = await exchangeAuthorizationCode(config, code, server.redirectUri, codeVerifier);
+    const tokenPayload = await exchangeAuthorizationCode(
+      config,
+      code,
+      server.redirectUri,
+      codeVerifier
+    );
     const account = await fetchOAuthUserInfo(config, tokenPayload.access_token);
     const store = buildAuthStoreFromToken(config, tokenPayload, account);
     writeOpenHermitAuthStore(store);
@@ -744,7 +828,7 @@ async function startDeviceAuthSession(config) {
   const pollSecret = payload.poll_secret || payload.pollSecret || flowId;
   const authorizationUrl = payload.authorization_url || payload.verificationUriComplete;
   if (!flowId || !pollSecret || !authorizationUrl) {
-    throw new Error(`Hermit auth start returned an unsupported response (HTTP ${lastStatus})`);
+    throw new Error(`AgentCLI auth start returned an unsupported response (HTTP ${lastStatus})`);
   }
 
   return {
@@ -763,7 +847,13 @@ function normalizeHermitAuthIdentity(identity) {
     email: identity.email || identity.mail || null,
     tenantKey: identity.tenant_key || identity.tenantKey || identity.tenant?.key || null,
     tenantName: identity.tenant_name || identity.tenantName || identity.tenant?.name || null,
-    department: identity.department || identity.department_name || identity.departmentName || identity.dept || identity.dept_name || null,
+    department:
+      identity.department ||
+      identity.department_name ||
+      identity.departmentName ||
+      identity.dept ||
+      identity.dept_name ||
+      null,
     departmentPath: identity.department_path || identity.departmentPath || null,
     openId: identity.open_id || identity.openId || null,
     unionId: identity.union_id || identity.unionId || null,
@@ -777,10 +867,14 @@ async function waitForAuthPollInterval(intervalMs, signal) {
   await new Promise((resolve, reject) => {
     const timer = setTimeout(resolve, intervalMs);
     if (!signal) return;
-    signal.addEventListener('abort', () => {
+    signal.addEventListener(
+      'abort',
+      () => {
       clearTimeout(timer);
       reject(signal.reason || new Error('CLI auth cancelled'));
-    }, { once: true });
+      },
+      { once: true }
+    );
   });
 }
 
@@ -800,10 +894,13 @@ async function pollDeviceAuthToken(config, session, { signal = null } = {}) {
           body: JSON.stringify({ deviceCode: session.flowId, pollSecret: session.pollSecret }),
           signal: fetchSignal,
         })
-      : await fetch(`${config.pollUrl}?flow_id=${encodeURIComponent(session.flowId)}&poll_secret=${encodeURIComponent(session.pollSecret)}`, {
+      : await fetch(
+          `${config.pollUrl}?flow_id=${encodeURIComponent(session.flowId)}&poll_secret=${encodeURIComponent(session.pollSecret)}`,
+          {
           headers: { Accept: 'application/json' },
           signal: fetchSignal,
-        });
+          }
+        );
     const payload = await res.json().catch(() => null);
     if (res.ok && normalizeAccessTokenPayload(payload)) return payload;
     const status = payload?.status || '';
@@ -847,10 +944,14 @@ async function performDeviceAuthLogin({ quiet = false, controlUrl = null } = {})
 
   try {
     if (!quiet) {
-      printCliRows('飞书授权登录', [
+      printCliRows(
+        '飞书授权登录',
+        [
         ['状态', `正在连接 ${BRAND.authProviderName} 授权服务`, 'warn'],
         ['服务', config.baseUrl, 'info'],
-      ], '如果这里超过 30 秒，说明授权服务不可达或网络被拦截；Esc/Ctrl+C 可取消。');
+        ],
+        '如果这里超过 30 秒，说明授权服务不可达或网络被拦截；Esc/Ctrl+C 可取消。'
+      );
     }
 
     const session = await startDeviceAuthSession(config);
@@ -859,10 +960,19 @@ async function performDeviceAuthLogin({ quiet = false, controlUrl = null } = {})
     const browser = await openExternalUrl(loginUrl);
 
     if (!quiet) {
-      printCliRows('飞书授权登录', [
-        ['状态', browser.skipped ? '请复制下面的地址到浏览器完成飞书授权' : '已打开浏览器，等待飞书授权确认'],
+      printCliRows(
+        '飞书授权登录',
+        [
+          [
+            '状态',
+            browser.skipped
+              ? '请复制下面的地址到浏览器完成飞书授权'
+              : '已打开浏览器，等待飞书授权确认',
+          ],
         ['安全', `CLI 只保存 ${BRAND.authProviderName} 授权状态`],
-      ], '浏览器完成授权后，CLI 会自动继续；Esc/Ctrl+C 可取消。');
+        ],
+        '浏览器完成授权后，CLI 会自动继续；Esc/Ctrl+C 可取消。'
+      );
       // Print the full URL on its own line(s). The status panel truncates long
       // values, so the URL must be emitted directly to stay visible + copyable.
       console.log('');
@@ -870,8 +980,11 @@ async function performDeviceAuthLogin({ quiet = false, controlUrl = null } = {})
       console.log(loginUrl);
     }
 
-    const tokenPayload = await pollDeviceAuthToken(config, session, { signal: abortController.signal });
-    const account = normalizeHermitAuthIdentity(tokenPayload.identity) || tokenPayload.account || null;
+    const tokenPayload = await pollDeviceAuthToken(config, session, {
+      signal: abortController.signal,
+    });
+    const account =
+      normalizeHermitAuthIdentity(tokenPayload.identity) || tokenPayload.account || null;
     const store = buildAuthStoreFromToken(config, tokenPayload, account);
     writeOpenHermitAuthStore(store);
     return authStatusFromStore(store);
@@ -985,13 +1098,18 @@ async function refreshOpenHermitAuthStatus() {
         ...store,
         token: { ...store.token, expiresAt: '2000-01-01T00:00:00.000Z' },
         updatedAt: new Date().toISOString(),
-        lastMeStatus: payload?.status || (retryBodyFlaggedExpiry ? 'access_expired' : 'unauthenticated'),
+        lastMeStatus:
+          payload?.status || (retryBodyFlaggedExpiry ? 'access_expired' : 'unauthenticated'),
       });
       return readOpenHermitAuthStatus();
     }
     if (!res.ok) return readOpenHermitAuthStatus();
     const responseScopes = normalizeScopes(payload);
-    if (payload?.authenticated === false || payload?.refresh_expired === true || payload?.revoked_at) {
+    if (
+      payload?.authenticated === false ||
+      payload?.refresh_expired === true ||
+      payload?.revoked_at
+    ) {
       writeOpenHermitAuthStore({
         ...store,
         token: {
@@ -1016,7 +1134,10 @@ async function refreshOpenHermitAuthStatus() {
       account,
       token: {
         ...store.token,
-        scope: typeof payload?.scope === 'string' ? payload.scope : responseScopes?.join(' ') || store.token?.scope,
+        scope:
+          typeof payload?.scope === 'string'
+            ? payload.scope
+            : responseScopes?.join(' ') || store.token?.scope,
         scopes: responseScopes || store.token?.scopes || null,
         expiresAt: nextExpiresAt,
       },
@@ -1043,7 +1164,9 @@ function failAuthRequired(command) {
   };
   if (jsonRequested) printJson(result, 1);
   console.error(`${brandLogPrefix()} 请先登录：${brandCommand('auth login')}`);
-  console.error(`${brandLogPrefix()} 本地数字员工工作台、Usage 采集和团队协作可免登录；云端授权、托管服务或显式上传需要 ${BRAND.authAccountLabel}。`);
+  console.error(
+    `${brandLogPrefix()} 本地数字员工工作台、Usage 采集和团队协作可免登录；云端授权、托管服务或显式上传需要 ${BRAND.authAccountLabel}。`
+  );
   process.exit(1);
 }
 
@@ -1060,21 +1183,34 @@ function isLocalCommandAllowedWithoutLogin() {
   // Local lifecycle commands (self-update, restart, init, web server) never
   // need cloud auth — they only touch this machine. Per the login-free policy
   // for local surfaces. ('lark-credentials' removed: command deleted.)
-  if (['status', 'doctor', 'services', 'stop', 'update', 'restart', 'init', 'web'].includes(commandArgs[0])) return true;
-  if (commandArgs[0] === 'usage') return ['status', 'today', 'report', 'start', 'stop', 'autostart'].includes(commandArgs[1]);
+  if (
+    ['status', 'doctor', 'services', 'stop', 'update', 'restart', 'init', 'web'].includes(
+      commandArgs[0]
+    )
+  )
+    return true;
+  if (commandArgs[0] === 'usage')
+    return ['status', 'today', 'report', 'start', 'stop', 'autostart'].includes(commandArgs[1]);
   if (commandArgs[0] === 'collaboration' && commandArgs[1] === 'start') return true;
   if (commandArgs[0] === 'teams') return ['list', 'create'].includes(commandArgs[1]);
-  if (commandArgs[0] === 'tasks') return ['list', 'create', 'claim', 'comment', 'clarify', 'complete'].includes(commandArgs[1]);
+  if (commandArgs[0] === 'tasks')
+    return ['list', 'create', 'claim', 'comment', 'clarify', 'complete'].includes(commandArgs[1]);
   return false;
 }
 
 async function requireOpenHermitAuthForEntry() {
-  if (commandArgs.length === 0 || isAuthCommandAllowedWithoutLogin() || isLocalCommandAllowedWithoutLogin()) return;
+  if (
+    commandArgs.length === 0 ||
+    isAuthCommandAllowedWithoutLogin() ||
+    isLocalCommandAllowedWithoutLogin()
+  )
+    return;
   if (commandArgs[0] === 'auth') return;
   if (commandArgs[0] === '__telemetry-worker') return;
   if (readOpenHermitAuthStatus().authorized) return;
 
-  const isInteractiveEntry = commandArgs.length === 0 && !daemonChild && !daemonRequested && !jsonRequested;
+  const isInteractiveEntry =
+    commandArgs.length === 0 && !daemonChild && !daemonRequested && !jsonRequested;
   if (isInteractiveEntry) {
     const login = await runAuthLogin({ exitOnDone: false, interactiveMenu: true, quiet: false });
     if (login?.auth?.authorized || readOpenHermitAuthStatus().authorized) return;
@@ -1138,14 +1274,24 @@ async function runAuthDevLogin({ exitOnDone = true, requireCode = true, quiet = 
     code = await promptDevUnlockCode();
   }
   if (!isSourceCheckout()) {
-    const result = { ok: false, command: 'auth dev-login', hermitHome, error: 'dev-login is only available from a source checkout' };
+    const result = {
+      ok: false,
+      command: 'auth dev-login',
+      hermitHome,
+      error: 'dev-login is only available from a source checkout',
+    };
     if (jsonRequested) printJson(result, 1);
     console.error(`${brandLogPrefix()} dev-login 仅允许源码开发模式使用。`);
     if (exitOnDone) process.exit(1);
     return result;
   }
   if (requireCode && (!DEV_AUTH_UNLOCK_CODE || code !== DEV_AUTH_UNLOCK_CODE)) {
-    const result = { ok: false, command: 'auth dev-login', hermitHome, error: 'Invalid dev unlock code' };
+    const result = {
+      ok: false,
+      command: 'auth dev-login',
+      hermitHome,
+      error: 'Invalid dev unlock code',
+    };
     if (jsonRequested) printJson(result, 1);
     console.error(`${brandLogPrefix()} 开发解锁口令无效。`);
     if (exitOnDone) process.exit(1);
@@ -1157,14 +1303,18 @@ async function runAuthDevLogin({ exitOnDone = true, requireCode = true, quiet = 
   const result = { ok: true, command: 'auth dev-login', hermitHome, auth };
   if (!quiet && jsonRequested) printJson(result);
   if (!quiet) {
-    printCliRows('开发模式已解锁', [
+    printCliRows(
+      '开发模式已解锁',
+      [
       ['账号', auth.account?.email || auth.account?.id || 'local dev'],
       ['有效期', auth.expiresAt || '本地会话'],
       ['调试日志', '开启'],
       ['Web 日志', daemonLogPath],
       ['同步日志', telemetryWorkerLogPath],
       ['范围', '仅源码 checkout，本地调试使用'],
-    ], `退出开发登录可运行：${brandCommand('auth logout')}`);
+      ],
+      `退出开发登录可运行：${brandCommand('auth logout')}`
+    );
   }
   if (exitOnDone) process.exit(0);
   return result;
@@ -1176,13 +1326,19 @@ async function printAuthStatus({ exitOnDone = true } = {}) {
   if (jsonRequested) printJson(result);
   if (result.auth.authorized) {
     const accountInfo = result.auth.account || {};
-    const account = accountInfo.email || accountInfo.name || accountInfo.id || `${BRAND.authProviderName} account`;
+    const account =
+      accountInfo.email ||
+      accountInfo.name ||
+      accountInfo.id ||
+      `${BRAND.authProviderName} account`;
     const rows = [
       ['状态', '已登录'],
       ['账号', account],
     ];
-    if (accountInfo.department || accountInfo.departmentPath) rows.push(['部门', accountInfo.departmentPath || accountInfo.department]);
-    if (accountInfo.tenantName || accountInfo.tenantKey) rows.push(['租户', accountInfo.tenantName || accountInfo.tenantKey]);
+    if (accountInfo.department || accountInfo.departmentPath)
+      rows.push(['部门', accountInfo.departmentPath || accountInfo.department]);
+    if (accountInfo.tenantName || accountInfo.tenantKey)
+      rows.push(['租户', accountInfo.tenantName || accountInfo.tenantKey]);
     if (accountInfo.email && accountInfo.email !== account) rows.push(['邮箱', accountInfo.email]);
     if (accountInfo.userId) rows.push(['User ID', accountInfo.userId]);
     if (accountInfo.openId) rows.push(['Open ID', accountInfo.openId]);
@@ -1190,12 +1346,20 @@ async function printAuthStatus({ exitOnDone = true } = {}) {
     rows.push(['授权', `${BRAND.authProviderName} 飞书授权已确认，云端授权和托管服务可用`]);
     printCliRows(BRAND.authAccountLabel, rows, `退出登录可运行：${brandCommand('auth logout')}`);
   } else {
-    printCliRows(BRAND.authAccountLabel, [
+    printCliRows(
+      BRAND.authAccountLabel,
+      [
       ['状态', '未登录'],
-      ['影响', `本地使用和本地 usage 统计无需登录；云端授权、托管服务和显式上传需要 ${BRAND.authProviderName} 飞书授权`],
-    ], `需要云端/上传能力时运行：${brandCommand('auth login')}`);
+        [
+          '影响',
+          `本地使用和本地 usage 统计无需登录；云端授权、托管服务和显式上传需要 ${BRAND.authProviderName} 飞书授权`,
+        ],
+      ],
+      `需要云端/上传能力时运行：${brandCommand('auth login')}`
+    );
   }
-  if (result.auth.warning) console.error(`${brandLogPrefix()} Auth store warning: ${result.auth.warning}`);
+  if (result.auth.warning)
+    console.error(`${brandLogPrefix()} Auth store warning: ${result.auth.warning}`);
   if (exitOnDone) process.exit(0);
   return result;
 }
@@ -1218,22 +1382,41 @@ async function runAuthLogout({ exitOnDone = true } = {}) {
   deleteOpenHermitAuthStore();
   const result = { ok: true, command: 'auth logout', hermitHome };
   if (jsonRequested) printJson(result);
-  console.log(`${brandLogPrefix()} 已退出 ${BRAND.authAccountLabel}；再次进入菜单、Web、Usage 采集或团队协作前需要重新登录。`);
+  console.log(
+    `${brandLogPrefix()} 已退出 ${BRAND.authAccountLabel}；再次进入菜单、Web、Usage 采集或团队协作前需要重新登录。`
+  );
   if (exitOnDone) process.exit(0);
   return result;
 }
 
-async function runAuthLogin({ exitOnDone = true, interactiveMenu = false, quiet = jsonRequested } = {}) {
+async function runAuthLogin({
+  exitOnDone = true,
+  interactiveMenu = false,
+  quiet = jsonRequested,
+} = {}) {
   try {
     const loginOptions = parseAuthLoginOptions();
     const auth = await performOpenHermitLogin({ quiet, ...loginOptions });
     const result = { ok: true, command: 'auth login', hermitHome, auth };
     if (jsonRequested) printJson(result);
-    printCliRows('登录成功', [
-      ['账号', auth.account?.email || auth.account?.name || auth.account?.id || `${BRAND.authProviderName} account`],
+    printCliRows(
+      '登录成功',
+      [
+        [
+          '账号',
+          auth.account?.email ||
+            auth.account?.name ||
+            auth.account?.id ||
+            `${BRAND.authProviderName} account`,
+        ],
       ['授权', `飞书授权已通过 ${BRAND.authProviderName} 确认，云端授权和托管服务已可用`],
-      ['安全', `CLI 只保存 ${BRAND.authProviderName} 授权状态，不会保存飞书 app secret、飞书 token 或 Claude Code 凭证`],
-    ], `继续运行 ${BRAND.cliCommand} 进入终端导航。`);
+        [
+          '安全',
+          `CLI 只保存 ${BRAND.authProviderName} 授权状态，不会保存飞书 app secret、飞书 token 或 Claude Code 凭证`,
+        ],
+      ],
+      `继续运行 ${BRAND.cliCommand} 进入终端导航。`
+    );
     if (exitOnDone) process.exit(0);
     return result;
   } catch (err) {
@@ -1241,17 +1424,20 @@ async function runAuthLogin({ exitOnDone = true, interactiveMenu = false, quiet 
     const message = err instanceof Error ? err.message : String(err);
     const result = { ok: false, command: 'auth login', hermitHome, error: message };
     if (jsonRequested) printJson(result, 1);
-    printCliRows('登录失败', [
+    printCliRows(
+      '登录失败',
+      [
       ['原因', message],
       ['默认', `通过 ${BRAND.authProviderName} 打开飞书授权，可用 --control-url 指定控制台地址`],
       ['协议', '/api/v1/auth/start + poll'],
       ['安全', 'CLI 不保存飞书 app secret、飞书 token 或 Claude Code 凭证，也不会打印 token'],
-    ], '请确认授权服务已按最新 Hermit API 返回 flow_id / poll_secret / authorization_url。');
+      ],
+      '请确认授权服务已按最新 AgentCLI API 返回 flow_id / poll_secret / authorization_url。'
+    );
     if (exitOnDone && !interactiveMenu) process.exit(1);
     return result;
   }
 }
-
 
 export {
 getAuthStorePath,

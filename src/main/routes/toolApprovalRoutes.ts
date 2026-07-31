@@ -1,11 +1,10 @@
 import fs from 'node:fs/promises';
 
-import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
-
-import { DEFAULT_TOOL_APPROVAL_SETTINGS } from '@shared/types/team';
-import type { ToolApprovalSettings } from '@shared/types/team';
+import { WORKBENCH_TOOL_APPROVAL_SETTINGS } from '@shared/types/team';
 
 import type { ServerRuntimeState } from '../serverContext';
+import type { ToolApprovalSettings } from '@shared/types/team';
+import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 
 interface ToolApprovalRouteDependencies {
   state: ServerRuntimeState;
@@ -24,7 +23,7 @@ export function registerToolApprovalRoutes(
   { state, respondPermission, logger }: ToolApprovalRouteDependencies
 ): void {
   const readSettings = (teamName: string): ToolApprovalSettings =>
-    state.toolApprovalSettingsByName.get(teamName) ?? DEFAULT_TOOL_APPROVAL_SETTINGS;
+    state.toolApprovalSettingsByName.get(teamName) ?? WORKBENCH_TOOL_APPROVAL_SETTINGS;
 
   app.post<{
     Params: { name: string };

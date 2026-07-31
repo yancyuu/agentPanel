@@ -24,13 +24,13 @@ describe('server route manifest baseline', () => {
       ])
     );
 
-    expect(routes).toHaveLength(240);
+    expect(routes).toHaveLength(267);
     expect(methodCounts).toEqual({
-      GET: 98,
-      POST: 112,
-      PUT: 5,
-      PATCH: 13,
-      DELETE: 9,
+      GET: 108,
+      POST: 124,
+      PUT: 6,
+      PATCH: 14,
+      DELETE: 12,
       ALL: 3,
     });
   });
@@ -52,7 +52,7 @@ describe('server route manifest baseline', () => {
 
     expect(keys).toEqual(
       expect.objectContaining({
-        size: 240,
+        size: 267,
       })
     );
     expect(keys.has('ALL /api/v1/*')).toBe(true);
@@ -61,6 +61,9 @@ describe('server route manifest baseline', () => {
     expect(keys.has('GET /api/teams/tasks')).toBe(true);
     expect(keys.has('GET /api/task-bus/tasks')).toBe(true);
     expect(keys.has('POST /api/task-bus/tasks/:id/complete')).toBe(true);
+    expect(keys.has('POST /api/teams/:name/tasks/:id/attachments')).toBe(true);
+    expect(keys.has('GET /api/teams/:name/tasks/:id/attachments/:attachmentId')).toBe(true);
+    expect(keys.has('DELETE /api/teams/:name/tasks/:id/attachments/:attachmentId')).toBe(true);
     expect(keys.has('GET /api/teams/templates')).toBe(true);
     expect(keys.has('POST /api/teams/tool-approval/read-file')).toBe(true);
     expect(keys.has('GET /api/telemetry/conversations/export')).toBe(true);

@@ -1,29 +1,28 @@
 /**
- * Compact Hermit operations context injected into managed agent instructions.
+ * Compact AgentCLI operations context injected into managed agent instructions.
  *
  * Keep this short: agents need the stable runbook boundary and pointers, not the
  * full public guide copied into every session.
  */
 
-export const HERMIT_OPS_GUIDE_URL = 'https://yancyuu.github.io/Hermit/';
+export const HERMIT_OPS_GUIDE_URL = 'https://yancyuu.github.io/agentcli/';
 
 const OPS_CONTEXT_BEGIN = '<!-- hermit:ops-runbook-context:start -->';
 const OPS_CONTEXT_END = '<!-- hermit:ops-runbook-context:end -->';
 
-const OPS_RUNBOOK_CONTEXT = `## Hermit Ops Runbook Context
+const OPS_RUNBOOK_CONTEXT = `## AgentCLI Ops Runbook Context
 
-Public operations guide: ${HERMIT_OPS_GUIDE_URL}
-Local canonical docs: README.md, docs/README.md, docs/team-management/README.md
+Local canonical docs: README.md, docs/README.md, docs/TEAM_COLLABORATION_MODEL.md
+Bundled diagnostics guide: the versioned AgentCLI guide written to the diagnostics CLAUDE.md.
 
-Hermit/openHermit is a local-first Loop Engineering control plane. Use /teams as the
-main operations surface and treat ~/.hermit/ as the default local data directory.
-Hermit coordinates teams, tasks, message routing, channel allowlists, audit trails,
-and Loop workflows; actual runtime execution is delegated to the local Agent CLI /
-hermit-bridge / Management API.
+AgentCLI is a local-first digital-worker Workbench. Humans create long-running work from
+the global “创建任务” inbox, review delivery in “待审核”, and use “调教” from an Agent page
+for short behavior adjustments. Agents maintain task state through the bundled AgentCLI
+Task Bus. Treat ~/.hermit/ and HERMIT_* as backward-compatible storage/API contracts, not
+as the current product name. hermit-bridge remains an internal compatibility sidecar.
 
-Common ops workflows to suggest or use when appropriate. Hermit preinstalls them as
-user-level Claude commands under ~/.claude/commands/hermit/ so every team can run
-the same namespaced commands from its own cwd:
+Compatibility diagnostic workflows may still use the historical /hermit namespace under
+~/.claude/commands/hermit/. Keep these names internal; the user-facing product entry is “诊断”:
 - /hermit:doctor — diagnose install/runtime/config health.
 - /hermit:loop-scan — inspect Loop assets and recommended recurring loops.
 - /hermit:summary — summarize team/session status and next actions.
@@ -39,8 +38,8 @@ Safety boundary for operations workflows:
 - Do not expose secrets, tokens, cookies, private keys, or full sensitive paths.
 - If a fix is needed, report recommendations, verification steps, and an optional
   patch plan before applying changes.
-- Treat the public guide and local docs as operational references; verify against
-  the current repository/config before making exact claims.`;
+- Treat the bundled versioned diagnostics guide and local docs as authoritative. Do not
+  copy installation commands or product semantics from historical openHermit pages.`;
 
 export function buildHermitOpsRunbookContext(): string {
   return `${OPS_CONTEXT_BEGIN}\n\n${OPS_RUNBOOK_CONTEXT}\n\n${OPS_CONTEXT_END}`;

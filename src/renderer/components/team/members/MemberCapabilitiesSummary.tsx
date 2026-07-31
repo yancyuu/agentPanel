@@ -240,7 +240,7 @@ export const MemberCapabilitiesSummary = ({
                         </span>
                         {isBuiltin ? (
                           <span className="shrink-0 rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-accent)]">
-                            Hermit 内置
+                            AgentCLI 内置
                           </span>
                         ) : null}
                         <span className="shrink-0 text-[9px] text-emerald-500">已配置</span>

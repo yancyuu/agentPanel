@@ -105,7 +105,7 @@ export async function provisionAgentCliShim(
 ): Promise<AgentCliShimProvisionResult> {
   const platform = options.platform ?? process.platform;
   const nodeExecutable = options.nodeExecutable ?? process.execPath;
-  const sourceEntry = path.join(options.packageRoot, 'bin', 'hermit.mjs');
+  const sourceEntry = path.join(options.packageRoot, 'bin', 'agentcli.mjs');
   await access(sourceEntry, fsConstants.R_OK);
 
   const binDir = path.join(options.hermitHome, 'bin');
@@ -124,7 +124,7 @@ export async function provisionAgentCliShim(
     markerPath = path.join(binDir, 'agentcli-workbench.workbench.json');
     const fallbackMarker = await readMarker(markerPath);
     if ((await pathExists(targetPath)) && fallbackMarker?.targetPath !== targetPath) {
-      throw new Error(`AgentCli shim conflict: ${targetPath}`);
+      throw new Error(`AgentCLI shim conflict: ${targetPath}`);
     }
   }
 

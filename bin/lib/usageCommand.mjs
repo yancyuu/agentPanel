@@ -32,6 +32,7 @@ import {
   uploadProviderLabel,
 } from './usageRemote.mjs';
 import { cursorPendingRows, formatNumber, localServerRows, serverUsageUnauthorized } from './usageRows.mjs';
+import { resolveConversationUploadEnabled } from './uploadState.mjs';
 import { absoluteProgressLabel, aggregateUploadProgress, foldFinishedBatches, uploadProgressLabel } from './usageProgress.mjs';
 import {
   collectDaemonStatus,
@@ -65,7 +66,7 @@ import {
   findAnyOptionValues,
 } from './env.mjs';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, openSync, closeSync, statSync } from 'node:fs';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execSync, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -410,9 +411,26 @@ export async function enableConversationUploadWithProvider(providers = ['claudec
   // telemetry.enabled (set above) and scans immediately on boot, which also
   // refreshes the 本地（最近 7 天）row right away. Without this the menu showed
   // no checkmark + "未运行" because usageRunning stayed false after toggling ON.
+  await enableUsageAutostart();
   await restartTelemetryWorkerIfStale({ quiet: true });
   const worker = await startTelemetryWorker({ quiet: true });
   return { taskBus, providers: enabledProviders, started: true, worker };
+}
+
+export async function reconcileEnabledTelemetryWorker() {
+  const settings = readHermitSettings();
+  const telemetry = settings.taskBus?.telemetry;
+  if (!telemetry || !resolveConversationUploadEnabled(telemetry)) {
+    return { reconciled: false, reason: 'upload disabled' };
+  }
+  const { status } = readTelemetryWorkerStatusFile();
+  if (telemetryWorkerHealth(status).running) {
+    return { reconciled: false, reason: 'worker healthy' };
+  }
+  await enableUsageAutostart();
+  await clearStaleConversationUploadLock();
+  const worker = await startTelemetryWorker({ quiet: true });
+  return { reconciled: true, worker };
 }
 
 // --- Worker lifecycle ---------------------------------------------------------
@@ -490,8 +508,8 @@ export async function clearStaleConversationUploadLock() {
 
 function workerNeedsRestart(status) {
   if (!status?.startedAt) return true;
-  const pid = readPidFile(telemetryWorkerPidPath);
-  if (status.pid && pid && Number(status.pid) !== Number(pid)) return true;
+  const health = telemetryWorkerHealth(status);
+  if (!health.running) return true;
   const startedAt = Date.parse(status.startedAt);
   return !Number.isFinite(startedAt) || latestUsageWorkerSourceMtime() > startedAt;
 }
@@ -553,7 +571,13 @@ export async function startTelemetryWorker({
     if (isPidRunning(stray)) signalDaemon(stray, 'SIGKILL');
   }
   if (!forceRestart && existingPid && isPidRunning(existingPid)) {
-    return { started: false, running: true, pid: existingPid, pidPath: telemetryWorkerPidPath, statusPath: telemetryWorkerStatusPath, logPath: telemetryWorkerLogPath };
+    const { status } = readTelemetryWorkerStatusFile();
+    if (telemetryWorkerHealth(status).running) {
+      return { started: false, running: true, pid: existingPid, pidPath: telemetryWorkerPidPath, statusPath: telemetryWorkerStatusPath, logPath: telemetryWorkerLogPath };
+    }
+    signalDaemon(existingPid, 'SIGKILL');
+    await waitForPidExit(existingPid, 3000);
+    removeTelemetryWorkerPidFile();
   }
 
   if (process.env.OPENHERMIT_USAGE_WORKER_MODE === 'test') {
@@ -732,13 +756,33 @@ async function scanUsageTelemetryOnce({ localOnly = false, uploadDisabled = fals
   };
 }
 
-function telemetryWorkerPayload({ status = null, statusError = '', autostart = null } = {}) {
+const TELEMETRY_HEARTBEAT_STALE_MS = 15 * 60 * 1000;
+
+function telemetryWorkerHealth(status = null) {
   const pid = readPidFile(telemetryWorkerPidPath);
-  const running = Boolean(pid && isPidRunning(pid));
+  const processAlive = Boolean(pid && isPidRunning(pid));
+  const statusPidMatches = Boolean(processAlive && status?.pid && Number(status.pid) === Number(pid));
+  const updatedAtMs = Date.parse(status?.updatedAt || '');
+  const heartbeatFresh =
+    Number.isFinite(updatedAtMs) && Date.now() - updatedAtMs <= TELEMETRY_HEARTBEAT_STALE_MS;
   return {
-    running,
-    pid: running ? pid : null,
-    pidfilePresent: Boolean(pid),
+    pid,
+    processAlive,
+    statusPidMatches,
+    heartbeatFresh,
+    running: processAlive && statusPidMatches && heartbeatFresh && status?.running !== false,
+  };
+}
+
+function telemetryWorkerPayload({ status = null, statusError = '', autostart = null } = {}) {
+  const health = telemetryWorkerHealth(status);
+  return {
+    running: health.running,
+    pid: health.running ? health.pid : null,
+    processAlive: health.processAlive,
+    statusPidMatches: health.statusPidMatches,
+    heartbeatFresh: health.heartbeatFresh,
+    pidfilePresent: Boolean(health.pid),
     pidPath: telemetryWorkerPidPath,
     statusPath: telemetryWorkerStatusPath,
     logPath: telemetryWorkerLogPath,
@@ -755,9 +799,14 @@ function usageLaunchdLabel() { return 'com.openhermit.telemetry'; }
 function usageLaunchdPlistPath() { return path.join(os.homedir(), 'Library', 'LaunchAgents', `${usageLaunchdLabel()}.plist`); }
 function xmlEscape(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;'); }
 
+function usageCliPath() {
+  const packaged = path.join(repoRoot, 'bin', 'agentcli.mjs');
+  return existsSync(packaged) ? packaged : fileURLToPath(import.meta.url);
+}
+
 function buildUsageLaunchdPlist() {
   const pathValue = process.env.PATH || '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n\t<key>Label</key>\n\t<string>${usageLaunchdLabel()}</string>\n\t<key>ProgramArguments</key>\n\t<array>\n\t\t<string>${xmlEscape(process.execPath)}</string>\n\t\t<string>${xmlEscape(fileURLToPath(import.meta.url))}</string>\n\t\t<string>__telemetry-worker</string>\n\t</array>\n\t<key>EnvironmentVariables</key>\n\t<dict>\n\t\t<key>HERMIT_HOME</key>\n\t\t<string>${xmlEscape(hermitHome)}</string>\n\t\t<key>PATH</key>\n\t\t<string>${xmlEscape(pathValue)}</string>\n\t</dict>\n\t<key>RunAtLoad</key>\n\t<true/>\n\t<key>KeepAlive</key>\n\t<dict>\n\t\t<key>SuccessfulExit</key>\n\t\t<false/>\n\t</dict>\n\t<key>ThrottleInterval</key>\n\t<integer>30</integer>\n\t<key>StandardOutPath</key>\n\t<string>${xmlEscape(telemetryWorkerLogPath)}</string>\n\t<key>StandardErrorPath</key>\n\t<string>${xmlEscape(telemetryWorkerErrorLogPath)}</string>\n</dict>\n</plist>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n\t<key>Label</key>\n\t<string>${usageLaunchdLabel()}</string>\n\t<key>ProgramArguments</key>\n\t<array>\n\t\t<string>${xmlEscape(process.execPath)}</string>\n\t\t<string>${xmlEscape(usageCliPath())}</string>\n\t\t<string>__telemetry-worker</string>\n\t</array>\n\t<key>EnvironmentVariables</key>\n\t<dict>\n\t\t<key>HERMIT_HOME</key>\n\t\t<string>${xmlEscape(hermitHome)}</string>\n\t\t<key>PATH</key>\n\t\t<string>${xmlEscape(pathValue)}</string>\n\t</dict>\n\t<key>RunAtLoad</key>\n\t<true/>\n\t<key>KeepAlive</key>\n\t<dict>\n\t\t<key>SuccessfulExit</key>\n\t\t<false/>\n\t</dict>\n\t<key>ThrottleInterval</key>\n\t<integer>30</integer>\n\t<key>StandardOutPath</key>\n\t<string>${xmlEscape(telemetryWorkerLogPath)}</string>\n\t<key>StandardErrorPath</key>\n\t<string>${xmlEscape(telemetryWorkerErrorLogPath)}</string>\n</dict>\n</plist>\n`;
 }
 
 function launchctlBestEffort(args) {
@@ -768,9 +817,59 @@ function launchctlBestEffort(args) {
   } catch (err) { return { ok: false, output: err instanceof Error ? err.message : String(err) }; }
 }
 
+function usageWindowsTaskName() { return 'AgentCLI Usage Telemetry'; }
+function usageWindowsTaskXmlPath() { return path.join(telemetryDir, 'usage-worker-task.xml'); }
+function usageWindowsWrapperPath() { return path.join(telemetryDir, 'usage-worker.cmd'); }
+
+function buildUsageWindowsWrapper() {
+  const pathValue = process.env.PATH || '';
+  const escapeBatch = (value) => String(value).replace(/%/g, '%%').replace(/"/g, '""');
+  return `@echo off\r\nset "HERMIT_HOME=${escapeBatch(hermitHome)}"\r\nset "PATH=${escapeBatch(pathValue)}"\r\n"${escapeBatch(process.execPath)}" "${escapeBatch(usageCliPath())}" __telemetry-worker >> "${escapeBatch(telemetryWorkerLogPath)}" 2>> "${escapeBatch(telemetryWorkerErrorLogPath)}"\r\n`;
+}
+
+export function buildUsageWindowsTaskXml() {
+  const wrapper = usageWindowsWrapperPath();
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>AgentCLI usage telemetry worker</Description></RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>999</Count></RestartOnFailure>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>cmd.exe</Command><Arguments>/d /s /c &quot;&quot;${xmlEscape(wrapper)}&quot;&quot;</Arguments></Exec></Actions>
+</Task>\n`;
+}
+
+function schtasksBestEffort(args) {
+  if (process.env.OPENHERMIT_SKIP_SCHTASKS === '1') return { ok: true, output: 'skipped' };
+  const result = spawnSync('schtasks.exe', args, { encoding: 'utf-8', windowsHide: true });
+  return {
+    ok: result.status === 0,
+    output: `${result.stdout || ''}${result.stderr || ''}`,
+  };
+}
+
 export async function getUsageAutostartStatus() {
   const label = usageLaunchdLabel();
   const plistPath = usageLaunchdPlistPath();
+  if (process.platform === 'win32') {
+    const taskName = usageWindowsTaskName();
+    const query = schtasksBestEffort(['/Query', '/TN', taskName, '/FO', 'LIST', '/V']);
+    return {
+      supported: true,
+      enabled: query.ok,
+      loaded: query.ok,
+      label: taskName,
+      taskName,
+      plistPath: usageWindowsTaskXmlPath(),
+      message: query.ok ? undefined : query.output,
+    };
+  }
   if (process.platform !== 'darwin') return { supported: false, enabled: false, loaded: false, label, plistPath };
   const print = launchctlBestEffort(['print', `gui/${process.getuid?.() ?? ''}/${label}`]);
   return { supported: true, enabled: existsSync(plistPath), loaded: print.ok, label, plistPath };
@@ -778,6 +877,20 @@ export async function getUsageAutostartStatus() {
 
 export async function enableUsageAutostart() {
   const plistPath = usageLaunchdPlistPath();
+  if (process.platform === 'win32') {
+    mkdirSync(telemetryDir, { recursive: true, mode: 0o700 });
+    writeFileSync(usageWindowsWrapperPath(), buildUsageWindowsWrapper(), 'utf-8');
+    writeFileSync(usageWindowsTaskXmlPath(), buildUsageWindowsTaskXml(), 'utf-8');
+    schtasksBestEffort([
+      '/Create',
+      '/F',
+      '/TN',
+      usageWindowsTaskName(),
+      '/XML',
+      usageWindowsTaskXmlPath(),
+    ]);
+    return getUsageAutostartStatus();
+  }
   if (process.platform !== 'darwin') return getUsageAutostartStatus();
   mkdirSync(path.dirname(plistPath), { recursive: true });
   mkdirSync(path.dirname(telemetryWorkerLogPath), { recursive: true, mode: 0o700 });
@@ -794,6 +907,7 @@ export async function enableUsageAutostart() {
 
 async function keepUsageAutostartWithoutRunning() {
   const plistPath = usageLaunchdPlistPath();
+  if (process.platform === 'win32') return enableUsageAutostart();
   if (process.platform !== 'darwin') return getUsageAutostartStatus();
   mkdirSync(path.dirname(plistPath), { recursive: true });
   mkdirSync(path.dirname(telemetryWorkerLogPath), { recursive: true, mode: 0o700 });
@@ -810,6 +924,11 @@ export async function disableUsageAutostart() {
   const plistPath = usageLaunchdPlistPath();
   const uid = process.getuid?.();
   if (process.platform === 'darwin' && uid !== undefined) launchctlBestEffort(['bootout', `gui/${uid}`, plistPath]);
+  if (process.platform === 'win32') {
+    schtasksBestEffort(['/Delete', '/F', '/TN', usageWindowsTaskName()]);
+    try { unlinkSync(usageWindowsTaskXmlPath()); } catch {}
+    try { unlinkSync(usageWindowsWrapperPath()); } catch {}
+  }
   try { unlinkSync(plistPath); } catch {}
   return getUsageAutostartStatus();
 }
@@ -992,8 +1111,8 @@ async function printUsageRows(title, data, hint) {
 
 export async function printUsageStatus({ exitOnDone = true } = {}) {
   try {
-    const data = await withCliProgress('正在实时扫描本地用量状态...', () =>
-      readUsageStatus({ scan: true, uploadDisabled: true, includeRemote: true })
+    const data = await withCliProgress('正在读取用量上报状态...', () =>
+      readUsageStatus({ scan: false, uploadDisabled: true, includeRemote: true })
     );
     const result = { ok: true, command: 'usage status', hermitHome, ...data };
     if (jsonRequested) printJson(result);

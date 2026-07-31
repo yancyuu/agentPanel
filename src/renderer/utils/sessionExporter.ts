@@ -1,5 +1,5 @@
 /**
- * Session export utilities for Hermit.
+ * Session export utilities for AgentCLI.
  *
  * Provides formatters to export session data as plain text, Markdown, or JSON,
  * and a download trigger for browser-based file saving.

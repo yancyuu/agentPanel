@@ -481,7 +481,7 @@ export const GeneralSection = ({
       {/* Server Status */}
       <SettingsSectionCard
         title="服务状态"
-        description="查看 Web Helm Loop 连接和本地服务地址。"
+        description="查看诊断服务连接和本地服务地址。"
         icon={<Server className="size-3.5" />}
       >
         <div
@@ -524,7 +524,7 @@ export const GeneralSection = ({
           <p className="px-3 pb-2 text-xs text-red-400">服务状态获取失败：{serverError}</p>
         )}
         <p className="px-3 pb-3 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          当前为 Web Helm Loop 模式。服务由 Hermit 后端托管，不能在浏览器内启动或关闭。
+          当前为 Web 诊断模式。服务由 AgentCLI 后端托管，不能在浏览器内启动或关闭。
         </p>
       </SettingsSectionCard>
 

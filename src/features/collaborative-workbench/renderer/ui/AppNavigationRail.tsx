@@ -1,17 +1,14 @@
 import { cn } from '@renderer/lib/utils';
 import { SYSTEM_MANAGER_TEAM_NAME } from '@shared/types/team';
 import {
-  Bell,
   Bot,
   CalendarClock,
-  CircleHelp,
+  ClipboardList,
   Inbox,
   LayoutDashboard,
-  MessageCircle,
-  Puzzle,
-  Search,
   Settings,
   ShieldCheck,
+  UsersRound,
 } from 'lucide-react';
 
 import type { Tab } from '@renderer/types/tabs';
@@ -19,8 +16,10 @@ import type { ComponentType } from 'react';
 
 export type WorkbenchNavigationArea =
   | 'inbox'
+  | 'tasks'
   | 'overview'
   | 'agents'
+  | 'collaboration'
   | 'schedules'
   | 'extensions'
   | 'notifications'
@@ -34,7 +33,9 @@ export function getWorkbenchNavigationArea(
   tab: WorkbenchTabDescriptor | null
 ): WorkbenchNavigationArea | null {
   if (!tab) return null;
-  if (tab.type === 'tasks') return 'inbox';
+  if (tab.type === 'inbox') return 'inbox';
+  if (tab.type === 'tasks') return 'tasks';
+  if (tab.type === 'collaboration') return 'collaboration';
   if (tab.type === 'teams' || tab.type === 'graph') return 'agents';
   if (tab.type === 'team') {
     return tab.teamName === SYSTEM_MANAGER_TEAM_NAME ? 'system-manager' : 'agents';
@@ -51,28 +52,26 @@ export function getWorkbenchNavigationArea(
 }
 
 interface NavigationItem {
-  id: WorkbenchNavigationArea | 'search';
+  id: WorkbenchNavigationArea;
   label: string;
   icon: ComponentType<{ className?: string }>;
   onClick: () => void;
   badge?: number;
   dot?: boolean;
+  dotLabel?: string;
 }
 
 export interface AppNavigationRailProps {
   activeArea: WorkbenchNavigationArea | null;
-  unreadCount?: number;
   inboxHasUnread?: boolean;
   onOpenInbox(): void;
+  onOpenTasks(): void;
   onOpenOverview(): void;
   onOpenAgents(): void;
+  onOpenCollaboration(): void;
   onOpenSchedules(): void;
-  onOpenExtensions(): void;
-  onOpenNotifications(): void;
   onOpenSystemManager(): void;
   onOpenSettings(): void;
-  onOpenSearch(): void;
-  onOpenCommunity(): void;
 }
 
 function NavigationButton({
@@ -101,12 +100,14 @@ function NavigationButton({
     >
       <span className="relative shrink-0">
         <Icon className="size-4" />
-        {item.dot ? (
-          <span
-            className="absolute -right-1 -top-1 size-2 rounded-full bg-red-500 ring-2 ring-app-shell"
-            aria-label="有新对话"
-          />
-        ) : null}
+        <span
+          className={cn(
+            'absolute -right-1 -top-1 size-2 rounded-full bg-red-500 ring-2 ring-app-shell transition-[opacity,transform] duration-150',
+            item.dot ? 'scale-100 opacity-100' : 'scale-75 opacity-0'
+          )}
+          aria-label={item.dot ? (item.dotLabel ?? '有新内容') : undefined}
+          aria-hidden={!item.dot}
+        />
       </span>
       <span className="hidden min-w-0 flex-1 truncate text-left xl:block">{item.label}</span>
       {badgeLabel ? (
@@ -120,44 +121,39 @@ function NavigationButton({
 
 export function AppNavigationRail({
   activeArea,
-  unreadCount = 0,
   inboxHasUnread = false,
   onOpenInbox,
+  onOpenTasks,
   onOpenOverview,
   onOpenAgents,
+  onOpenCollaboration,
   onOpenSchedules,
-  onOpenExtensions,
-  onOpenNotifications,
   onOpenSystemManager,
   onOpenSettings,
-  onOpenSearch,
-  onOpenCommunity,
 }: Readonly<AppNavigationRailProps>): React.JSX.Element {
   const primaryItems: NavigationItem[] = [
+    { id: 'overview', label: '概览', icon: LayoutDashboard, onClick: onOpenOverview },
     {
       id: 'inbox',
       label: '收件箱',
       icon: Inbox,
       onClick: onOpenInbox,
-      dot: inboxHasUnread,
+      dot: inboxHasUnread && activeArea !== 'inbox',
+      dotLabel: '有新任务反馈',
     },
-    { id: 'overview', label: '概览', icon: LayoutDashboard, onClick: onOpenOverview },
-    { id: 'agents', label: '数字员工', icon: Bot, onClick: onOpenAgents },
+    { id: 'tasks', label: '任务', icon: ClipboardList, onClick: onOpenTasks },
     { id: 'schedules', label: '定时任务', icon: CalendarClock, onClick: onOpenSchedules },
-    { id: 'extensions', label: '扩展', icon: Puzzle, onClick: onOpenExtensions },
+    { id: 'agents', label: '智能体', icon: Bot, onClick: onOpenAgents },
+    {
+      id: 'collaboration',
+      label: '小队',
+      icon: UsersRound,
+      onClick: onOpenCollaboration,
+    },
   ];
   const utilityItems: NavigationItem[] = [
-    {
-      id: 'notifications',
-      label: '通知',
-      icon: Bell,
-      onClick: onOpenNotifications,
-      badge: unreadCount,
-    },
-    { id: 'system-manager', label: 'Helm Loop', icon: ShieldCheck, onClick: onOpenSystemManager },
+    { id: 'system-manager', label: '诊断', icon: ShieldCheck, onClick: onOpenSystemManager },
     { id: 'settings', label: '设置', icon: Settings, onClick: onOpenSettings },
-    { id: 'search', label: '搜索', icon: Search, onClick: onOpenSearch },
-    { id: 'community', label: '加入飞书群', icon: MessageCircle, onClick: onOpenCommunity },
   ];
 
   return (
@@ -166,7 +162,7 @@ export function AppNavigationRail({
         <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-foreground text-xs font-medium text-app-shell">
           H
         </span>
-        <span className="hidden truncate text-sm font-medium xl:block">Hermit</span>
+        <span className="hidden truncate text-sm font-medium xl:block">AgentCLI</span>
       </div>
 
       <nav aria-label="主导航" className="space-y-1">
@@ -179,10 +175,6 @@ export function AppNavigationRail({
         {utilityItems.map((item) => (
           <NavigationButton key={item.id} item={item} active={activeArea === item.id} />
         ))}
-        <div className="flex h-8 items-center justify-center text-muted-foreground xl:justify-start xl:px-2.5">
-          <CircleHelp className="size-3.5 shrink-0" />
-          <span className="ml-2 hidden text-xs xl:block">所有原有功能均保留</span>
-        </div>
       </div>
     </aside>
   );

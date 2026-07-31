@@ -125,13 +125,9 @@ function formatTeamRoleLabel(role: string): string {
 function resolveTeamStatus(
   team: TeamSummary,
   teamName: string,
-  aliveTeams: string[],
   currentProgress: ReturnType<typeof getCurrentProvisioningProgressForTeam>,
   leadActivityByTeam: Record<string, string>
 ): TeamStatus | null {
-  if (aliveTeams.includes(teamName)) {
-    return leadActivityByTeam[teamName] === 'active' ? 'active' : 'idle';
-  }
   if (
     currentProgress &&
     ['validating', 'spawning', 'configuring', 'assembling', 'finalizing', 'verifying'].includes(
@@ -140,7 +136,9 @@ function resolveTeamStatus(
   ) {
     return 'provisioning';
   }
-  return null;
+  if (team.pendingCreate) return 'provisioning';
+  if (team.deletedAt) return null;
+  return leadActivityByTeam[teamName] === 'active' ? 'active' : 'idle';
 }
 
 function formatDurationShort(ms: number): string {
@@ -167,7 +165,7 @@ const StatusBadge = ({ status }: { status: TeamStatus | null }): React.JSX.Eleme
       return (
         <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-[var(--color-text-secondary)]">
           <span className="size-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
-          在线
+          可用
         </span>
       );
     case 'provisioning':
@@ -184,7 +182,7 @@ const StatusBadge = ({ status }: { status: TeamStatus | null }): React.JSX.Eleme
             className="size-1.5 rounded-full bg-[var(--color-text-muted)] opacity-50"
             aria-hidden="true"
           />
-          离线
+          配置异常
         </span>
       );
   }
@@ -235,7 +233,6 @@ export const TeamListView = (): React.JSX.Element => {
     teamsError,
     fetchTeams,
     openTeamTab,
-    openSystemManager,
     deleteTeam,
     restoreTeam,
     permanentlyDeleteTeam,
@@ -255,7 +252,6 @@ export const TeamListView = (): React.JSX.Element => {
       teamsError: s.teamsError,
       fetchTeams: s.fetchTeams,
       openTeamTab: s.openTeamTab,
-      openSystemManager: s.openSystemManager,
       deleteTeam: s.deleteTeam,
       restoreTeam: s.restoreTeam,
       permanentlyDeleteTeam: s.permanentlyDeleteTeam,
@@ -315,11 +311,10 @@ export const TeamListView = (): React.JSX.Element => {
 
   const teamListStats = useMemo(() => {
     const activeTeams = teamsWithProvisioning.filter((team) => !team.deletedAt);
-    const aliveSet = new Set(aliveTeams);
     return activeTeams.reduce(
       (acc, team) => {
         acc.teams += 1;
-        if (aliveSet.has(team.teamName)) acc.running += 1;
+        if (!team.pendingCreate) acc.running += 1;
         acc.sessions += team.stats?.sessions ?? 0;
         acc.messages += team.stats?.messages ?? 0;
         acc.tokens += team.stats?.tokens ?? 0;
@@ -328,7 +323,7 @@ export const TeamListView = (): React.JSX.Element => {
       },
       { teams: 0, running: 0, sessions: 0, messages: 0, tokens: 0, durationMs: 0 }
     );
-  }, [teamsWithProvisioning, aliveTeams]);
+  }, [teamsWithProvisioning]);
 
   useEffect(() => {
     if (statsWarmupRequested || teamsLoading || teamsWithProvisioning.length === 0) return;
@@ -435,7 +430,6 @@ export const TeamListView = (): React.JSX.Element => {
         const status = resolveTeamStatus(
           t,
           t.teamName,
-          aliveTeams,
           getCurrentProvisioningProgressForTeam(provisioningState, t.teamName),
           leadActivityByTeam
         );
@@ -467,8 +461,7 @@ export const TeamListView = (): React.JSX.Element => {
       if (tsA !== tsB) return tsB - tsA;
 
       // 3. Fallback: alphabetical by team name for deterministic order.
-      // Runtime liveness is intentionally not part of ordering: aliveTeams is
-      // loaded asynchronously after mount, and sorting by it makes cards jump on refresh.
+      // Availability is intentionally not part of ordering; stable rows are easier to scan.
       return a.teamName.localeCompare(b.teamName);
     });
 
@@ -477,7 +470,6 @@ export const TeamListView = (): React.JSX.Element => {
     teamsWithProvisioning,
     searchQuery,
     currentProjectPath,
-    aliveTeams,
     filter,
     provisioningState,
     leadActivityByTeam,
@@ -866,7 +858,7 @@ export const TeamListView = (): React.JSX.Element => {
         <DialogHeader>
           <DialogTitle className="text-sm">从模板创建数字员工</DialogTitle>
           <DialogDescription className="text-xs">
-            从数字员工模板仓库读取可复用配置。默认源为 Hermit 官方模板
+            从数字员工模板仓库读取可复用配置。默认源为 AgentCLI 官方模板
             https://github.com/yancyuu/HermitTeams.git，仓库根目录下含有 hermit-team.json
             的一级目录会被识别为模板。
           </DialogDescription>
@@ -1020,14 +1012,6 @@ export const TeamListView = (): React.JSX.Element => {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8"
-            onClick={() => void openSystemManager()}
-          >
-            Helm Loop
-          </Button>
           <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={openTemplateDialog}>
             <LayoutTemplate size={13} aria-hidden="true" />
             从模板创建
@@ -1050,7 +1034,7 @@ export const TeamListView = (): React.JSX.Element => {
             <strong className="font-medium text-[var(--color-text)]">
               {teamListStats.running}
             </strong>{' '}
-            个在线
+            个可用
           </span>
           <span>
             <strong className="font-medium text-[var(--color-text)]">
@@ -1100,7 +1084,9 @@ export const TeamListView = (): React.JSX.Element => {
             filter={filter}
             selectedProjectPath={currentProjectPath}
             teams={teamsWithProvisioning}
-            aliveTeams={aliveTeams}
+            aliveTeams={teamsWithProvisioning
+              .filter((team) => !team.deletedAt && !team.pendingCreate)
+              .map((team) => team.teamName)}
             onFilterChange={setFilter}
             onProjectChange={handleProjectSelectionChange}
           />
@@ -1152,7 +1138,6 @@ export const TeamListView = (): React.JSX.Element => {
       const status = resolveTeamStatus(
         team,
         team.teamName,
-        aliveTeams,
         getCurrentProvisioningProgressForTeam(provisioningState, team.teamName),
         leadActivityByTeam
       );
@@ -1168,17 +1153,17 @@ export const TeamListView = (): React.JSX.Element => {
       };
       const openTasks = taskCounts.pending + taskCounts.inProgress;
       const branch = team.projectPath ? branchByPath[normalizePath(team.projectPath)] : null;
-      const members = team.members ?? [];
-      const visibleMembers = members.slice(0, 3);
-      const remainingMembers = Math.max(0, members.length - visibleMembers.length);
       const canLaunch =
-        Boolean(team.projectPath) && !status && !team.pendingCreate && !isSystemManager;
+        Boolean(team.projectPath) &&
+        !aliveTeams.includes(team.teamName) &&
+        !team.pendingCreate &&
+        !isSystemManager;
 
       return (
         <div
           key={team.teamName}
           role="listitem"
-          className="group relative grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-[var(--color-border)] px-3 py-2.5 last:border-b-0 md:grid-cols-[minmax(260px,1.45fr)_minmax(120px,.65fr)_minmax(150px,.8fr)_minmax(130px,.7fr)_auto] md:px-4"
+          className="group relative grid min-h-[72px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-[var(--color-border)] px-3 py-2.5 last:border-b-0 md:grid-cols-[minmax(260px,1.45fr)_minmax(120px,.65fr)_minmax(150px,.8fr)_minmax(130px,.7fr)_104px] md:px-4"
         >
           <button
             type="button"
@@ -1218,28 +1203,6 @@ export const TeamListView = (): React.JSX.Element => {
                 <span aria-hidden="true">·</span>
                 <span className="truncate">{team.description || '暂无描述'}</span>
               </div>
-              {visibleMembers.length > 0 ? (
-                <div
-                  className="mt-1 flex min-w-0 items-center gap-1 text-[10px] text-[var(--color-text-secondary)]"
-                  aria-label={`${members.length} 名 Agent 成员`}
-                >
-                  <Users
-                    size={10}
-                    className="shrink-0 text-[var(--color-text-muted)]"
-                    aria-hidden="true"
-                  />
-                  {visibleMembers.map((member) => (
-                    <span
-                      key={member.name}
-                      className="max-w-24 truncate rounded bg-[var(--color-surface-raised)] px-1 py-px"
-                    >
-                      {member.name}
-                      {member.role ? ` · ${formatTeamRoleLabel(member.role)}` : ''}
-                    </span>
-                  ))}
-                  {remainingMembers > 0 ? <span>+{remainingMembers}</span> : null}
-                </div>
-              ) : null}
             </div>
           </div>
 
@@ -1298,7 +1261,7 @@ export const TeamListView = (): React.JSX.Element => {
                   <button
                     type="button"
                     className="inline-flex size-8 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] disabled:opacity-50"
-                    aria-label={`启动 Agent ${team.displayName}`}
+                    aria-label={`启动常驻运行时 ${team.displayName}`}
                     disabled={launchingTeamName === team.teamName}
                     onClick={(event) =>
                       void handleLaunchTeam(team.teamName, team.projectPath, event)
@@ -1311,7 +1274,7 @@ export const TeamListView = (): React.JSX.Element => {
                     )}
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">启动 Agent</TooltipContent>
+                <TooltipContent side="bottom">启动常驻运行时</TooltipContent>
               </Tooltip>
             ) : null}
             {!team.pendingCreate && !isSystemManager ? (
@@ -1355,7 +1318,7 @@ export const TeamListView = (): React.JSX.Element => {
       <div className="space-y-5">
         {activeFiltered.length > 0 ? (
           <section aria-label="Agent 列表">
-            <div className="hidden grid-cols-[minmax(260px,1.45fr)_minmax(120px,.65fr)_minmax(150px,.8fr)_minmax(130px,.7fr)_auto] gap-3 border-x border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] px-4 py-2 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)] md:grid">
+            <div className="hidden grid-cols-[minmax(260px,1.45fr)_minmax(120px,.65fr)_minmax(150px,.8fr)_minmax(130px,.7fr)_104px] gap-3 border-x border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] px-4 py-2 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)] md:grid">
               <span>Agent</span>
               <span>运行状态</span>
               <span>项目</span>

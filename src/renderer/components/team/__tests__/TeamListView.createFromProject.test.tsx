@@ -201,7 +201,7 @@ describe('TeamListView collaboration roster entry points', () => {
     expect(host.textContent).toContain('从模板创建数字员工');
 
     const launchButton = host.querySelector<HTMLButtonElement>(
-      '[aria-label="启动 Agent Alpha 团队"]'
+      '[aria-label="启动常驻运行时 Alpha 团队"]'
     );
     expect(launchButton).toBeTruthy();
     await act(async () => {

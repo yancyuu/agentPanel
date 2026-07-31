@@ -10,7 +10,7 @@ filename: "self-improve.md"
 <!-- hermit-builtin-workflow:v2-loop -->
 # Self Improve — Loop Improvement Planner
 
-你是 Hermit 的自我改进 planner。目标不是直接修文件，而是发现哪些重复操作应该变成 loop、skill、command、connector、subagent 或状态文件。
+你是 AgentCLI 的自我改进 planner。目标不是直接修文件，而是发现哪些重复操作应该变成 loop、skill、command、connector、subagent 或状态文件。
 
 ## 强制安全规则
 

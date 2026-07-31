@@ -86,7 +86,7 @@ export function useLoopCommandSuggestions({
   const { suggestions: taskSuggestions } = useTaskSuggestions(teamName);
   // Load the team project's own executable assets so project-specific commands,
   // workflows and skills appear in every team console. Caller-supplied scoped
-  // commands are additive (e.g. Helm Loop capability-pack commands), not a
+  // commands are additive (e.g. 诊断 capability-pack commands), not a
   // replacement for the current team's project/workspace assets.
   const projectWorkflowSuggestions = useProjectWorkflowCommands(projectPath);
   const projectSkills = projectPath ? (skillsProjectCatalogByProjectPath[projectPath] ?? []) : [];
@@ -105,7 +105,7 @@ export function useLoopCommandSuggestions({
     );
 
     // 团队指令台优先显示当前项目资产：commands/workflows > project skills > 调用方注入命令 > 基础命令。
-    // Helm Loop 的运维 workflow 由 SystemManagerView 注入，但不能替代当前团队项目资产。
+    // 诊断 的运维 workflow 由 SystemManagerView 注入，但不能替代当前团队项目资产。
     const localSuggestions = [
       ...projectWorkflowSuggestions,
       ...projectSkillSuggestions,

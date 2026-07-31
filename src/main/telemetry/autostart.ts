@@ -24,6 +24,7 @@ export interface UsageTelemetryAutostartStatus {
   loaded: boolean;
   label: string;
   plistPath: string;
+  taskName?: string;
   message?: string;
 }
 
@@ -92,13 +93,53 @@ ${programArguments.map(stringEntry).join('\n')}
 `;
 }
 
+export const USAGE_TELEMETRY_WINDOWS_TASK_NAME = 'AgentCLI Usage Telemetry';
+
+function windowsTaskFiles(hermitHome: string): { xmlPath: string; wrapperPath: string } {
+  const telemetryDirectory = path.join(hermitHome, 'telemetry');
+  return {
+    xmlPath: path.join(telemetryDirectory, 'usage-worker-task.xml'),
+    wrapperPath: path.join(telemetryDirectory, 'usage-worker.cmd'),
+  };
+}
+
+export function buildUsageTelemetryWindowsTaskXml(
+  options: Required<UsageTelemetryAutostartOptions>
+): string {
+  const { wrapperPath } = windowsTaskFiles(options.hermitHome);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>AgentCLI usage telemetry worker</Description></RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>999</Count></RestartOnFailure>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>cmd.exe</Command><Arguments>/d /s /c &quot;&quot;${xmlEscape(wrapperPath)}&quot;&quot;</Arguments></Exec></Actions>
+</Task>
+`;
+}
+
+function buildUsageTelemetryWindowsWrapper(
+  options: Required<UsageTelemetryAutostartOptions>
+): string {
+  const paths = getUsageTelemetryWorkerPaths(options.hermitHome);
+  const safePath = process.env.PATH ?? '';
+  const escapeBatch = (value: string): string => value.replace(/%/g, '%%').replace(/"/g, '""');
+  return `@echo off\r\nset "HERMIT_HOME=${escapeBatch(options.hermitHome)}"\r\nset "PATH=${escapeBatch(safePath)}"\r\n"${escapeBatch(options.nodePath)}" "${escapeBatch(options.cliPath)}" __telemetry-worker >> "${escapeBatch(paths.logPath)}" 2>> "${escapeBatch(paths.errorLogPath)}"\r\n`;
+}
+
 function normalizeOptions(
   options: UsageTelemetryAutostartOptions = {}
 ): Required<UsageTelemetryAutostartOptions> {
   return {
     hermitHome: options.hermitHome ?? resolveHermitHome(),
     nodePath: options.nodePath ?? process.execPath,
-    cliPath: options.cliPath ?? path.resolve(process.cwd(), 'bin/hermit.mjs'),
+    cliPath: options.cliPath ?? path.resolve(process.cwd(), 'bin/agentcli.mjs'),
     label: options.label ?? USAGE_TELEMETRY_LAUNCHD_LABEL,
   };
 }
@@ -113,11 +154,43 @@ async function launchctl(args: string[]): Promise<{ ok: boolean; output: string 
   }
 }
 
+async function schtasks(args: string[]): Promise<{ ok: boolean; output: string }> {
+  if (process.env.OPENHERMIT_SKIP_SCHTASKS === '1') return { ok: true, output: 'skipped' };
+  try {
+    const { stdout, stderr } = await execFileAsync('schtasks.exe', args, { timeout: 15_000 });
+    return { ok: true, output: `${stdout}${stderr}` };
+  } catch (err) {
+    const error = err as Error & { stdout?: string; stderr?: string };
+    return { ok: false, output: `${error.stdout ?? ''}${error.stderr ?? ''}${error.message}` };
+  }
+}
+
 export async function getUsageTelemetryAutostartStatus(
   options: UsageTelemetryAutostartOptions = {}
 ): Promise<UsageTelemetryAutostartStatus> {
   const normalized = normalizeOptions(options);
   const plistPath = getUsageTelemetryLaunchdPlistPath(normalized.label);
+  if (process.platform === 'win32') {
+    const files = windowsTaskFiles(normalized.hermitHome);
+    const query = await schtasks([
+      '/Query',
+      '/TN',
+      USAGE_TELEMETRY_WINDOWS_TASK_NAME,
+      '/FO',
+      'LIST',
+      '/V',
+    ]);
+    return {
+      supported: true,
+      platform: process.platform,
+      enabled: query.ok,
+      loaded: query.ok,
+      label: USAGE_TELEMETRY_WINDOWS_TASK_NAME,
+      taskName: USAGE_TELEMETRY_WINDOWS_TASK_NAME,
+      plistPath: files.xmlPath,
+      ...(query.ok ? {} : { message: query.output }),
+    };
+  }
   if (process.platform !== 'darwin') {
     return {
       supported: false,
@@ -126,7 +199,7 @@ export async function getUsageTelemetryAutostartStatus(
       loaded: false,
       label: normalized.label,
       plistPath,
-      message: 'usage telemetry autostart is currently implemented for macOS launchd only',
+      message: 'usage telemetry autostart is supported on macOS and Windows',
     };
   }
   const print = await launchctl(['print', `gui/${process.getuid?.() ?? ''}/${normalized.label}`]);
@@ -145,7 +218,25 @@ export async function enableUsageTelemetryAutostart(
   options: UsageTelemetryAutostartOptions = {}
 ): Promise<UsageTelemetryAutostartStatus> {
   const normalized = normalizeOptions(options);
+  if (process.env.HERMIT_DISABLE_TELEMETRY_AUTOSTART === '1') {
+    return getUsageTelemetryAutostartStatus(normalized);
+  }
   const plistPath = getUsageTelemetryLaunchdPlistPath(normalized.label);
+  if (process.platform === 'win32') {
+    const files = windowsTaskFiles(normalized.hermitHome);
+    await mkdir(path.dirname(files.xmlPath), { recursive: true, mode: 0o700 });
+    await writeFile(files.wrapperPath, buildUsageTelemetryWindowsWrapper(normalized), 'utf8');
+    await writeFile(files.xmlPath, buildUsageTelemetryWindowsTaskXml(normalized), 'utf8');
+    await schtasks([
+      '/Create',
+      '/F',
+      '/TN',
+      USAGE_TELEMETRY_WINDOWS_TASK_NAME,
+      '/XML',
+      files.xmlPath,
+    ]);
+    return getUsageTelemetryAutostartStatus(normalized);
+  }
   if (process.platform !== 'darwin') return getUsageTelemetryAutostartStatus(normalized);
   const paths = getUsageTelemetryWorkerPaths(normalized.hermitHome);
   await mkdir(path.dirname(plistPath), { recursive: true });
@@ -166,6 +257,12 @@ export async function disableUsageTelemetryAutostart(
 ): Promise<UsageTelemetryAutostartStatus> {
   const normalized = normalizeOptions(options);
   const plistPath = getUsageTelemetryLaunchdPlistPath(normalized.label);
+  if (process.platform === 'win32') {
+    const files = windowsTaskFiles(normalized.hermitHome);
+    await schtasks(['/Delete', '/F', '/TN', USAGE_TELEMETRY_WINDOWS_TASK_NAME]);
+    await rm(files.xmlPath, { force: true });
+    await rm(files.wrapperPath, { force: true });
+  }
   if (process.platform === 'darwin' && process.env.OPENHERMIT_SKIP_LAUNCHCTL !== '1') {
     const uid = process.getuid?.();
     if (uid !== undefined) await launchctl(['bootout', `gui/${uid}`, plistPath]);

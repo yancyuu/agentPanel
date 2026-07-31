@@ -28,7 +28,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install openHermit CLI
+      - name: Install AgentCLI
         run: npm install -g @yancyyu/agentcli@latest --prefer-online
 
       - name: Check CLI commands

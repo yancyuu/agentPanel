@@ -56,7 +56,7 @@ export interface UpdateProgress {
   error?: string;
 }
 
-const GITHUB_REPO = 'yancyuu/Hermit';
+const GITHUB_REPO = 'yancyuu/agentcli';
 const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
 
 export class UpdateService {
@@ -113,6 +113,9 @@ export class UpdateService {
   }
 
   async applyUpdate(onProgress?: (progress: UpdateProgress) => void): Promise<boolean> {
+    if (process.env.AGENTCLI_PACKAGED_DESKTOP === '1') {
+      throw new Error('桌面客户端不能通过 npm 自更新，请下载并安装新版本客户端。');
+    }
     if (!this.isGitRepo) {
       return this.updateViaNpm(onProgress);
     }

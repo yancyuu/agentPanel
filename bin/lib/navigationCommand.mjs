@@ -151,8 +151,8 @@ function renderTerminalQr(value) {
 const ONLINE_GUIDE_URL = 'https://yancyuu.github.io/agentcli/';
 const ONLINE_INSTALL_GUIDE_URL = 'https://yancyuu.github.io/agentcli/install.sh';
 const ONLINE_GUIDE_HANDOFF = [
-  `请先阅读 AgentCli 在线说明书：${ONLINE_GUIDE_URL}`,
-  '这是本机 AgentCli/Hermit 的使用手册。',
+  `请先阅读 AgentCLI 在线说明书：${ONLINE_GUIDE_URL}`,
+  '这是本机 AgentCLI 的使用手册。',
   '后续回答和操作请以这份说明书为准。',
 ];
 
@@ -171,7 +171,7 @@ function printOnlineGuide() {
 
 function inlineBusyMessage(action) {
   if (action.id === 'toggle-web') {
-    return currentFeatureStates().webRunning ? '正在关闭 AgentCli 工作台...' : '正在启动 AgentCli 工作台...';
+    return currentFeatureStates().webRunning ? '正在关闭 AgentCLI 工作台...' : '正在启动 AgentCLI 工作台...';
   }
   if (action.id === 'toggle-message-upload') {
     const s = currentFeatureStates();
@@ -1044,8 +1044,8 @@ async function runQuickCreateAssistantFlow() {
       teams = await fetchLocalJson('/api/teams');
     } catch {
       printCliRows('重新授权数字员工', [
-        ['原因', '无法获取数字员工列表：AgentCli 工作台未启动或尚未就绪', 'error'],
-      ], '请先运行 agentcli web 或在菜单中开启 AgentCli 工作台后重试。');
+        ['原因', '无法获取数字员工列表：AgentCLI 工作台未启动或尚未就绪', 'error'],
+      ], '请先运行 agentcli web 或在菜单中开启 AgentCLI 工作台后重试。');
       return;
     }
     const candidates = (Array.isArray(teams) ? teams : []).filter(
@@ -1516,10 +1516,10 @@ export async function runNavigationAction(action) {
     } else {
       statusText = '未运行';
     }
-    printCliRows('AgentCli 工作台', [
+    printCliRows('AgentCLI 工作台', [
       ['状态', statusText, ds.running ? 'ok' : 'warn'],
       ['地址', ds.running ? `${ds.url}（token 自动携带，仅本机）` : '未运行', ds.running ? 'info' : 'off'],
-    ], '本机 AgentCli Web daemon：用于本地 CC/Codex session → IM 的配置与管理');
+    ], '本机 AgentCLI Web daemon：用于本地 CC/Codex session → IM 的配置与管理');
     console.log('');
     return waitForContinue(ACTION_DONE_MSG);
   }
@@ -1619,6 +1619,8 @@ export async function printNavigation() {
   // snapshot, which can lag a recent login).
   await refreshAuthCacheFromServer();
   await refreshWebRunningState();
+  const { reconcileEnabledTelemetryWorker } = await import('./usageCommand.mjs');
+  await reconcileEnabledTelemetryWorker();
 
   // Keep the home status fresh after inline actions, but compute expensive feature
   // probes once per repaint. Windows process discovery is slow; expanding a

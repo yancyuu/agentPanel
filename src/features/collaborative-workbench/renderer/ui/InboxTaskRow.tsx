@@ -59,6 +59,14 @@ export function InboxTaskRow({
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2">
+            <span
+              className={cn(
+                'mt-1.5 size-2 shrink-0 rounded-full bg-red-500 transition-opacity',
+                unreadCount > 0 ? 'opacity-100' : 'opacity-0'
+              )}
+              aria-label={unreadCount > 0 ? '有未读任务反馈' : undefined}
+              aria-hidden={unreadCount === 0}
+            />
             <p className={cn('min-w-0 flex-1 truncate text-sm', selected && 'font-medium')}>
               {task.subject}
             </p>

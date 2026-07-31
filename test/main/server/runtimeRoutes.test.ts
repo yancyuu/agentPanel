@@ -92,7 +92,7 @@ describe('runtime health and settings routes', () => {
     });
     expect(dependencies.logger.warn).toHaveBeenCalledWith(
       { err: expect.any(Error) },
-      'cc-connect settings patch failed; saved Hermit settings locally'
+      'cc-connect settings patch failed; saved AgentCLI settings locally'
     );
   });
 

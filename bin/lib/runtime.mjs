@@ -444,7 +444,7 @@ function hasTomlSection(raw, section) {
 
 function buildOpenHermitStarterConfig(managementToken, bridgeToken) {
   return `# cc-connect configuration
-# Runtime bridge packaged by Hermit (cc-connect).
+# Runtime bridge packaged by AgentCLI (cc-connect).
 
 data_dir = "${escapeTomlPath(defaultCcConnectDataDir)}"
 language = "zh"

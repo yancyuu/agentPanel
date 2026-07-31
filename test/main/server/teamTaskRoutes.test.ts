@@ -1,12 +1,18 @@
 /* eslint-disable @typescript-eslint/require-await -- async test doubles implement Promise-returning route dependencies. */
 
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { registerTeamTaskRoutes } from '../../../src/main/routes/teamTaskRoutes';
+import { registerTeamTaskRoutes, toTeamTask } from '../../../src/main/routes/teamTaskRoutes';
 import type { Task } from '../../../src/main/services/team-management/TeamWorkspaceService';
 
 const apps: ReturnType<typeof Fastify>[] = [];
+const tempDirs: string[] = [];
+const originalHermitHome = process.env.HERMIT_HOME;
 type Dependencies = Parameters<typeof registerTeamTaskRoutes>[1];
 
 function task(overrides: Partial<Task> = {}): Task {
@@ -60,9 +66,18 @@ function createHarness(overrides: Partial<Dependencies> = {}) {
 
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  if (originalHermitHome === undefined) delete process.env.HERMIT_HOME;
+  else process.env.HERMIT_HOME = originalHermitHome;
 });
 
 describe('team task routes', () => {
+  it('presents submitted legacy tasks as waiting for review instead of still in progress', () => {
+    expect(
+      toTeamTask(task({ status: 'doing', reviewState: 'review', result: '# 已交付' })).status
+    ).toBe('completed');
+  });
+
   it('maps canonical list/create contracts and filters soft-deleted tasks', async () => {
     const readTasks = vi.fn(async () => [
       task(),
@@ -79,6 +94,15 @@ describe('team task routes', () => {
         description: 'Details',
         owner: 'team-b',
         status: 'in_progress',
+      },
+    });
+    const pendingUploadTask = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks',
+      payload: {
+        subject: 'Create with files',
+        owner: 'team-b',
+        startImmediately: false,
       },
     });
     const invalid = await harness.app.inject({
@@ -98,14 +122,176 @@ describe('team task routes', () => {
     expect(harness.dependencies.createTask).toHaveBeenCalledWith('team-a', {
       title: 'Create me',
       description: 'Details',
+      descriptionTaskRefs: undefined,
+      prompt: undefined,
+      promptTaskRefs: undefined,
       assignee: 'team-b',
       status: 'doing',
+      blockedBy: undefined,
+      related: undefined,
+      createdBy: 'user',
     });
+    expect(harness.dependencies.dispatchTask).toHaveBeenCalledTimes(1);
+    expect(harness.dependencies.dispatchTask).toHaveBeenCalledWith(
+      'team-a',
+      expect.objectContaining({ title: 'Create me', assignee: 'team-b', status: 'doing' })
+    );
     expect(created.json()).toEqual(
       expect.objectContaining({ subject: 'Create me', status: 'in_progress' })
     );
+    expect(pendingUploadTask.json()).toEqual(
+      expect.objectContaining({ subject: 'Create with files', status: 'pending' })
+    );
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json()).toEqual({ error: 'title/subject required' });
+  });
+
+  it('uploads, reads, and deletes task attachments in browser mode', async () => {
+    const hermitHome = await mkdtemp(path.join(os.tmpdir(), 'agentcli-task-attachments-'));
+    tempDirs.push(hermitHome);
+    process.env.HERMIT_HOME = hermitHome;
+    let currentTask = task();
+    const readTasks = vi.fn(async () => [currentTask]);
+    const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
+      currentTask = { ...currentTask, ...patch };
+      return currentTask;
+    });
+    const harness = createHarness({ readTasks, patchTask });
+    const base64Data = Buffer.from('attachment-data').toString('base64');
+
+    const uploaded = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks/task-12345678/attachments',
+      payload: {
+        attachmentId: 'attachment-1',
+        filename: 'proof.png',
+        mimeType: 'image/png',
+        base64Data,
+      },
+    });
+    const downloaded = await harness.app.inject({
+      method: 'GET',
+      url: '/api/teams/team-a/tasks/task-12345678/attachments/attachment-1',
+    });
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/teams/team-a/tasks/task-12345678/attachments/attachment-1',
+    });
+
+    expect(uploaded.statusCode).toBe(200);
+    expect(uploaded.json()).toEqual(
+      expect.objectContaining({
+        id: 'attachment-1',
+        filename: 'proof.png',
+        mimeType: 'image/png',
+        size: Buffer.from('attachment-data').length,
+      })
+    );
+    expect(downloaded.json()).toEqual({ base64Data });
+    expect(deleted.json()).toEqual({ ok: true });
+    expect(currentTask.attachments).toEqual([]);
+  });
+
+  it('accepts local document inputs for a task', async () => {
+    const hermitHome = await mkdtemp(path.join(os.tmpdir(), 'agentcli-task-doc-input-'));
+    tempDirs.push(hermitHome);
+    process.env.HERMIT_HOME = hermitHome;
+    let currentTask = task();
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [currentTask]),
+      patchTask: vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
+        currentTask = { ...currentTask, ...patch };
+        return currentTask;
+      }),
+    });
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks/task-12345678/attachments',
+      payload: {
+        attachmentId: 'attachment-docx',
+        filename: '客户资料.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        base64Data: Buffer.from('document-data').toString('base64'),
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(currentTask.attachments?.[0]).toEqual(
+      expect.objectContaining({ filename: '客户资料.docx' })
+    );
+  });
+
+  it('approves and archives a deliverable through the existing local kanban action', async () => {
+    const hermitHome = await mkdtemp(path.join(os.tmpdir(), 'agentcli-task-archive-route-'));
+    tempDirs.push(hermitHome);
+    process.env.HERMIT_HOME = hermitHome;
+    let currentTask = task({
+      status: 'done',
+      assignee: 'research-assistant',
+      reviewState: 'review',
+      result: '# 最终报告\n\n结论内容。',
+    });
+    const readTasks = vi.fn(async () => [currentTask]);
+    const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
+      currentTask = { ...currentTask, ...patch };
+      return currentTask;
+    });
+    const harness = createHarness({ readTasks, patchTask });
+
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: { op: 'set_column', column: 'approved' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(currentTask).toMatchObject({ status: 'done', reviewState: 'approved' });
+    expect(currentTask.comments?.at(-1)).toMatchObject({
+      author: 'user',
+      type: 'review_approved',
+    });
+    const outputRoot = path.join(hermitHome, 'teams', 'team-a', 'outputs');
+    const [taskDir] = await readdir(outputRoot);
+    const manifest = JSON.parse(
+      await readFile(path.join(outputRoot, taskDir, 'manifest.json'), 'utf8')
+    ) as { taskId: string; currentVersion: string; versions: unknown[] };
+    expect(manifest).toMatchObject({ taskId: 'task-12345678' });
+    expect(manifest.currentVersion).toBeTruthy();
+    expect(manifest.versions).toHaveLength(1);
+  });
+
+  it('sends requested changes back to the same task instead of creating another task', async () => {
+    let currentTask = task({
+      status: 'done',
+      assignee: 'research-assistant',
+      reviewState: 'review',
+      result: '# 第一版报告',
+    });
+    const readTasks = vi.fn(async () => [currentTask]);
+    const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
+      currentTask = { ...currentTask, ...patch };
+      return currentTask;
+    });
+    const harness = createHarness({ readTasks, patchTask });
+
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: { op: 'request_changes', comment: '请补充英国站费用。' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(currentTask).toMatchObject({ status: 'doing', reviewState: 'needsFix' });
+    expect(currentTask.comments?.at(-1)).toMatchObject({
+      author: 'user',
+      text: '请补充英国站费用。',
+    });
+    expect(harness.dependencies.dispatchTask).toHaveBeenCalledWith(
+      'team-a',
+      expect.objectContaining({ id: 'task-12345678', status: 'doing' })
+    );
+    expect(harness.dependencies.createTask).not.toHaveBeenCalled();
   });
 
   it('maps canonical patches and blocks manual exit or deletion while an agent is working', async () => {
@@ -125,7 +311,7 @@ describe('team task routes', () => {
     expect(blockedPatch.statusCode).toBe(409);
     expect(blockedPatch.json()).toEqual({
       ok: false,
-      error: 'Agent 正在处理中，不能手动完成或取消。请等待 agent 通过 Hermit CLI 提交结果。',
+      error: 'Agent 正在处理中，不能手动完成或取消。请等待 Agent 通过 AgentCLI 提交结果。',
     });
     expect(blockedDelete.statusCode).toBe(409);
     expect(blockedDelete.json()).toEqual({
@@ -195,6 +381,39 @@ describe('team task routes', () => {
     expect((await failed.app.inject({ method: 'GET', url: '/api/teams/tasks' })).json()).toEqual(
       []
     );
+  });
+
+  it('includes task boards owned by local intelligent agents even when they are not bridge projects', async () => {
+    const collaborationRoot = task({
+      id: 'collaboration-root',
+      teamSlug: 'captain-agent',
+      title: '小队最终交付',
+      taskKind: 'root',
+      collaborationRunId: 'run-1',
+      status: 'done',
+      reviewState: 'review',
+    });
+    const harness = createHarness({
+      listProjects: vi.fn(async () => []),
+      listTeams: vi.fn(async () => [{ slug: 'captain-agent' }]),
+      readTasks: vi.fn(async (teamName: string) =>
+        teamName === 'captain-agent' ? [collaborationRoot] : []
+      ),
+      readTeamManifest: vi.fn(async () => ({
+        slug: 'captain-agent',
+        displayName: '小队队长',
+      })),
+    });
+
+    expect((await harness.app.inject({ method: 'GET', url: '/api/teams/tasks' })).json()).toEqual([
+      expect.objectContaining({
+        id: collaborationRoot.id,
+        teamName: 'captain-agent',
+        teamDisplayName: '小队队长',
+        collaborationRunId: 'run-1',
+        reviewState: 'review',
+      }),
+    ]);
   });
 
   it('provides a team-scoped CLI task bus for list, claim, comment, clarification, and completion', async () => {
@@ -464,6 +683,73 @@ describe('team task routes', () => {
     expect(stored.needsClarification).toBe('user');
     expect(stored.blockedBy).toBeUndefined();
     expect(harness.dependencies.dispatchTask).not.toHaveBeenCalled();
+  });
+
+  it('resumes an assigned task when the user replies in comments', async () => {
+    let stored = task({
+      status: 'doing',
+      assignee: '测试',
+      needsClarification: 'user',
+    });
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [stored]),
+      patchTask: vi.fn(async (_teamName, _taskId, patch) => {
+        stored = { ...stored, ...patch };
+        return stored;
+      }),
+    });
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks/task-12345678/comments',
+      payload: { text: '行，继续处理' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(stored.needsClarification).toBeUndefined();
+    expect(stored.status).toBe('doing');
+    expect(stored.comments).toEqual([
+      expect.objectContaining({ author: 'user', text: '行，继续处理' }),
+    ]);
+    expect(harness.dependencies.dispatchTask).toHaveBeenCalledWith(
+      'team-a',
+      expect.objectContaining({ id: 'task-12345678', needsClarification: undefined })
+    );
+    expect(harness.dependencies.broadcastTaskChange).toHaveBeenCalledWith(
+      'team-a',
+      'task-12345678'
+    );
+  });
+
+  it('cancels an assigned task immediately instead of sending it back for review', async () => {
+    let stored = task({
+      status: 'done',
+      assignee: '测试',
+      reviewState: 'review',
+      result: '旧交付',
+    });
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [stored]),
+      patchTask: vi.fn(async (_teamName, _taskId, patch) => {
+        stored = { ...stored, ...patch };
+        return stored;
+      }),
+    });
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks/task-12345678/comments',
+      payload: { text: '任务取消' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(stored).toMatchObject({ status: 'done', result: '__deleted__' });
+    expect(stored.reviewState).toBeUndefined();
+    expect(harness.dependencies.dispatchTask).not.toHaveBeenCalled();
+    expect(harness.dependencies.broadcastTaskChange).toHaveBeenCalledWith(
+      'team-a',
+      'task-12345678'
+    );
   });
 
   it('rejects unsupported browser comment attachments without mutating the board', async () => {

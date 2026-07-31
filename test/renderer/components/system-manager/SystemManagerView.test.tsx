@@ -13,8 +13,7 @@ const {
   getTeamSessionsMock,
   createLoopSessionMock,
   refreshTeamMessagesHeadMock,
-  loopConsolePanelPropsMock,
-  runtimeConfigDialogPropsMock,
+  diagnosticFetchMock,
 } = vi.hoisted(() => ({
   getStatusMock: vi.fn(),
   getConfigMock: vi.fn(),
@@ -26,13 +25,13 @@ const {
   getTeamSessionsMock: vi.fn(),
   createLoopSessionMock: vi.fn(),
   refreshTeamMessagesHeadMock: vi.fn(),
-  loopConsolePanelPropsMock: vi.fn(),
-  runtimeConfigDialogPropsMock: vi.fn(),
+  diagnosticFetchMock: vi.fn(),
 }));
 
 const storeState = {
   fetchTeams: fetchTeamsMock,
   refreshTeamMessagesHead: refreshTeamMessagesHeadMock,
+  teamMessagesByName: {},
   capabilityPacks: [
     {
       packDir: '/repo/.claude/capabilities',
@@ -79,22 +78,6 @@ vi.mock('@renderer/store', () => {
   return { useStore };
 });
 
-vi.mock('@renderer/components/team/loop-console/LoopConsolePanel', () => ({
-  LoopConsolePanel: (props: {
-    commandSuggestions?: { command?: string; name?: string; description?: string }[];
-  }) => {
-    loopConsolePanelPropsMock(props);
-    return <div data-testid="admin-loop-panel">Embedded Helm Loop Panel</div>;
-  },
-}));
-
-vi.mock('@renderer/components/team/dialogs/RuntimeConfigDialog', () => ({
-  RuntimeConfigDialog: (props: { open: boolean; teamName: string; onClose: () => void }) => {
-    runtimeConfigDialogPropsMock(props);
-    return props.open ? <div data-testid="admin-runtime-config">Admin runtime config</div> : null;
-  },
-}));
-
 vi.mock('@renderer/api', () => ({
   api: {
     systemManager: {
@@ -125,7 +108,7 @@ function renderSystemManager(): { host: HTMLDivElement; root: ReturnType<typeof 
 
 function baseStatus() {
   return {
-    displayName: 'Helm Loop' as const,
+    displayName: '诊断' as const,
     defaultWorkDir: '/repo',
     selectedWorkDir: '/repo',
     adminWorkDir: '/repo',
@@ -147,7 +130,7 @@ function baseTeamData(workDir = '/repo') {
     teamName: 'system-manager',
     config: {
       teamName: 'system-manager',
-      displayName: 'Helm Loop',
+      displayName: '诊断',
       projectPath: workDir,
       members: [],
       leadSessionId: 'lead-session',
@@ -169,11 +152,11 @@ function baseTeamData(workDir = '/repo') {
 function mockAdminLoopRuntime(workDir = '/repo') {
   ensureSystemManagerMock.mockResolvedValue({
     teamName: 'system-manager',
-    displayName: 'Helm Loop',
+    displayName: '诊断',
     bindProject: 'my-project',
     workDir,
     projectPath: workDir,
-    description: 'Helm Loop',
+    description: '诊断',
     localStatus: 'ready',
     ccConnectProjectStatus: 'bound',
     feishuStatus: 'unbound',
@@ -201,6 +184,49 @@ function mockAdminLoopRuntime(workDir = '/repo') {
 describe('SystemManagerView', () => {
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    diagnosticFetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/system-manager/diagnostics/current')) {
+        return Promise.resolve(new Response('null', { status: 200 }));
+      }
+      if (url.endsWith('/api/system-manager/cleanup/scan')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              scannedAt: '2026-06-05T00:00:00.000Z',
+              candidates: [],
+              totalBytes: 0,
+              totalItems: 0,
+              scannedWorkspaces: 1,
+              warnings: [],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        );
+      }
+      if (url.endsWith('/api/system-manager/diagnostics/run') && init?.method === 'POST') {
+        const request = JSON.parse(String(init.body)) as {
+          actionId: string;
+          title: string;
+        };
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 'diag-1',
+              actionId: request.actionId,
+              title: request.title,
+              status: 'running',
+              sessionKey: 'system-manager:diagnostic:diag-1',
+              messageId: 'diagnostic-diag-1',
+              startedAt: '2026-06-05T00:00:00.000Z',
+            }),
+            { status: 202, headers: { 'Content-Type': 'application/json' } }
+          )
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ error: 'not found' }), { status: 404 }));
+    });
+    vi.stubGlobal('fetch', diagnosticFetchMock);
   });
 
   afterEach(() => {
@@ -209,7 +235,7 @@ describe('SystemManagerView', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders embedded Helm Loop panel with project and scoped command support', async () => {
+  it('renders a simple scan page and starts a full-folder diagnostic', async () => {
     getStatusMock.mockResolvedValue(baseStatus());
     getConfigMock.mockResolvedValue(baseConfig());
     updateConfigMock.mockImplementation((patch: { selectedWorkDir?: string }) =>
@@ -226,45 +252,36 @@ describe('SystemManagerView', () => {
       await Promise.resolve();
     });
 
-    expect(host.querySelector('header h1')?.textContent).toBe('Helm Loop');
-    expect(host.textContent).toContain('作用域');
-    expect(host.textContent).toContain('命令源');
-    expect(host.textContent).toContain('默认边界');
-    expect(host.textContent).toContain('Embedded Helm Loop Panel');
-    expect(host.textContent).toContain('运行时');
+    expect(host.querySelector('header h1')?.textContent).toBe('诊断');
+    expect(host.textContent).toContain('点击一次，检查所有数字员工');
+    expect(host.textContent).toContain('开始全盘扫描');
+    expect(host.textContent).toContain('团队记忆漂移');
+    expect(host.textContent).toContain('临时文件扫描');
+    expect(host.textContent).toContain('运行环境检查');
+    expect(host.textContent).toContain('任务积压检查');
+    expect(host.textContent).toContain('扫描结果');
+    expect(host.textContent).toContain('还没有扫描结果');
+    expect(host.textContent).not.toContain('指令台');
+    expect(host.textContent).not.toContain('运维手册');
+    expect(host.textContent).not.toContain('设置');
     expect(host.textContent).not.toContain('打开终端');
-    expect(loopConsolePanelPropsMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        slashCommandMode: 'session',
-        commandSuggestions: expect.arrayContaining([
-          expect.objectContaining({
-            command: '/repo-doctor',
-            description: 'Explain what the repo doctor command checks before it runs.',
-          }),
-        ]),
-      })
-    );
     expect(ensureSystemManagerMock).toHaveBeenCalled();
-    expect(runtimeConfigDialogPropsMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        open: false,
-        teamName: 'system-manager',
-      })
-    );
 
     await act(async () => {
       Array.from(host.querySelectorAll('button'))
-        .find((button) => button.textContent?.includes('运行时'))
+        .find((button) => button.textContent?.includes('团队记忆漂移'))
         ?.click();
       await Promise.resolve();
+      await Promise.resolve();
     });
-    expect(host.querySelector('[data-testid="admin-runtime-config"]')).not.toBeNull();
-    expect(runtimeConfigDialogPropsMock).toHaveBeenLastCalledWith(
+    expect(diagnosticFetchMock).toHaveBeenCalledWith(
+      '/api/system-manager/diagnostics/run',
       expect.objectContaining({
-        open: true,
-        teamName: 'system-manager',
+        method: 'POST',
+        body: expect.stringMatching(/memory-drift[\s\S]*团队记忆漂移/),
       })
     );
+    expect(host.textContent).toContain('正在扫描');
 
     await act(async () => {
       root.unmount();
@@ -272,50 +289,178 @@ describe('SystemManagerView', () => {
     });
   });
 
-  it('loads Helm Loop sessions only after the system manager team exists', async () => {
+  it('groups cleanup candidates, selects all by default and cleans selected IDs', async () => {
     getStatusMock.mockResolvedValue(baseStatus());
+    getConfigMock.mockResolvedValue(baseConfig());
+    mockAdminLoopRuntime();
+    diagnosticFetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/system-manager/diagnostics/current')) {
+        return Promise.resolve(new Response('null', { status: 200 }));
+      }
+      if (url.endsWith('/api/system-manager/cleanup/scan')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              scannedAt: '2026-06-05T00:00:00.000Z',
+              candidates: [
+                {
+                  id: 'cache-1',
+                  category: 'project-cache',
+                  categoryLabel: '项目缓存',
+                  name: '.vite',
+                  path: '/repo/.vite',
+                  displayPath: '~/repo/.vite',
+                  kind: 'directory',
+                  sizeBytes: 4096,
+                  itemCount: 3,
+                  modifiedAt: '2026-06-01T00:00:00.000Z',
+                  reason: '可重新生成的工具缓存',
+                  selectedByDefault: true,
+                },
+              ],
+              totalBytes: 4096,
+              totalItems: 3,
+              scannedWorkspaces: 1,
+              warnings: [],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        );
+      }
+      if (url.endsWith('/api/system-manager/cleanup') && init?.method === 'POST') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              cleanedAt: '2026-06-05T00:01:00.000Z',
+              removedIds: ['cache-1'],
+              failed: [],
+              freedBytes: 4096,
+              remaining: {
+                scannedAt: '2026-06-05T00:01:00.000Z',
+                candidates: [],
+                totalBytes: 0,
+                totalItems: 0,
+                scannedWorkspaces: 1,
+                warnings: [],
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ error: 'not found' }), { status: 404 }));
+    });
+    const { host, root } = renderSystemManager();
+    await act(async () => {
+      root.render(<SystemManagerView />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('临时文件扫描'))
+        ?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('项目缓存');
+    expect(host.textContent).toContain('.vite');
+    expect(host.textContent).toContain('全选 1 项');
+    expect((host.querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(true);
+
+    await act(async () => {
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('清理选中项'))
+        ?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(diagnosticFetchMock).toHaveBeenCalledWith(
+      '/api/system-manager/cleanup',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ ids: ['cache-1'] }) })
+    );
+    expect(host.textContent).toContain('已清理 1 项');
+    expect(host.textContent).toContain('当前没有需要清理的项目');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('restores an in-progress diagnostic after a browser refresh', async () => {
+    getStatusMock.mockResolvedValue(baseStatus());
+    mockAdminLoopRuntime();
+    diagnosticFetchMock.mockImplementation((input: RequestInfo | URL) => {
+      if (String(input).endsWith('/api/system-manager/diagnostics/current')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 'diag-running',
+              actionId: 'task-health',
+              title: '任务积压检查',
+              status: 'running',
+              sessionKey: 'system-manager:diagnostic:diag-running',
+              messageId: 'diagnostic-diag-running',
+              startedAt: '2026-06-05T00:00:00.000Z',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        );
+      }
+      return Promise.resolve(new Response('null', { status: 200 }));
+    });
+
+    const { host, root } = renderSystemManager();
+    await act(async () => {
+      root.render(<SystemManagerView />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('正在扫描');
+    expect(host.textContent).toContain('任务积压检查');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('ensures the diagnostics team before loading status and results', async () => {
+    const order: string[] = [];
+    getStatusMock.mockImplementation(() => {
+      order.push('status');
+      return Promise.resolve(baseStatus());
+    });
     getConfigMock.mockResolvedValue(baseConfig());
     updateConfigMock.mockResolvedValue(baseConfig('/repo'));
     fetchTeamsMock.mockResolvedValue(undefined);
 
-    const order: string[] = [];
     ensureSystemManagerMock.mockImplementation(() => {
       order.push('ensure');
       return Promise.resolve({
         teamName: 'system-manager',
-        displayName: 'Helm Loop',
+        displayName: '诊断',
         bindProject: 'my-project',
         workDir: '/repo',
         projectPath: '/repo',
-        description: 'Helm Loop',
+        description: '诊断',
         localStatus: 'ready',
         ccConnectProjectStatus: 'bound',
         feishuStatus: 'bound',
       });
     });
-    getTeamDataMock.mockImplementation(() => {
-      order.push('data');
-      return Promise.resolve(baseTeamData('/repo'));
-    });
-    getTeamSessionsMock.mockImplementation(() => {
-      order.push('sessions');
-      return Promise.resolve([
-        {
-          id: 'oc_admin',
-          title: 'Helm Loop 飞书',
-          projectId: 'system-manager',
-          sessionKey: 'feishu:chat_admin:ou_admin',
-          platform: 'feishu',
-          userName: null,
-          chatName: '管理员群',
-          active: true,
-          live: true,
-          historyCount: 1,
-          createdAt: '2026-06-05T00:00:00.000Z',
-          updatedAt: '2026-06-05T00:00:00.000Z',
-          lastMessage: null,
-        },
-      ]);
+    diagnosticFetchMock.mockImplementation((input: RequestInfo | URL) => {
+      if (String(input).endsWith('/api/system-manager/diagnostics/current')) {
+        order.push('diagnostic');
+        return Promise.resolve(new Response('null', { status: 200 }));
+      }
+      return Promise.resolve(new Response('null', { status: 200 }));
     });
 
     const { root } = renderSystemManager();
@@ -326,13 +471,7 @@ describe('SystemManagerView', () => {
       await Promise.resolve();
     });
 
-    expect(order[0]).toBe('ensure');
-    expect(order).toEqual(expect.arrayContaining(['data', 'sessions']));
-    expect(loopConsolePanelPropsMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        sessions: [expect.objectContaining({ sessionKey: 'feishu:chat_admin:ou_admin' })],
-      })
-    );
+    expect(order).toEqual(['ensure', 'status', 'diagnostic']);
 
     await act(async () => {
       root.unmount();

@@ -4,6 +4,7 @@
  */
 
 import { TeamGraphTab } from '@features/agent-graph/renderer';
+import { CollaborationView } from '@features/team-collaboration/renderer';
 import { TabUIProvider } from '@renderer/contexts/TabUIContext';
 import { SYSTEM_MANAGER_TEAM_NAME } from '@shared/types/team';
 
@@ -15,6 +16,7 @@ import { SessionReportTab } from '../report/SessionReportTab';
 import { SchedulesView } from '../schedules/SchedulesView';
 import { SettingsView } from '../settings/SettingsView';
 import { SystemManagerView } from '../system-manager/SystemManagerView';
+import { InboxView } from '../tasks/InboxView';
 import { TasksView } from '../tasks/TasksView';
 import { TeamDetailView } from '../team/TeamDetailView';
 import { TeamListView } from '../team/TeamListView';
@@ -40,7 +42,7 @@ export const PaneContent = ({ pane, isPaneFocused }: PaneContentProps): React.JS
     <div className="relative flex flex-1 overflow-hidden">
       {showDefaultInbox && (
         <div className="absolute inset-0 flex">
-          <TasksView />
+          <InboxView />
         </div>
       )}
 
@@ -79,7 +81,9 @@ export const PaneContent = ({ pane, isPaneFocused }: PaneContentProps): React.JS
               </TabUIProvider>
             )}
             {tab.type === 'schedules' && <SchedulesView />}
+            {tab.type === 'inbox' && <InboxView />}
             {tab.type === 'tasks' && <TasksView />}
+            {tab.type === 'collaboration' && <CollaborationView />}
             {tab.type === 'graph' && (
               <TabUIProvider tabId={tab.id}>
                 <TeamGraphTab

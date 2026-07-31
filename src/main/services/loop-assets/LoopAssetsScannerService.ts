@@ -488,8 +488,8 @@ export class LoopAssetsScannerService {
         );
     }
     if (memberCount > 0) {
-      details.push(`${memberCount} Hermit team members`);
-      sources.push({ label: 'Hermit team members', scope: 'team', kind: 'team-members' });
+      details.push(`${memberCount} AgentCLI team members`);
+      sources.push({ label: 'AgentCLI team members', scope: 'team', kind: 'team-members' });
     }
 
     const hasVerifier = projectAgents.some((name) =>
@@ -548,9 +548,9 @@ export class LoopAssetsScannerService {
       }
     }
     if (input.taskCount != null && input.taskCount > 0) {
-      details.push(`${input.taskCount} Hermit tasks`);
+      details.push(`${input.taskCount} AgentCLI tasks`);
       sources.push({
-        label: 'Hermit task board',
+        label: 'AgentCLI task board',
         path: input.teamRoot,
         scope: 'team',
         kind: 'task-board',
@@ -559,7 +559,7 @@ export class LoopAssetsScannerService {
     if (input.messageCount != null && input.messageCount > 0) {
       details.push(`${input.messageCount} team messages`);
       sources.push({
-        label: 'Hermit messages',
+        label: 'AgentCLI messages',
         path: input.teamRoot,
         scope: 'team',
         kind: 'messages',

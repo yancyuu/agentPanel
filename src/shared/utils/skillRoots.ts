@@ -63,7 +63,7 @@ export function getSkillAudience(rootKind: SkillRootKind): SkillAudience {
 
 export function getSkillAudienceLabel(rootKind: SkillRootKind): string {
   if (rootKind === 'hermit') {
-    return 'Hermit 管理';
+    return 'AgentCLI 管理';
   }
   return getSkillAudience(rootKind) === 'codex' ? 'Codex 专用' : '共享';
 }

@@ -66,7 +66,7 @@ describe('menus — 用户菜单不重复提供在线说明书', () => {
     expect(manual.description).toContain('本地脱敏配置');
   });
 
-  it('does not expose digital worker onboarding from the AgentCli workbench group', () => {
+  it('does not expose digital worker onboarding from the AgentCLI workbench group', () => {
     const web = NAV_ACTIONS.find((a) => a.id === 'web');
     const action = findMenuAction(web.children, 'quick-create-assistant');
 

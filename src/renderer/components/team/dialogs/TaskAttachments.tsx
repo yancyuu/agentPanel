@@ -4,11 +4,21 @@ import { ImageLightbox } from '@renderer/components/team/attachments/ImageLightb
 import { Button } from '@renderer/components/ui/button';
 import { useStore } from '@renderer/store';
 import { isImageMimeType } from '@renderer/utils/attachmentUtils';
-import { File, ImagePlus, Loader2, Trash2 } from 'lucide-react';
+import {
+  getTaskInputMimeType,
+  isTaskInputFileSupported,
+  taskInputFileToBase64,
+} from '@renderer/utils/taskInputFiles';
+import { File, Loader2, Paperclip, Trash2 } from 'lucide-react';
 
 import type { TaskAttachmentMeta } from '@shared/types';
 
-const ACCEPTED_TYPES = new Set<string>(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+const ACCEPTED_IMAGE_TYPES = new Set<string>([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+]);
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
@@ -52,23 +62,33 @@ export const TaskAttachments = ({
       setUploading(true);
 
       try {
-        for (const file of Array.from(files)) {
-          if (!ACCEPTED_TYPES.has(file.type)) {
-            setError(`不支持的文件类型：${file.type}`);
-            continue;
+        const validFiles: File[] = [];
+        const validationErrors: string[] = [];
+        for (const file of files) {
+          if (!isTaskInputFileSupported(file)) {
+            validationErrors.push(`不支持的文件类型：${file.name}`);
+          } else if (file.size > MAX_FILE_SIZE) {
+            validationErrors.push(
+              `文件过大：${(file.size / (1024 * 1024)).toFixed(1)} MB（最大 20 MB）`
+            );
+          } else {
+            validFiles.push(file);
           }
-          if (file.size > MAX_FILE_SIZE) {
-            setError(`文件过大：${(file.size / (1024 * 1024)).toFixed(1)} MB（最大 20 MB）`);
-            continue;
-          }
+        }
+        setError(validationErrors.length > 0 ? validationErrors.join('；') : null);
 
-          const base64 = await fileToBase64(file);
+        const uploadAt = async (index: number): Promise<void> => {
+          const file = validFiles[index];
+          if (!file) return;
+          const base64 = await taskInputFileToBase64(file);
           await saveTaskAttachment(teamName, taskId, {
             name: file.name,
-            type: file.type,
+            type: getTaskInputMimeType(file),
             base64,
           });
-        }
+          await uploadAt(index + 1);
+        };
+        await uploadAt(0);
       } catch (err) {
         setError(err instanceof Error ? err.message : '上传失败');
       } finally {
@@ -159,8 +179,8 @@ export const TaskAttachments = ({
       const items = e.clipboardData?.items;
       if (!items) return;
       const imageFiles: File[] = [];
-      for (const item of Array.from(items)) {
-        if (item.kind === 'file' && ACCEPTED_TYPES.has(item.type)) {
+      for (const item of items) {
+        if (item.kind === 'file' && ACCEPTED_IMAGE_TYPES.has(item.type)) {
           const file = item.getAsFile();
           if (file) imageFiles.push(file);
         }
@@ -198,6 +218,8 @@ export const TaskAttachments = ({
   return (
     <div
       ref={containerRef}
+      role="region"
+      aria-label="相关文件上传区域"
       tabIndex={-1}
       className="space-y-2"
       onDragOver={handleDragOver}
@@ -242,7 +264,7 @@ export const TaskAttachments = ({
       {/* Drop zone indicator */}
       {dragOver ? (
         <div className="flex items-center justify-center rounded-md border-2 border-dashed border-indigo-500/40 bg-indigo-500/5 py-4 text-xs text-indigo-400">
-          Drop image here
+          将本地文件拖到这里
         </div>
       ) : null}
 
@@ -251,7 +273,7 @@ export const TaskAttachments = ({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/png,image/jpeg,image/gif,image/webp"
+          accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,application/json,.md,.txt,.csv,.tsv,.json,.jsonl,.docx,.xlsx,.pptx,.zip"
           multiple
           className="hidden"
           onChange={(e) => void handleFileSelect(e.target.files)}
@@ -263,10 +285,12 @@ export const TaskAttachments = ({
           disabled={uploading}
           onClick={() => fileInputRef.current?.click()}
         >
-          {uploading ? <Loader2 size={12} className="animate-spin" /> : <ImagePlus size={12} />}
-          添加图片
+          {uploading ? <Loader2 size={12} className="animate-spin" /> : <Paperclip size={12} />}
+          添加本地文件
         </Button>
-        <span className="text-[10px] text-[var(--color-text-muted)]">也可粘贴 / 拖放</span>
+        <span className="text-[10px] text-[var(--color-text-muted)]">
+          支持图片、PDF、文本和 Office 文件，也可粘贴 / 拖放
+        </span>
       </div>
 
       {error ? <p className="text-xs text-red-400">{error}</p> : null}
@@ -334,8 +358,17 @@ const AttachmentThumbnail = ({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={`预览 ${attachment.filename}`}
       className={`group relative flex size-20 cursor-pointer items-center justify-center overflow-hidden rounded border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:border-[var(--color-border-emphasis)]`}
       onClick={onPreview}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onPreview();
+        }
+      }}
     >
       {isImageMimeType(attachment.mimeType) ? (
         thumbUrl ? (
@@ -370,25 +403,3 @@ const AttachmentThumbnail = ({
     </div>
   );
 };
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      // Strip the data URL prefix (e.g., "data:image/png;base64,")
-      const base64 = result.split(',')[1];
-      if (base64) {
-        resolve(base64);
-      } else {
-        reject(new Error('Failed to read file as base64'));
-      }
-    };
-    reader.onerror = () => reject(reader.error ?? new Error('File read failed'));
-    reader.readAsDataURL(file);
-  });
-}

@@ -10,7 +10,7 @@ filename: "summary.md"
 <!-- hermit-builtin-workflow:v2-loop -->
 # Loop Ops Summary — 循环运维摘要
 
-你是 Hermit Helm Loop 的 Loop Ops 摘要助手。请从 Loop Engineering 角度总结当前工作区状态：循环是否能自己找活、派活、验证、记录状态、推进下一步。
+你是 AgentCLI 诊断 的 Loop Ops 摘要助手。请从 Loop Engineering 角度总结当前工作区状态：循环是否能自己找活、派活、验证、记录状态、推进下一步。
 
 
 ## 安全边界

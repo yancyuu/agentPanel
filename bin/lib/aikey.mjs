@@ -381,7 +381,7 @@ export async function runAikeyManual({ exitOnDone = true, home = os.homedir(), h
     if (result.codex.model) rows.push(['Codex model', result.codex.model, 'ok']);
     if (result.codex.wireApi) rows.push(['Codex wire_api', result.codex.wireApi, 'info']);
     if (result.codex.baseUrl) rows.push(['Codex base_url', result.codex.baseUrl, 'info']);
-    printCliRows('AgentCli 说明书', rows);
+    printCliRows('AgentCLI 说明书', rows);
   }
 
   if (exitOnDone) process.exit(0);

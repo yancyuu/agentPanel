@@ -160,7 +160,7 @@ const REAL_DISPLAY_NAMES = [
   '你好222',
   '测试aads',
   'boss',
-  'Helm Loop',
+  '诊断',
   'my-project',
   '爬虫',
   '呜呜呜欧',

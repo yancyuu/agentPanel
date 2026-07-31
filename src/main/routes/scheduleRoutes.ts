@@ -1,9 +1,9 @@
 import { Cron } from 'croner';
-import type { FastifyInstance } from 'fastify';
 
+import type { InMemoryScheduleRun, ServerRuntimeState } from '../serverContext';
 import type { HermitBridgeClient } from '../services/hermitBridge/HermitBridgeClient';
 import type { TeamManifest } from '../services/team-management/TeamWorkspaceService';
-import type { InMemoryScheduleRun, ServerRuntimeState } from '../serverContext';
+import type { FastifyInstance } from 'fastify';
 
 const CRON_ZERO_TIME_PREFIX = '0001-01-01T00:00:00';
 const DEFAULT_SCHEDULE_TIMEZONE =
@@ -480,7 +480,7 @@ export function registerScheduleRoutes(
           startedAt: nowIso,
           executionStartedAt: nowIso,
           retryCount: 0,
-          summary: 'Triggered via Hermit; waiting for agent runtime',
+          summary: 'Triggered via AgentCLI; waiting for Agent runtime',
         };
         scheduleRunLogsByKey.set(makeScheduleRunLogKey(job.id, runId), {
           stdout: `Triggered at ${nowIso}`,

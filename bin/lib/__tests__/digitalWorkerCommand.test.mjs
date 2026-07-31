@@ -160,7 +160,7 @@ describe('provisionDigitalWorker', () => {
   it('refuses creation before any side effect when the workbench is not running', async () => {
     const deps = dependencies({
       ensureLocalServer: vi.fn(async () => {
-        throw new Error('AgentCli 工作台未启动：请先运行 agentcli web 或在菜单中开启 AgentCli 工作台，再创建数字员工。');
+        throw new Error('AgentCLI 工作台未启动：请先运行 agentcli web 或在菜单中开启 AgentCLI 工作台，再创建数字员工。');
       }),
     });
 
@@ -169,7 +169,7 @@ describe('provisionDigitalWorker', () => {
     expect(result).toMatchObject({
       ok: false,
       failedStage: '启动本地工作台 API',
-      message: expect.stringContaining('AgentCli 工作台未启动'),
+      message: expect.stringContaining('AgentCLI 工作台未启动'),
       rollback: { attempted: false },
     });
     expect(deps.createTeam).not.toHaveBeenCalled();

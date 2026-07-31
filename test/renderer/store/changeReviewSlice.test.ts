@@ -168,6 +168,22 @@ describe('changeReviewSlice task changes', () => {
     vi.clearAllMocks();
   });
 
+  it('normalizes legacy task-change responses that omit files', async () => {
+    const store = createSliceStore();
+    hoisted.getTaskChanges.mockResolvedValue({
+      teamName: 'team-a',
+      taskId: 'legacy-task',
+      confidence: 'low',
+      warnings: [],
+    });
+
+    await store.getState().fetchTaskChanges('team-a', 'legacy-task', OPTIONS_A);
+
+    expect(store.getState().changeSetError).toBeNull();
+    expect(store.getState().activeChangeSet.files).toEqual([]);
+    expect(store.getState().selectedReviewFilePath).toBeNull();
+  });
+
   it('does not cache errors as negative task-change results', async () => {
     const store = createSliceStore();
     hoisted.getTaskChanges.mockRejectedValue(new Error('transient'));

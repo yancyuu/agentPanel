@@ -880,7 +880,7 @@ const GenericHarnessProviderDialog = ({
                 color: 'var(--color-text-muted)',
               }}
             >
-              当前还没有绑定到 {title} 的 Provider。请在 Hermit 配置中添加 `agent_types` 包含 `
+              当前还没有绑定到 {title} 的 Provider。请在 AgentCLI 配置中添加 `agent_types` 包含 `
               {agentType ?? 'agent'}` 的 Provider。
             </div>
           )}

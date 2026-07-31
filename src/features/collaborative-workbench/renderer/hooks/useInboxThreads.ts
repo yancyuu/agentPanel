@@ -10,9 +10,12 @@ import { useShallow } from 'zustand/react/shallow';
 
 import {
   getInboxThreadReadState,
+  initializeInboxThreadReadState,
+  isInboxThreadReadInitialized,
   markInboxThreadRead,
   subscribeInboxThreadRead,
 } from '../services/inboxThreadReadStorage';
+import { ensureInboxGoalDirective } from '../utils/inboxGoalDirective';
 import {
   buildInboxThreads,
   type DraftInboxThread,
@@ -63,6 +66,17 @@ export interface InboxThreadsState {
   lastResult: ReturnType<typeof useStore.getState>['lastSendMessageResult'];
   navigationRequestAt: number | null;
   sendMessage(
+    recipient: string,
+    text: string,
+    summary?: string,
+    attachments?: AttachmentPayload[],
+    actionMode?: AgentActionMode,
+    taskRefs?: TaskRef[],
+    slashCommand?: SlashCommandMeta
+  ): Promise<void>;
+  forwardMessage(
+    sourceMessageId: string | undefined,
+    destinationTeamName: string,
     recipient: string,
     text: string,
     summary?: string,
@@ -132,6 +146,9 @@ export function useInboxThreads(): InboxThreadsState {
     }
   }, [activeTeams, refreshTeamMessagesHead]);
 
+  const allTeamsHydrated =
+    activeTeams.length > 0 &&
+    activeTeams.every((team) => teamMessagesByName[team.teamName]?.headHydrated);
   const messagesByTeam = useMemo(
     () =>
       Object.fromEntries(
@@ -143,10 +160,23 @@ export function useInboxThreads(): InboxThreadsState {
     [activeTeams, teamMessagesByName]
   );
 
-  const allThreads = useMemo(
+  const projectedThreads = useMemo(
     () => buildInboxThreads({ teams: activeTeams, messagesByTeam, readAtByThread, draft }),
     [activeTeams, draft, messagesByTeam, readAtByThread]
   );
+  const readStateInitialized = isInboxThreadReadInitialized();
+  const allThreads = useMemo(
+    () =>
+      readStateInitialized
+        ? projectedThreads
+        : projectedThreads.map((thread) => ({ ...thread, unread: false })),
+    [projectedThreads, readStateInitialized]
+  );
+
+  useEffect(() => {
+    if (!allTeamsHydrated || readStateInitialized) return;
+    initializeInboxThreadReadState(projectedThreads);
+  }, [allTeamsHydrated, projectedThreads, readStateInitialized]);
 
   const openDraft = useCallback(
     (
@@ -258,13 +288,14 @@ export function useInboxThreads(): InboxThreadsState {
     if (Number.isFinite(latestAt)) markInboxThreadRead(selectedThread.key, latestAt);
   }, [selectedThread]);
 
-  const allTeamsHydrated =
-    activeTeams.length > 0 &&
-    activeTeams.every((team) => teamMessagesByName[team.teamName]?.headHydrated);
   useEffect(() => {
     if (!allTeamsHydrated) return;
-    setInboxHasUnreadMessages(allThreads.some((thread) => thread.unread));
-  }, [allTeamsHydrated, allThreads, setInboxHasUnreadMessages]);
+    // The selected mail is already visible and is treated as read immediately.
+    // Excluding it keeps the rail dot and list dot in sync instead of briefly flashing.
+    setInboxHasUnreadMessages(
+      allThreads.some((thread) => thread.unread && thread.key !== selectedKey)
+    );
+  }, [allTeamsHydrated, allThreads, selectedKey, setInboxHasUnreadMessages]);
 
   useEffect(() => {
     if (!selectedThread) return;
@@ -299,7 +330,15 @@ export function useInboxThreads(): InboxThreadsState {
       void refreshTeamMessagesHead(team.teamName).catch(() => undefined);
   }, [activeTeams, refreshTeamMessagesHead]);
 
-  const selectThread = useCallback((key: string) => setSelectedKey(key), []);
+  const selectThread = useCallback(
+    (key: string) => {
+      const thread = allThreads.find((item) => item.key === key);
+      const latestAt = thread ? Date.parse(thread.updatedAt) : Number.NaN;
+      if (Number.isFinite(latestAt)) markInboxThreadRead(key, latestAt);
+      setSelectedKey(key);
+    },
+    [allThreads]
+  );
 
   const sendMessage = useCallback(
     async (
@@ -314,7 +353,7 @@ export function useInboxThreads(): InboxThreadsState {
       if (!selectedThread) return;
       await sendTeamMessage(selectedThread.teamName, {
         member: recipient,
-        text,
+        text: ensureInboxGoalDirective(text),
         summary,
         attachments,
         actionMode,
@@ -329,6 +368,42 @@ export function useInboxThreads(): InboxThreadsState {
       setDraft((current) =>
         current?.conversationId === selectedThread.conversationId ? null : current
       );
+    },
+    [selectedThread, sendTeamMessage]
+  );
+
+  const forwardMessage = useCallback(
+    async (
+      sourceMessageId: string | undefined,
+      destinationTeamName: string,
+      recipient: string,
+      text: string,
+      summary?: string,
+      attachments?: AttachmentPayload[],
+      actionMode?: AgentActionMode,
+      taskRefs?: TaskRef[],
+      slashCommand?: SlashCommandMeta
+    ) => {
+      if (!selectedThread || !destinationTeamName.trim()) return;
+      const conversationId = createConversationId();
+      await sendTeamMessage(destinationTeamName, {
+        member: recipient,
+        text: ensureInboxGoalDirective(text),
+        summary,
+        attachments,
+        actionMode,
+        taskRefs,
+        slashCommand,
+        conversationId,
+        replyToConversationId: selectedThread.conversationId,
+        relayOfMessageId: sourceMessageId,
+        sessionKey: `${destinationTeamName}:member:${recipient}`,
+        to: recipient,
+        source: 'user_sent',
+      });
+      setDraft(null);
+      setTeamFilter('all');
+      setSelectedKey(`${destinationTeamName}:${conversationId}`);
     },
     [selectedThread, sendTeamMessage]
   );
@@ -356,5 +431,6 @@ export function useInboxThreads(): InboxThreadsState {
     lastResult: lastSendMessageResult,
     navigationRequestAt,
     sendMessage,
+    forwardMessage,
   };
 }

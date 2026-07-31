@@ -1,5 +1,56 @@
+export interface SystemDiagnosticRun {
+  id: string;
+  actionId: string;
+  title: string;
+  status: 'running' | 'completed' | 'failed';
+  sessionKey: string;
+  messageId: string;
+  startedAt: string;
+  completedAt?: string;
+  result?: string;
+  error?: string;
+}
+
+export type CleanupCandidateCategory =
+  | 'application-temp'
+  | 'old-logs'
+  | 'project-cache'
+  | 'system-junk';
+
+export interface CleanupCandidate {
+  id: string;
+  category: CleanupCandidateCategory;
+  categoryLabel: string;
+  name: string;
+  path: string;
+  displayPath: string;
+  kind: 'file' | 'directory';
+  sizeBytes: number;
+  itemCount: number;
+  modifiedAt: string;
+  reason: string;
+  selectedByDefault: true;
+}
+
+export interface CleanupScanResult {
+  scannedAt: string;
+  candidates: CleanupCandidate[];
+  totalBytes: number;
+  totalItems: number;
+  scannedWorkspaces: number;
+  warnings: string[];
+}
+
+export interface CleanupExecutionResult {
+  cleanedAt: string;
+  removedIds: string[];
+  failed: { id: string; error: string }[];
+  freedBytes: number;
+  remaining: CleanupScanResult;
+}
+
 export interface SystemManagerStatus {
-  displayName: 'Helm Loop';
+  displayName: '诊断';
   /** Canonical runtime path for the admin loop (~/.hermit). */
   adminWorkDir: string;
   defaultWorkDir: string;

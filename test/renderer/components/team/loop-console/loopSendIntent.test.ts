@@ -21,8 +21,8 @@ describe('loopSendIntent', () => {
   it('routes standalone slash commands to reusable sessions when configured', () => {
     const intent = parseLoopSendIntent({
       text: '/loop-scan',
-      recipient: 'Helm Loop',
-      leadRecipient: 'Helm Loop',
+      recipient: '诊断',
+      leadRecipient: '诊断',
       slashCommandMode: 'session',
     });
 
@@ -34,11 +34,11 @@ describe('loopSendIntent', () => {
     });
   });
 
-  it('routes /workers to the Helm Loop workers list intent', () => {
+  it('routes /workers to the 诊断 workers list intent', () => {
     const intent = parseLoopSendIntent({
       text: '/workers',
-      recipient: 'Helm Loop',
-      leadRecipient: 'Helm Loop',
+      recipient: '诊断',
+      leadRecipient: '诊断',
       slashCommandMode: 'session',
     });
 

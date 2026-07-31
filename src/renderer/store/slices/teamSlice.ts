@@ -12,7 +12,7 @@ import { toMessageKey } from '@renderer/utils/teamMessageKey';
 import { extractProviderScopedBaseModel } from '@renderer/utils/teamModelContext';
 import { IpcError, unwrapIpc } from '@renderer/utils/unwrapIpc';
 import { stripAgentBlocks } from '@shared/constants/agentBlocks';
-import { DEFAULT_TOOL_APPROVAL_SETTINGS } from '@shared/types/team';
+import { WORKBENCH_TOOL_APPROVAL_SETTINGS } from '@shared/types/team';
 import { createLogger } from '@shared/utils/logger';
 import { getTaskKanbanColumn } from '@shared/utils/reviewState';
 import { formatTaskDisplayLabel } from '@shared/utils/taskIdentity';
@@ -2318,10 +2318,16 @@ function extractBaseModel(raw?: string, providerId?: TeamProviderId): string | u
 const TOOL_APPROVAL_PREFIX = 'team:toolApprovalSettings:';
 
 function parseToolApprovalSettings(raw: string | null): ToolApprovalSettings {
-  if (!raw) return DEFAULT_TOOL_APPROVAL_SETTINGS;
+  if (!raw) return WORKBENCH_TOOL_APPROVAL_SETTINGS;
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const d = DEFAULT_TOOL_APPROVAL_SETTINGS;
+    const d = WORKBENCH_TOOL_APPROVAL_SETTINGS;
+    const isLegacyPromptByDefault =
+      parsed.autoAllowAll === false &&
+      parsed.autoAllowFileEdits === false &&
+      parsed.autoAllowSafeBash === false &&
+      parsed.timeoutAction === 'wait';
+    if (isLegacyPromptByDefault) return d;
     return {
       autoAllowAll: typeof parsed.autoAllowAll === 'boolean' ? parsed.autoAllowAll : d.autoAllowAll,
       autoAllowFileEdits:
@@ -2346,7 +2352,7 @@ function parseToolApprovalSettings(raw: string | null): ToolApprovalSettings {
           : d.timeoutSeconds,
     };
   } catch {
-    return DEFAULT_TOOL_APPROVAL_SETTINGS;
+    return WORKBENCH_TOOL_APPROVAL_SETTINGS;
   }
 }
 
@@ -4601,10 +4607,7 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
       }));
 
       // Initialize per-team tool approval settings based on skipPermissions flag
-      const initialSettings: ToolApprovalSettings =
-        request.skipPermissions === false
-          ? DEFAULT_TOOL_APPROVAL_SETTINGS
-          : { ...DEFAULT_TOOL_APPROVAL_SETTINGS, autoAllowAll: true };
+      const initialSettings: ToolApprovalSettings = WORKBENCH_TOOL_APPROVAL_SETTINGS;
       saveToolApprovalSettingsForTeam(request.teamName, initialSettings);
 
       const response = await unwrapIpc('team:create', () => api.teams.createTeam(request));
@@ -4729,10 +4732,7 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
     }));
     // Initialize per-team tool approval settings based on skipPermissions flag
     {
-      const launchSettings: ToolApprovalSettings =
-        request.skipPermissions === false
-          ? DEFAULT_TOOL_APPROVAL_SETTINGS
-          : { ...DEFAULT_TOOL_APPROVAL_SETTINGS, autoAllowAll: true };
+      const launchSettings: ToolApprovalSettings = WORKBENCH_TOOL_APPROVAL_SETTINGS;
       saveToolApprovalSettingsForTeam(request.teamName, launchSettings);
       set({ toolApprovalSettings: launchSettings });
     }

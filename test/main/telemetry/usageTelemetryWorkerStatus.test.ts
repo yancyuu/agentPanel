@@ -127,7 +127,9 @@ describe('usage telemetry worker status snapshots', () => {
     const larkPaths = getLarkCredentialsWorkerPaths(home);
     const previous = process.env.OPENHERMIT_CLOUD_UPLOAD_BASE_URL;
     const previousPath = process.env.PATH;
+    const previousCredentialExport = process.env.AGENTCLI_ENABLE_LARK_CREDENTIAL_EXPORT;
     process.env.OPENHERMIT_CLOUD_UPLOAD_BASE_URL = 'http://127.0.0.1:1';
+    process.env.AGENTCLI_ENABLE_LARK_CREDENTIAL_EXPORT = '1';
     // Credential discovery shells out to the REAL lark-cli binary; on a dev
     // machine that has one (plus real granted profiles) the scan would refresh
     // live tokens against the production Feishu API and blow the test timeout.
@@ -144,6 +146,8 @@ describe('usage telemetry worker status snapshots', () => {
       else process.env.OPENHERMIT_CLOUD_UPLOAD_BASE_URL = previous;
       if (previousPath === undefined) delete process.env.PATH;
       else process.env.PATH = previousPath;
+      if (previousCredentialExport === undefined) delete process.env.AGENTCLI_ENABLE_LARK_CREDENTIAL_EXPORT;
+      else process.env.AGENTCLI_ENABLE_LARK_CREDENTIAL_EXPORT = previousCredentialExport;
     }
   });
 

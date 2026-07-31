@@ -61,6 +61,8 @@ interface MessageComposerProps {
   layout?: 'default' | 'compact';
   /** Render a wider, quieter mail-style body editor without the chat recipient pill. */
   mailMode?: boolean;
+  /** Keep mail editing visually flat when it is embedded below an email. */
+  mailVariant?: 'boxed' | 'flat';
   minRows?: number;
   maxRows?: number;
   isTeamAlive?: boolean;
@@ -94,6 +96,7 @@ export const MessageComposer = ({
   members,
   layout = 'default',
   mailMode = false,
+  mailVariant = 'boxed',
   minRows,
   maxRows,
   isTeamAlive,
@@ -705,7 +708,9 @@ export const MessageComposer = ({
           }, [slashCommandSuggestions])}
           surfaceClassName={
             mailMode
-              ? 'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]'
+              ? mailVariant === 'flat'
+                ? 'rounded-none border-0 bg-transparent'
+                : 'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]'
               : 'message-composer-shell message-composer-orbit-surface bg-[var(--color-surface-raised)]'
           }
           surfaceDecoration={mailMode ? 'none' : 'orbit-border'}

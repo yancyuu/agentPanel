@@ -70,7 +70,7 @@ vi.mock('@renderer/components/team/CollapsibleTeamSection', () => ({
         },
         title
       ),
-      (title === 'Changes' || title === '变更') && open
+      (title === 'Changes' || title === '变更' || title === '文件变更') && open
         ? React.createElement('div', null, children)
         : null
     );
@@ -245,7 +245,10 @@ function makeSummary(taskId: string): TaskChangeSetV2 {
 
 function clickChangesSection(host: HTMLElement): void {
   const button = [...host.querySelectorAll('button')].find(
-    (candidate) => candidate.textContent === '变更' || candidate.textContent === 'Changes'
+    (candidate) =>
+      candidate.textContent === '文件变更' ||
+      candidate.textContent === '变更' ||
+      candidate.textContent === 'Changes'
   );
   if (!button) {
     throw new Error('Changes section button not found');
@@ -280,6 +283,10 @@ describe('TaskDetailPanel presentations', () => {
       await Promise.resolve();
     });
     expect(host.textContent).toContain('Task task-shared');
+    expect(host.textContent).toContain('任务协作');
+    expect(
+      [...host.querySelectorAll('button')].some((button) => button.textContent === '评论')
+    ).toBe(false);
     expect(host.querySelector('[data-task-detail-presentation="inline"]')).not.toBeNull();
     expect(host.querySelector('[data-dialog-root]')).toBeNull();
 
@@ -290,6 +297,59 @@ describe('TaskDetailPanel presentations', () => {
     expect(host.textContent).toContain('Task task-shared');
     expect(host.querySelector('[data-task-detail-presentation="dialog"]')).not.toBeNull();
     expect(host.querySelector('[data-dialog-root]')).not.toBeNull();
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('prioritizes a readable deliverable and hides empty technical sections in inbox mode', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const task = makeTask('task-delivery');
+    task.result = '# 调研报告\n\n这是助手提交的最终结论。';
+    task.reviewState = 'review';
+    task.needsClarification = 'user';
+    task.comments = [
+      {
+        id: 'clarification-comment',
+        author: '产品经理',
+        text: '请补充希望重点分析的业务范围。',
+        createdAt: '2026-01-02T00:00:00.000Z',
+        type: 'regular',
+      },
+    ];
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(
+        React.createElement(TaskDetailPanel, {
+          presentation: 'inline',
+          variant: 'team',
+          teamName: 'team-a',
+          task,
+          taskMap: new Map([[task.id, task]]),
+          members: [],
+          onClose: vi.fn(),
+          onViewChanges: vi.fn(),
+          compactForInbox: true,
+        })
+      );
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('交付结果');
+    expect(host.textContent).toContain('调研报告');
+    expect(host.textContent).toContain('请检查结果');
+    expect(host.textContent).toContain('复制');
+    expect(host.textContent).toContain('保存 PDF');
+    expect(host.textContent).toContain('任务协作');
+    expect(host.textContent).not.toContain('标记为已解决');
+    expect(host.textContent).not.toContain('相关文件');
+    expect(host.textContent).not.toContain('文件变更');
+    expect(host.textContent).not.toContain('执行记录');
 
     await act(async () => {
       root.unmount();

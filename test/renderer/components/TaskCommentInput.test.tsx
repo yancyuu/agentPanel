@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 describe('TaskCommentAttachmentPicker', () => {
-  it('shows an explicit browser limitation and no attachment button when unavailable', () => {
+  it('hides unsupported attachment controls without adding inline noise', () => {
     const container = render(
       <TaskCommentAttachmentPicker
         capability={{ available: false, unavailableReason: '浏览器模式暂不支持评论附件' }}
@@ -44,9 +44,7 @@ describe('TaskCommentAttachmentPicker', () => {
       />
     );
 
-    expect(
-      container.querySelector('[data-testid="task-comment-attachment-unavailable"]')?.textContent
-    ).toBe('浏览器模式暂不支持评论附件');
+    expect(container.textContent).toBe('');
     expect(container.querySelector('button[aria-label="添加评论附件"]')).toBeNull();
   });
 

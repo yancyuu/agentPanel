@@ -98,10 +98,10 @@ describe('tool approval routes', () => {
 
     expect(response.json()).toEqual({ ok: true });
     expect(harness.state.toolApprovalSettingsByName.get('team-a')).toEqual({
-      autoAllowAll: false,
+      autoAllowAll: true,
       autoAllowFileEdits: true,
       autoAllowSafeBash: false,
-      timeoutAction: 'wait',
+      timeoutAction: 'allow',
       timeoutSeconds: 45,
     });
   });

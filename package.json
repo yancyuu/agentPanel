@@ -1,8 +1,10 @@
 {
   "name": "@yancyyu/agentcli",
+  "desktopName": "AgentCLI.desktop",
   "type": "module",
+  "main": "dist-desktop-main/main.cjs",
   "version": "1.9.80",
-  "description": "AgentCli: AI 工程协作平台，本地优先的用量采集与团队协作工具。",
+  "description": "AgentCLI：本地优先的 AI Agent 工作台与团队协作运行时。",
   "license": "AGPL-3.0",
   "publishConfig": {
     "access": "public"
@@ -20,7 +22,7 @@
     "url": "https://github.com/yancyuu/agentcli/issues"
   },
   "bin": {
-    "agentcli": "./bin/hermit.mjs"
+    "agentcli": "./bin/agentcli.mjs"
   },
   "files": [
     "bin/",
@@ -34,7 +36,8 @@
     "tsconfig.json",
     "package.json",
     "README.md",
-    "README-CN.md"
+    "README-CN.md",
+    "docs/THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "dev": "node ./scripts/dev-mvp.mjs",
@@ -44,11 +47,18 @@
     "build:pages": "node ./scripts/build-pages.mjs",
     "build:server": "node ./scripts/build-server.mjs",
     "build:standalone": "node ./scripts/build-standalone-package.mjs",
+    "desktop:build": "pnpm build:web && pnpm build:server && node ./scripts/build-desktop.mjs",
+    "desktop:stage": "node ./scripts/stage-desktop-runtime.mjs",
+    "desktop:dev": "pnpm desktop:build && electron .",
+    "desktop:dist:mac": "pnpm desktop:build && pnpm desktop:stage && electron-builder --mac dmg --arm64 --x64",
+    "desktop:dist:win": "pnpm desktop:build && pnpm desktop:stage && electron-builder --win nsis portable --x64 --arm64",
+    "desktop:dist:linux": "pnpm desktop:build && pnpm desktop:stage && electron-builder --linux AppImage --x64 --arm64",
+    "desktop:dist:all": "pnpm desktop:build && pnpm desktop:stage && electron-builder --mac dmg --arm64 --x64 && electron-builder --win nsis portable --x64 --arm64 && electron-builder --linux AppImage --x64 --arm64",
     "postinstall": "node ./bin/postinstall.mjs",
     "prepack": "node ./scripts/fetch-vendor-cc-connect.mjs && pnpm build:web && pnpm build:server",
     "fetch:vendor": "node ./scripts/fetch-vendor-cc-connect.mjs",
     "release:checklist": "node ./scripts/release-checklist.mjs",
-    "start": "node bin/hermit.mjs",
+    "start": "node bin/agentcli.mjs",
     "lark:report-once": "node scripts/report-lark-credentials-once.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/ --cache --cache-location .eslintcache --cache-strategy content",
@@ -69,6 +79,7 @@
     ]
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.10",
     "@fastify/cors": "^11.2.0",
     "@fastify/static": "^9.0.0",
     "chokidar": "^5.0.0",
@@ -149,6 +160,8 @@
     "date-fns": "^3.6.0",
     "diff": "^8.0.3",
     "dompurify": "^3.3.1",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
@@ -205,6 +218,85 @@
   "pnpm": {
     "patchedDependencies": {
       "cc-connect@1.4.1": "patches/cc-connect@1.4.1.patch"
+    }
+  },
+  "build": {
+    "appId": "com.yancyyu.agentcli",
+    "productName": "AgentCLI",
+    "artifactName": "AgentCLI-${version}-${arch}.${ext}",
+    "asar": true,
+    "npmRebuild": false,
+    "afterPack": "scripts/desktop-after-pack.cjs",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "dist-desktop-main/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "desktop-runtime/agentcli",
+        "to": "agentcli"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "resources/icons/mac/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "identity": null,
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "title": "AgentCLI ${version}",
+      "sign": false
+    },
+    "win": {
+      "icon": "resources/icons/win/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64", "arm64"]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "AgentCLI-Setup-${version}-${arch}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "AgentCLI-Portable-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "resources/icons/png",
+      "category": "Office",
+      "executableName": "agentcli",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64", "arm64"]
+        }
+      ]
+    },
+    "appImage": {
+      "artifactName": "AgentCLI-${version}-${arch}.${ext}"
     }
   }
 }

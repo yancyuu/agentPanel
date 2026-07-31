@@ -73,6 +73,7 @@ import { LaunchTeamDialog, type TeamLaunchDialogMode } from './dialogs/LaunchTea
 import { ReviewDialog } from './dialogs/ReviewDialog';
 import { RuntimeConfigDialog } from './dialogs/RuntimeConfigDialog';
 import { executeTeamRelaunch } from './dialogs/teamRelaunchFlow';
+import { AgentTuningDialog } from './members/AgentTuningDialog';
 import { MemberCapabilitiesSummary } from './members/MemberCapabilitiesSummary';
 import { MemberDetailDialog } from './members/MemberDetailDialog';
 
@@ -782,6 +783,7 @@ export const TeamDetailView = ({
 }: TeamDetailViewProps): React.JSX.Element => {
   const [requestChangesTaskId, setRequestChangesTaskId] = useState<string | null>(null);
   const [selectedMember, setSelectedMember] = useState<ResolvedTeamMember | null>(null);
+  const [tuningMember, setTuningMember] = useState<ResolvedTeamMember | null>(null);
   const [taskAssignee, setTaskAssignee] = useState<ResolvedTeamMember | null>(null);
   const [creatingTask, setCreatingTask] = useState(false);
   const [pendingRepliesByMember, setPendingRepliesByMember] = useState<Record<string, number>>(() =>
@@ -1403,17 +1405,9 @@ export const TeamDetailView = ({
     [createTeamTask, teamName]
   );
 
-  const handleSendMessageToMember = useCallback(
-    (member: ResolvedTeamMember) => {
-      setPendingInboxThreadIntent({
-        teamName,
-        memberName: member.name,
-        compose: true,
-      });
-      openTasksTab();
-    },
-    [openTasksTab, setPendingInboxThreadIntent, teamName]
-  );
+  const handleSendMessageToMember = useCallback((member: ResolvedTeamMember) => {
+    setTuningMember(member);
+  }, []);
 
   const handleTaskIdClick = useCallback(
     (taskId: string) => {
@@ -1630,7 +1624,6 @@ export const TeamDetailView = ({
     const headerColorSet = data.config.color
       ? getTeamColorSet(data.config.color)
       : nameColorSet(displayTeamName);
-    const isAgentOnline = data.isOnline ?? data.isAlive === true;
     const isExternallyReachable =
       data.isExternallyReachable ??
       data.platforms?.some((platform) => platform.type !== 'bridge' && platform.connected) === true;
@@ -1676,10 +1669,10 @@ export const TeamDetailView = ({
                         </h1>
                         <span className="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)]">
                           <span
-                            className={`size-1.5 rounded-full ${isAgentOnline ? 'bg-emerald-400' : 'bg-[var(--color-text-muted)] opacity-50'}`}
+                            className="size-1.5 rounded-full bg-emerald-400"
                             aria-hidden="true"
                           />
-                          {isAgentOnline ? '在线' : '离线'}
+                          可用
                         </span>
                         {isExternallyReachable ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-500">
@@ -1705,7 +1698,7 @@ export const TeamDetailView = ({
                         onClick={() => openLaunchDialog(data.isAlive ? 'relaunch' : 'launch')}
                       >
                         <Play size={12} />
-                        {data.isAlive ? '重启' : '启动'}
+                        {data.isAlive ? '重启运行时' : '启动常驻运行时'}
                       </Button>
                     ) : null}
                     {teamName !== SYSTEM_MANAGER_TEAM_NAME ? (
@@ -1854,7 +1847,7 @@ export const TeamDetailView = ({
                   memberTaskCounts={memberTaskCounts}
                   taskMap={taskMap}
                   pendingRepliesByMember={pendingRepliesByMember}
-                  isTeamAlive={data.isAlive}
+                  isTeamAlive
                   isTeamProvisioning={isTeamProvisioning}
                   launchParams={launchParams}
                   onMemberClick={handleSelectMember}
@@ -1909,7 +1902,7 @@ export const TeamDetailView = ({
                 teamName={teamName}
                 members={membersWithLiveBranches}
                 tasks={data.tasks}
-                isTeamAlive={data.isAlive}
+                isTeamAlive
                 defaultOwner={taskAssignee?.name ?? ''}
                 onClose={() => setTaskAssignee(null)}
                 onSubmit={(...args) => {
@@ -1926,20 +1919,14 @@ export const TeamDetailView = ({
                 teamName={teamName}
                 members={membersWithLiveBranches}
                 tasks={data.tasks}
-                isTeamAlive={data.isAlive}
+                isTeamAlive
                 isTeamProvisioning={isTeamProvisioning}
                 launchParams={launchParams}
                 onClose={closeSelectedMemberDialog}
                 onSendMessage={() => {
-                  const memberName = selectedMember?.name?.trim() ?? '';
-                  if (!memberName) return;
+                  if (!selectedMember) return;
+                  setTuningMember(selectedMember);
                   closeSelectedMemberDialog();
-                  setPendingInboxThreadIntent({
-                    teamName,
-                    memberName,
-                    compose: true,
-                  });
-                  openTasksTab();
                 }}
                 onAssignTask={() => {
                   if (!selectedMember) return;
@@ -1983,6 +1970,15 @@ export const TeamDetailView = ({
                   });
                 }}
               />
+
+              {tuningMember ? (
+                <AgentTuningDialog
+                  open
+                  teamName={teamName}
+                  member={tuningMember}
+                  onClose={() => setTuningMember(null)}
+                />
+              ) : null}
 
               <Dialog
                 open={removeMemberConfirm !== null}

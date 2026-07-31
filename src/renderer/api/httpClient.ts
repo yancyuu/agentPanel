@@ -71,6 +71,7 @@ import type {
   SshLastConnection,
   SubagentDetail,
   SystemManagerSummary,
+  TaskAttachmentMeta,
   TaskComment,
   TeamAgentRuntimeSnapshot,
   TeamChangeEvent,
@@ -106,7 +107,6 @@ import type {
 } from '@shared/types';
 import type { AgentConfig } from '@shared/types/api';
 import type { CliProviderStatus } from '@shared/types/cliInstaller';
-import type { RuntimeReadiness } from '@shared/types/runtimeReadiness';
 import type { EditorAPI, ProjectAPI, WorkspaceListResponse } from '@shared/types/editor';
 import type {
   CapabilityCommandPromptRequest,
@@ -150,6 +150,7 @@ import type {
   TaskChangeSetV2,
 } from '@shared/types/review';
 import type { ApplyReviewRequest } from '@shared/types/review';
+import type { RuntimeReadiness } from '@shared/types/runtimeReadiness';
 import type { SystemManagerAPI } from '@shared/types/systemManager';
 import type { TerminalAPI } from '@shared/types/terminal';
 import type { CliArgsValidationResult } from '@shared/utils/cliArgsParser';
@@ -1578,30 +1579,38 @@ export class HttpAPIClient implements ElectronAPI {
       );
     },
     saveTaskAttachment: async (
-      _teamName: string,
-      _taskId: string,
-      _attachmentId: string,
-      _filename: string,
-      _mimeType: string,
-      _base64Data: string
-    ): Promise<never> => {
-      throw new Error('Task attachments are not available in browser mode');
+      teamName: string,
+      taskId: string,
+      attachmentId: string,
+      filename: string,
+      mimeType: string,
+      base64Data: string
+    ): Promise<TaskAttachmentMeta> => {
+      return this.post<TaskAttachmentMeta>(
+        `/api/teams/${encodeURIComponent(teamName)}/tasks/${encodeURIComponent(taskId)}/attachments`,
+        { attachmentId, filename, mimeType, base64Data }
+      );
     },
     getTaskAttachment: async (
-      _teamName: string,
-      _taskId: string,
-      _attachmentId: string,
+      teamName: string,
+      taskId: string,
+      attachmentId: string,
       _mimeType: string
     ): Promise<string | null> => {
-      return null;
+      const response = await this.get<{ base64Data?: string }>(
+        `/api/teams/${encodeURIComponent(teamName)}/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`
+      );
+      return typeof response.base64Data === 'string' ? response.base64Data : null;
     },
     deleteTaskAttachment: async (
-      _teamName: string,
-      _taskId: string,
-      _attachmentId: string,
+      teamName: string,
+      taskId: string,
+      attachmentId: string,
       _mimeType: string
     ): Promise<void> => {
-      throw new Error('Task attachments are not available in browser mode');
+      await this.del(
+        `/api/teams/${encodeURIComponent(teamName)}/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`
+      );
     },
     onProjectBranchChange: (): (() => void) => {
       return () => {};

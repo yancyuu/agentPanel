@@ -31,7 +31,7 @@ jobs:
         run: |
           test -s _site/index.html
           test -s _site/install.sh
-          grep -q "AgentCli" _site/index.html
+          grep -q "AgentCLI" _site/index.html
           grep -q "curl" _site/install.sh
 
       - name: Set up Pages

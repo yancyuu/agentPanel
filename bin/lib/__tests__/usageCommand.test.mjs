@@ -15,9 +15,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 // Neutralize node:child_process so collectRunningUsageWorkerPids() (ps via
 // execSync) returns [] and no real process is spawned or signalled. Same
 // interop shape as daemon.test.mjs (CJS default export required).
-const mocks = vi.hoisted(() => ({ spawn: vi.fn() }));
+const mocks = vi.hoisted(() => ({ spawn: vi.fn(), spawnSync: vi.fn() }));
 vi.mock('node:child_process', () => {
-  const mocked = { spawn: mocks.spawn, execSync: () => '', exec: () => {}, fork: () => {} };
+  const mocked = { spawn: mocks.spawn, spawnSync: mocks.spawnSync, execSync: () => '', exec: () => {}, fork: () => {} };
   return { ...mocked, default: mocked };
 });
 
@@ -52,6 +52,23 @@ describe('enableConversationUploadWithProvider — toggle ON starts the worker',
     const settings = JSON.parse(readFileSync(path.join(tmpHome, 'settings.json'), 'utf-8'));
     expect(settings.taskBus.telemetry.enabled).toBe(true);
     expect(settings.taskBus.telemetry.conversationUploadEnabled).toBe(true);
+  });
+});
+
+describe('Windows usage worker task definition', () => {
+  let buildUsageWindowsTaskXml;
+
+  beforeAll(async () => {
+    ({ buildUsageWindowsTaskXml } = await import('../usageCommand.mjs'));
+  });
+
+  it('starts on login and restarts after failure', () => {
+    const xml = buildUsageWindowsTaskXml();
+    expect(xml).toContain('<LogonTrigger>');
+    expect(xml).toContain('<RestartOnFailure>');
+    expect(xml).toContain('<Interval>PT1M</Interval>');
+    expect(xml).toContain('<Count>999</Count>');
+    expect(xml).toContain('usage-worker.cmd');
   });
 });
 
