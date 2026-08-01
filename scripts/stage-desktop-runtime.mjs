@@ -26,11 +26,25 @@ async function removeSymbolicLinks(directory) {
 await rm(stageRoot, { recursive: true, force: true });
 await mkdir(stageRoot, { recursive: true });
 
-const pnpmExecutable = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+const pnpmCli = process.env.npm_execpath;
+if (!pnpmCli || !path.basename(pnpmCli).toLowerCase().includes('pnpm')) {
+  throw new Error(
+    'desktop:stage must be launched through pnpm so the locked pnpm CLI is available'
+  );
+}
 
 execFileSync(
-  pnpmExecutable,
-  ['--config.node-linker=hoisted', '--filter', '.', 'deploy', '--prod', '--legacy', runtimeRoot],
+  process.execPath,
+  [
+    pnpmCli,
+    '--config.node-linker=hoisted',
+    '--filter',
+    '.',
+    'deploy',
+    '--prod',
+    '--legacy',
+    runtimeRoot,
+  ],
   {
     cwd: root,
     stdio: 'inherit',

@@ -155,7 +155,8 @@ jobs:
         run: |
           shopt -s nullglob
           files=()
-          for pattern in ${{ matrix.assets }}; do
+          asset_patterns='${{ matrix.assets }}'
+          for pattern in $asset_patterns; do
             matches=(dist-desktop/$pattern)
             if [ "${#matches[@]}" -eq 0 ]; then
               echo "missing expected desktop asset: $pattern" >&2
@@ -163,6 +164,10 @@ jobs:
             fi
             files+=("${matches[@]}")
           done
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "no desktop assets collected" >&2
+            exit 1
+          fi
           printf 'uploading %s\n' "${files[@]}"
           gh release upload "$RELEASE_TAG" "${files[@]}" \
             --repo "$GITHUB_REPOSITORY" --clobber
