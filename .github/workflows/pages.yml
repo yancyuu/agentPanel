@@ -1,11 +1,14 @@
 name: Deploy Landing Page to GitHub Pages
 
 on:
-  release:
-    types: [published]
   pull_request:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published release tag whose site should be deployed
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -13,7 +16,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.ref }}
+  group: ${{ github.workflow }}-${{ inputs.release_tag || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -23,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
 
       - name: Build landing page
         run: node scripts/build-pages.mjs
