@@ -26,8 +26,10 @@ async function removeSymbolicLinks(directory) {
 await rm(stageRoot, { recursive: true, force: true });
 await mkdir(stageRoot, { recursive: true });
 
+const pnpmExecutable = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+
 execFileSync(
-  'pnpm',
+  pnpmExecutable,
   ['--config.node-linker=hoisted', '--filter', '.', 'deploy', '--prod', '--legacy', runtimeRoot],
   {
     cwd: root,

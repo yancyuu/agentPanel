@@ -147,7 +147,7 @@ jobs:
       - run: pnpm desktop:stage
       - name: Build desktop target
         shell: bash
-        run: pnpm exec electron-builder ${{ matrix.target }}
+        run: pnpm exec electron-builder ${{ matrix.target }} --publish never
       - name: Upload desktop target
         shell: bash
         env:
