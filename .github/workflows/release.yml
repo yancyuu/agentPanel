@@ -156,7 +156,8 @@ jobs:
           shopt -s nullglob
           files=()
           asset_patterns='${{ matrix.assets }}'
-          for pattern in $asset_patterns; do
+          read -r -a patterns <<< "$asset_patterns"
+          for pattern in "${patterns[@]}"; do
             matches=()
             while IFS= read -r match; do
               matches+=("$match")
