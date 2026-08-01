@@ -68,11 +68,16 @@ const portableNativePackages = [
 const portablePackageRoot = path.join(tmpdir(), 'agentcli-desktop-native-packages');
 await rm(portablePackageRoot, { recursive: true, force: true });
 await mkdir(portablePackageRoot, { recursive: true });
+const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 for (const packageSpec of portableNativePackages) {
   const packed = execFileSync(
-    'npm',
+    npmExecutable,
     ['pack', packageSpec, '--pack-destination', portablePackageRoot, '--silent'],
-    { cwd: root, encoding: 'utf8' }
+    {
+      cwd: root,
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+    }
   ).trim();
   const packageName = packageSpec.slice(0, packageSpec.lastIndexOf('@'));
   const target = path.join(runtimeRoot, 'node_modules', ...packageName.split('/'));

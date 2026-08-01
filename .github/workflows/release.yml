@@ -157,7 +157,10 @@ jobs:
           files=()
           asset_patterns='${{ matrix.assets }}'
           for pattern in $asset_patterns; do
-            matches=(dist-desktop/$pattern)
+            matches=()
+            while IFS= read -r match; do
+              matches+=("$match")
+            done < <(compgen -G "dist-desktop/$pattern" || true)
             if [ "${#matches[@]}" -eq 0 ]; then
               echo "missing expected desktop asset: $pattern" >&2
               exit 1
