@@ -208,6 +208,15 @@ export function createTelemetryEmptyStatus(
         cacheCreation: 0,
         tokensTotal: 0,
       },
+      pi: {
+        sessions: 0,
+        messages: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheRead: 0,
+        cacheCreation: 0,
+        tokensTotal: 0,
+      },
     },
     byProvider: {
       claudecode: {
@@ -220,6 +229,15 @@ export function createTelemetryEmptyStatus(
         tokensTotal: 0,
       },
       codex: {
+        sessions: 0,
+        messages: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheRead: 0,
+        cacheCreation: 0,
+        tokensTotal: 0,
+      },
+      pi: {
         sessions: 0,
         messages: 0,
         tokensIn: 0,

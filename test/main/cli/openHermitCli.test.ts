@@ -720,10 +720,10 @@ describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
       expect(JSON.parse(reconciled.stdout)).toMatchObject({
         ok: true,
         command: 'usage reconcile',
-        reconciled: false,
-        reason: 'upload disabled',
+        reconciled: true,
       });
-      expect(existsSync(path.join(hermitHome, 'telemetry/worker.pid'))).toBe(false);
+      // 用量上报默认开启：reconcile 会把 worker 恢复到期望的运行状态
+      expect(existsSync(path.join(hermitHome, 'telemetry/worker.pid'))).toBe(true);
     });
   });
 
