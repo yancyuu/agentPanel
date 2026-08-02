@@ -68,3 +68,5 @@ remotion/*
 
 vendor/cc-connect/*/
 !vendor/cc-connect/.gitkeep
+vendor/openspec/*
+!vendor/openspec/.gitkeep
