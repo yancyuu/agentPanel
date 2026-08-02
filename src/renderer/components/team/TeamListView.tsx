@@ -48,7 +48,6 @@ import {
   GitBranch,
   LayoutTemplate,
   Loader2,
-  Play,
   Plus,
   RotateCcw,
   Search,
@@ -58,7 +57,6 @@ import {
 import { useShallow } from 'zustand/react/shallow';
 
 import { CreateTeamDialog } from './dialogs/CreateTeamDialog';
-import { LaunchTeamDialog } from './dialogs/LaunchTeamDialog';
 import { TeamEmptyState } from './TeamEmptyState';
 import { EMPTY_TEAM_FILTER, TeamListFilterPopover } from './TeamListFilterPopover';
 import {
@@ -70,10 +68,7 @@ import {
 import type { ActiveTeamRef, TeamCopyData } from './dialogs/CreateTeamDialog';
 import type { TeamListFilterState } from './TeamListFilterPopover';
 import type {
-  ResolvedTeamMember,
   TeamCreateRequest,
-  TeamLaunchRequest,
-  TeamMemberSnapshot,
   TeamSummary,
   TeamTemplateSource,
   TeamTemplateSummary,
@@ -94,17 +89,6 @@ type TeamStatus = 'active' | 'idle' | 'provisioning';
 
 function folderName(fullPath: string): string {
   return getBaseName(fullPath) || fullPath;
-}
-
-function resolveLaunchDialogMembers(members: readonly TeamMemberSnapshot[]): ResolvedTeamMember[] {
-  return members.map((member) => {
-    return {
-      ...member,
-      status: member.currentTaskId ? 'active' : 'idle',
-      messageCount: 0,
-      lastActiveAt: null,
-    };
-  });
 }
 
 function formatTeamRoleLabel(role: string): string {
@@ -268,7 +252,6 @@ export const TeamListView = (): React.JSX.Element => {
   );
   const {
     createTeam,
-    launchTeam,
     provisioningErrorByTeam,
     clearProvisioningError,
     provisioningRuns,
@@ -278,7 +261,6 @@ export const TeamListView = (): React.JSX.Element => {
   } = useStore(
     useShallow((s) => ({
       createTeam: s.createTeam,
-      launchTeam: s.launchTeam,
       provisioningErrorByTeam: s.provisioningErrorByTeam,
       clearProvisioningError: s.clearProvisioningError,
       provisioningRuns: s.provisioningRuns,
@@ -619,53 +601,6 @@ export const TeamListView = (): React.JSX.Element => {
     [openCreateDialog, teams]
   );
 
-  const [launchingTeamName, setLaunchingTeamName] = useState<string | null>(null);
-  const [launchDialogOpen, setLaunchDialogOpen] = useState(false);
-  const [launchDialogTeamName, setLaunchDialogTeamName] = useState('');
-  const [launchDialogMembers, setLaunchDialogMembers] = useState<ResolvedTeamMember[]>([]);
-  const [launchDialogDefaultPath, setLaunchDialogDefaultPath] = useState<string | undefined>();
-
-  const handleLaunchTeam = useCallback(
-    async (teamName: string, projectPath: string | undefined, e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (!projectPath) return;
-      try {
-        const data = await api.teams.getData(teamName);
-        setLaunchDialogTeamName(teamName);
-        setLaunchDialogMembers(resolveLaunchDialogMembers(data.members ?? []));
-        setLaunchDialogDefaultPath(data.config.projectPath ?? projectPath);
-        setLaunchDialogOpen(true);
-      } catch (err) {
-        // Draft teams (no config.json) throw TEAM_DRAFT — expected, use fallback
-        if (!(err instanceof Error && err.message.includes('TEAM_DRAFT'))) {
-          console.error('Failed to load team data for launch dialog:', err);
-        }
-        // Fallback: open dialog with minimal data
-        setLaunchDialogTeamName(teamName);
-        setLaunchDialogMembers([]);
-        setLaunchDialogDefaultPath(projectPath);
-        setLaunchDialogOpen(true);
-      }
-    },
-    []
-  );
-
-  const handleLaunchSubmit = useCallback(
-    async (request: TeamLaunchRequest) => {
-      setLaunchingTeamName(request.teamName);
-      try {
-        await launchTeam(request);
-        await Promise.all([fetchTeams(), fetchAllTasks()]);
-      } catch (err) {
-        console.error('Failed to launch team:', err);
-        throw err;
-      } finally {
-        setLaunchingTeamName(null);
-      }
-    },
-    [fetchAllTasks, fetchTeams, launchTeam]
-  );
-
   useEffect(() => {
     void fetchTeams();
     void fetchAllTasks();
@@ -834,21 +769,6 @@ export const TeamListView = (): React.JSX.Element => {
       onClose={handleCreateDialogClose}
       onCreate={handleCreateSubmit}
       onOpenTeam={openTeamTab}
-    />
-  );
-
-  const launchDialogElement = (
-    <LaunchTeamDialog
-      mode="launch"
-      open={launchDialogOpen}
-      teamName={launchDialogTeamName}
-      members={launchDialogMembers}
-      defaultProjectPath={launchDialogDefaultPath}
-      provisioningError={provisioningErrorByTeam[launchDialogTeamName] ?? null}
-      clearProvisioningError={clearProvisioningError}
-      activeTeams={activeTeams}
-      onClose={() => setLaunchDialogOpen(false)}
-      onLaunch={handleLaunchSubmit}
     />
   );
 
@@ -1153,11 +1073,6 @@ export const TeamListView = (): React.JSX.Element => {
       };
       const openTasks = taskCounts.pending + taskCounts.inProgress;
       const branch = team.projectPath ? branchByPath[normalizePath(team.projectPath)] : null;
-      const canLaunch =
-        Boolean(team.projectPath) &&
-        !aliveTeams.includes(team.teamName) &&
-        !team.pendingCreate &&
-        !isSystemManager;
 
       return (
         <div
@@ -1254,28 +1169,6 @@ export const TeamListView = (): React.JSX.Element => {
                 className="animate-spin text-[var(--color-text-muted)]"
                 aria-label="删除中"
               />
-            ) : null}
-            {canLaunch ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex size-8 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] disabled:opacity-50"
-                    aria-label={`启动常驻运行时 ${team.displayName}`}
-                    disabled={launchingTeamName === team.teamName}
-                    onClick={(event) =>
-                      void handleLaunchTeam(team.teamName, team.projectPath, event)
-                    }
-                  >
-                    {launchingTeamName === team.teamName ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Play size={14} />
-                    )}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">启动常驻运行时</TooltipContent>
-              </Tooltip>
             ) : null}
             {!team.pendingCreate && !isSystemManager ? (
               <Tooltip>
@@ -1407,7 +1300,6 @@ export const TeamListView = (): React.JSX.Element => {
         {renderContent()}
         {templateDialogElement}
         {createDialogElement}
-        {launchDialogElement}
       </div>
     </TooltipProvider>
   );

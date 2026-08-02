@@ -113,10 +113,6 @@ vi.mock('../dialogs/CreateTeamDialog', () => ({
         )
       : null,
 }));
-vi.mock('../dialogs/LaunchTeamDialog', () => ({
-  LaunchTeamDialog: ({ open, teamName }: { open: boolean; teamName: string }) =>
-    open ? React.createElement('div', { 'data-testid': 'launch-team-dialog' }, teamName) : null,
-}));
 vi.mock('../TeamEmptyState', () => ({
   TeamEmptyState: ({ onCreateTeam }: { onCreateTeam: () => void }) =>
     React.createElement('button', { type: 'button', onClick: onCreateTeam }, 'empty-create'),
@@ -166,7 +162,7 @@ describe('TeamListView collaboration roster entry points', () => {
     });
   });
 
-  it('keeps template, team open, and launch actions independently usable', async () => {
+  it('keeps template and team open actions usable without a launch entry', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     storeState.teams = [
       {
@@ -200,18 +196,9 @@ describe('TeamListView collaboration roster entry points', () => {
     await act(async () => templateButton?.click());
     expect(host.textContent).toContain('从模板创建智能体');
 
-    const launchButton = host.querySelector<HTMLButtonElement>(
-      '[aria-label="启动常驻运行时 Alpha 团队"]'
-    );
-    expect(launchButton).toBeTruthy();
-    await act(async () => {
-      launchButton?.click();
-      await Promise.resolve();
-    });
-    expect(storeState.openTeamTab).not.toHaveBeenCalled();
-    expect(host.querySelector('[data-testid="launch-team-dialog"]')?.textContent).toBe(
-      'alpha-team'
-    );
+    // 「启动常驻运行时」入口已删除：会话在任务/消息派发时自动拉起
+    expect(host.querySelector('[aria-label^="启动常驻运行时"]')).toBeNull();
+    expect(host.querySelector('[data-testid="launch-team-dialog"]')).toBeNull();
 
     const openButton = host.querySelector<HTMLButtonElement>(
       '[aria-label="打开 Agent Alpha 团队"]'

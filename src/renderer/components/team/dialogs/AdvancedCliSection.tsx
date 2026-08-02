@@ -67,7 +67,7 @@ function readWorktreeHistory(teamName: string): string[] {
 }
 
 /**
- * Collapsible "Advanced" section for CreateTeamDialog and LaunchTeamDialog.
+ * Collapsible "Advanced" section for CreateTeamDialog.
  * Contains: worktree checkbox with history, command preview, custom args + validate.
  */
 export const AdvancedCliSection: React.FC<AdvancedCliSectionProps> = ({
