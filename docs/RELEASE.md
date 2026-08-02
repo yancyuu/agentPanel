@@ -19,6 +19,10 @@
 
 当前没有 Electron 桌面安装包发布流程，也没有内嵌 PTY 相关产物。GitHub Release 会构建四个平台的自包含 standalone ZIP；旧 release note 中的桌面安装包名称只属于历史版本。
 
+### Windows 签名说明
+
+Windows standalone ZIP（含内置 node 与 agentcli 可执行文件）**当前未做代码签名**：首次运行时 SmartScreen 可能提示「Windows 已保护你的电脑」。引导用户点「更多信息 → 仍要运行」即可；也可以先解压到用户目录（如 `%USERPROFILE%\Tools`）再运行。后续如需消除提示，再评估引入签名证书与 signtool 流程。
+
 ## 版本号
 
 使用 SemVer：`MAJOR.MINOR.PATCH`。

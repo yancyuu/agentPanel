@@ -13,6 +13,7 @@
  */
 
 import { resolveExternalPlatformSessionTeamSlug } from '@main/utils/externalPlatformSessionRouting';
+import { writeAtomicFile } from '@shared/writeAtomic/index.mjs';
 import { createLogger } from '@shared/utils/logger';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
@@ -300,12 +301,7 @@ async function readJson<T>(p: string, fallback: T): Promise<T> {
 }
 
 async function writeJson(p: string, data: unknown): Promise<void> {
-  await fs.promises.mkdir(path.dirname(p), { recursive: true });
-  // Include a random suffix so two concurrent writes to the same board (same
-  // pid) don't share one tmp path and silently clobber each other's data.
-  const tmp = `${p}.${process.pid}.${randomUUID()}.tmp`;
-  await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fs.promises.rename(tmp, p);
+  await writeAtomicFile(p, JSON.stringify(data, null, 2));
 }
 
 function nextIsoTimestamp(previous?: string): string {

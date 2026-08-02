@@ -69,7 +69,8 @@ export function ensureOpenspecWrapperCommand(hermitHome: string): string | null 
     const current = fs.existsSync(wrapperPath) ? fs.readFileSync(wrapperPath, 'utf8') : '';
     if (current !== shContent) {
       fs.writeFileSync(wrapperPath, shContent, { mode: 0o755 });
-    } else {
+    } else if (process.platform !== 'win32') {
+      // Windows 无 chmod；且仅当内容未漂移（可能是旧版本写入丢了执行位）时才补
       execFileSync('chmod', ['+x', wrapperPath], { stdio: 'pipe' });
     }
     const cmdPath = `${wrapperPath}.cmd`;

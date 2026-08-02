@@ -1,12 +1,13 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { access, chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { access, readFile, rm } from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
 import { app, BrowserWindow, Menu, nativeTheme, session, shell } from 'electron';
 
+import { writeAtomicFile } from '../shared/writeAtomic/index.mjs';
 import { DESKTOP_RUNTIME_METADATA_FILE, DESKTOP_SESSION_HEADER } from '../shared/constants/desktop';
 
 import {
@@ -88,11 +89,8 @@ async function waitForHealth(server: RunningServer): Promise<void> {
 }
 
 async function writeRuntimeMetadata(server: RunningServer, runtimeRoot: string): Promise<void> {
-  const directory = path.dirname(server.metadataFile);
-  const temporaryFile = `${server.metadataFile}.${process.pid}.tmp`;
-  await mkdir(directory, { recursive: true });
-  await writeFile(
-    temporaryFile,
+  await writeAtomicFile(
+    server.metadataFile,
     `${JSON.stringify(
       {
         schemaVersion: 1,
@@ -106,10 +104,8 @@ async function writeRuntimeMetadata(server: RunningServer, runtimeRoot: string):
       null,
       2
     )}\n`,
-    { encoding: 'utf8', mode: 0o600 }
+    { mode: 0o600 }
   );
-  await chmod(temporaryFile, 0o600);
-  await rename(temporaryFile, server.metadataFile);
 }
 
 async function removeOwnedRuntimeMetadata(server: RunningServer): Promise<void> {

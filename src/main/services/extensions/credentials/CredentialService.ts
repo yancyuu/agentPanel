@@ -289,9 +289,15 @@ export class CredentialService {
     let fileSecure = false;
 
     try {
-      const stat = await fs.stat(credPath);
-      const mode = stat.mode & 0o777;
-      fileSecure = mode <= 0o600;
+      if (process.platform === 'win32') {
+        // Windows 无 POSIX mode 语义：文件位于用户 profile 即视为受保护，不误报。
+        await fs.stat(credPath);
+        fileSecure = true;
+      } else {
+        const stat = await fs.stat(credPath);
+        const mode = stat.mode & 0o777;
+        fileSecure = mode <= 0o600;
+      }
     } catch {
       // file doesn't exist yet
     }

@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+
+import { writeAtomicFile } from '@shared/writeAtomic/index.mjs';
 
 export interface ConnectionSecretStore {
   put(connectionId: string, serializedSecret: string): Promise<void>;
@@ -42,17 +43,7 @@ export class SystemCredentialSecretStore implements ConnectionSecretStore {
   }
 
   async put(connectionId: string, serializedSecret: string): Promise<void> {
-    const file = this.fileFor(connectionId);
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
-    try {
-      await fs.writeFile(temporary, serializedSecret, { mode: 0o600 });
-      await fs.rename(temporary, file);
-      // rename 到既有文件上时权限沿用旧文件，统一收敛到 0600
-      await fs.chmod(file, 0o600).catch(() => undefined);
-    } finally {
-      await fs.rm(temporary, { force: true }).catch(() => undefined);
-    }
+    await writeAtomicFile(this.fileFor(connectionId), serializedSecret, { mode: 0o600 });
   }
 
   async get(connectionId: string): Promise<string | null> {

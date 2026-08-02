@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { writeAtomicFile } from '../writeAtomic/index.mjs';
 import { AGENTBUS_PROVIDER_ID, agentbusCompatibilityManifest } from './compatManifest.mjs';
 
 export { AGENTBUS_PROVIDER_ID };
@@ -107,15 +108,7 @@ export async function readJsonIfExists(file) {
 }
 
 export async function writeJsonAtomic(file, value) {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-    await fs.rename(temporary, file);
-    await fs.chmod(file, 0o600).catch(() => undefined);
-  } finally {
-    await fs.rm(temporary, { force: true }).catch(() => undefined);
-  }
+  await writeAtomicFile(file, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
 }
 
 export async function deleteFileIfExists(file) {

@@ -338,18 +338,18 @@ describe('TaskBusSection telemetry settings', () => {
     });
   });
 
-  it('renders usage monitoring without enterprise IM or distributed collaboration controls', async () => {
+  it('renders usage monitoring with task-bus controls but without enterprise IM texts', async () => {
     const fetchMock = mockFetch(1);
 
     const { host, root } = await renderTaskBusSection();
 
     expect(host.textContent).toContain('Usage 监测');
+    // usage 控制条（采集启停/立即上报/团队协作开关）已接入 task-bus settings
+    expect(host.querySelector('[data-testid="usage-control-bar"]')).not.toBeNull();
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toContain('/api/settings/task-bus');
     expect(host.textContent).not.toContain('IM 协作');
     expect(host.textContent).not.toContain('分布式团队协作');
     expect(host.textContent).not.toContain('企业版开放');
-    expect(fetchMock.mock.calls.map(([url]) => String(url))).not.toContain(
-      '/api/settings/task-bus'
-    );
 
     await act(async () => {
       root.unmount();

@@ -52,6 +52,7 @@ import {
   registerTeamProvisioningCompatibilityRoutes,
 } from './routes/teamCompatibilityRoutes';
 import { registerTeamConfigRoutes } from './routes/teamConfigRoutes';
+import { registerFeishuAssistantRoutes } from './routes/feishuAssistantRoutes';
 import { registerTeamAssetRoutes } from './routes/teamAssetRoutes';
 import { registerTeamDirectoryRoutes } from './routes/teamDirectoryRoutes';
 import { registerTeamMessageRoutes } from './routes/teamMessageRoutes';
@@ -508,6 +509,8 @@ async function createWorkbenchServerUncached(
     reply500: operations.reply500,
   };
   registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['core'] });
+
+  registerFeishuAssistantRoutes(app);
 
   registerTeamAssetRoutes(app, {
     readTeamManifest: (teamName: string) => svc.readTeamManifest(teamName),

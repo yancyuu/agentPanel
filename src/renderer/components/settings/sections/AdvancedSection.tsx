@@ -18,6 +18,8 @@ import { Check, FileEdit, Info, Loader2, RotateCcw, ServerCog, X } from 'lucide-
 
 import { SettingsSectionCard } from '../components';
 
+import { FeishuAssistantsCard } from './FeishuAssistantsCard';
+
 interface CcConnectConfigRawDialogProps {
   open: boolean;
   onClose: () => void;
@@ -169,6 +171,8 @@ export const AdvancedSection = (_props: AdvancedSectionProps): React.JSX.Element
   return (
     <div className="space-y-5">
       <AdvancedConnectionsFeature />
+
+      <FeishuAssistantsCard />
 
       <SettingsSectionCard
         title="服务配置"
