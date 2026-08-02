@@ -16,9 +16,13 @@
  * EXPLICIT-OPT-IN semantics: conversation upload is ON only when the user has
  * explicitly enabled the canonical or legacy switch. A fresh install resolves
  * to OFF, because connecting a remote service or granting a broad upload scope
- * must not implicitly authorize message content. Resolution rule:
- *   • canonical `true` OR legacy `true` → ON
- *   • otherwise → OFF
+ * must not implicitly authorize message content. The canonical field always
+ * wins when present (so a stale `conversations.uploadEnabled: true` cannot
+ * resurrect upload after the toggle writes an explicit false); the nested
+ * legacy field is only a migration fallback. Resolution rule:
+ *   • canonical boolean present → use it
+ *   • otherwise → legacy === true
+ *   • both absent → OFF (default)
  *
  * @param {unknown} telemetry
  * @returns {boolean}
@@ -30,7 +34,8 @@ export function resolveConversationUploadEnabled(telemetry) {
   const legacy = t.conversations && typeof t.conversations === 'object'
     ? (/** @type {Record<string, unknown>} */ (t.conversations).uploadEnabled)
     : undefined;
-  return canonical === true || legacy === true;
+  if (typeof canonical === 'boolean') return canonical;
+  return legacy === true;
 }
 
 /**

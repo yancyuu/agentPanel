@@ -11,6 +11,10 @@
 </p>
 
 <p align="center">
+  自动采集 Claude Code / Codex / Pi 等本地运行时用量，统一管理数字员工团队。
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/@yancyyu/agentcli"><img src="https://img.shields.io/npm/v/@yancyyu/agentcli?style=for-the-badge&color=5B5BD6" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/@yancyyu/agentcli"><img src="https://img.shields.io/npm/dm/@yancyyu/agentcli?style=for-the-badge&color=18A058" alt="npm downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2B2B2B?style=for-the-badge" alt="AGPL-3.0 license" /></a>
@@ -166,7 +170,7 @@ agentcli status                               # daemon / worker 运行中
 agentcli usage today                          # 今日本地用量摘要（不上传）
 ```
 
-> ⚠️ 自动上报需要**三要素同时满足**：已登录 + 消息上报已开启 + 后台采集运行中。「消息上报」开关位于终端导航的「消息总线」中；会话正文始终需要单独授权，没有可被脚本误开的独立子命令。
+> ⚠️ 自动上报需要**三要素同时满足**：已登录 + 消息上报已开启 + 后台采集运行中。「消息上报」开关位于终端导航的「消息总线」中；会话正文始终需要单独授权，没有可被脚本误开的独立子命令。关闭开关或执行 `agentcli usage stop` 会停止后台发送。
 
 ---
 
@@ -202,7 +206,7 @@ agentcli usage today                          # 今日本地用量摘要（不�
 | :------------------------------------------------- | :-------------------------------------------------------- |
 | `agentcli usage status`                            | 后台 worker 是否运行、消息上报是否开启、上报运行时        |
 | `agentcli usage today`                             | 查看今日本地 usage 摘要（不上传）                         |
-| `agentcli usage start`                             | 开启轻量后台采集，默认配置开机自启；仅扫描本机 JSONL      |
+| `agentcli usage start`                             | 开启轻量后台采集，默认配置开机自启；`--upload --provider pi` 可只上报 Pi |
 | `agentcli usage stop`                              | 停止后台采集（默认关闭开机自启，`--keep-autostart` 保留） |
 | `agentcli usage report`                            | 立即扫描并按服务端游标增量上报；`--full` 全量重扫补传历史 |
 | `agentcli usage autostart status\|enable\|disable` | 管理开机自启（macOS launchd）                             |
@@ -233,7 +237,8 @@ AgentCLI 无侵入扫描本地会话日志：
 | :---------- | :------------------------------ | :--------------------------------------------------------------- |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | token 用量、会话数、消息量；支持 IM 归因                         |
 | Codex       | `~/.codex/sessions/**/*.jsonl`  | token 用量（统一按 input + output 口径）                         |
-| 内置 Pi     | 不扫描                          | 当前使用 `--no-session` 一次性执行，不默认纳入本地统计或远程上报 |
+| Pi          | `~/.pi/agent/sessions/**/*.jsonl` | token 用量、会话数、消息量；clone/fork 会话按稳定指纹去重      |
+| 内置 Pi（桌面运行时后备） | 不扫描                | 当前使用 `--no-session` 一次性执行，不默认纳入本地统计或远程上报 |
 
 ### 把网关 Key 写进 Claude / Codex / Pi（token 池认领）
 

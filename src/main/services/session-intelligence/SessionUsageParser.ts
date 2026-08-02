@@ -1,6 +1,6 @@
 /**
- * SessionUsageParser - reads Claude Code JSONL session files and extracts
- * metadata-only usage metrics (tokens, message counts, tool calls).
+ * SessionUsageParser - reads Claude Code, Codex, and Pi JSONL session files and
+ * extracts metadata-only usage metrics (tokens, message counts, tool calls).
  *
  * Modeled after CCPal's parse_jsonl() / build_index() from
  * https://github.com/lujinian1982/ccpal
@@ -17,7 +17,7 @@ import { getProjectDirNameCandidates, getProjectsBasePath } from '@main/utils/pa
 import { CodexUsageAccumulator, isCodexTokenCountRecord } from './codexTokenUsage';
 import { resolveUsageTotalTokens } from './tokenUsageTotals';
 
-export type UsageProvider = 'claudecode' | 'codex';
+export type UsageProvider = 'claudecode' | 'codex' | 'pi';
 
 export interface UsageProviderMetrics {
   sessions: number;
@@ -168,7 +168,7 @@ function extractToolCalls(content: unknown, counts: Record<string, number>): voi
   for (const block of content) {
     if (typeof block !== 'object' || block === null) continue;
     const b = block as Record<string, unknown>;
-    if (b.type === 'tool_use' && typeof b.name === 'string') {
+    if ((b.type === 'tool_use' || b.type === 'toolCall') && typeof b.name === 'string') {
       counts[b.name] = (counts[b.name] ?? 0) + 1;
     }
   }
@@ -231,7 +231,8 @@ interface ParsedSession {
 
 async function parseJsonl(
   filePath: string,
-  provider: UsageProvider = 'claudecode'
+  provider: UsageProvider = 'claudecode',
+  seenMessageKeys?: Set<string>
 ): Promise<ParsedSession | null> {
   let messageCount = 0;
   let imMessageCount = 0;
@@ -288,6 +289,16 @@ async function parseJsonl(
 
     if (!role || !ts) continue;
 
+    if (provider === 'pi' && seenMessageKeys) {
+      const entryId = typeof obj.id === 'string' ? obj.id : '';
+      const messageTimestamp = msg?.timestamp ?? ts;
+      if (entryId) {
+        const messageKey = `${entryId}\u0000${String(messageTimestamp)}\u0000${role}`;
+        if (seenMessageKeys.has(messageKey)) continue;
+        seenMessageKeys.add(messageKey);
+      }
+    }
+
     messageCount++;
     // IM attribution: a record carrying an `im` object originated from the
     // hermit-bridge IM channel (飞书 etc.). Tallied in the local scan so the
@@ -303,10 +314,18 @@ async function parseJsonl(
     }
 
     if (role === 'assistant' && usage && typeof usage === 'object') {
-      const inp = Number(usage.input_tokens ?? 0) || 0;
-      const out = Number(usage.output_tokens ?? 0) || 0;
-      const cread = Number(usage.cache_read_input_tokens ?? 0) || 0;
-      const ccreate = Number(usage.cache_creation_input_tokens ?? 0) || 0;
+      const inp = Number(usage.input_tokens ?? usage.inputTokens ?? usage.input ?? 0) || 0;
+      const out = Number(usage.output_tokens ?? usage.outputTokens ?? usage.output ?? 0) || 0;
+      const cread =
+        Number(usage.cache_read_input_tokens ?? usage.cacheReadTokens ?? usage.cacheRead ?? 0) || 0;
+      const ccreate =
+        Number(
+          usage.cache_creation_input_tokens ??
+            usage.cacheCreationTokens ??
+            usage.cacheWriteTokens ??
+            usage.cacheWrite ??
+            0
+        ) || 0;
       const total = resolveUsageTotalTokens(usage, {
         inputTokens: inp,
         outputTokens: out,
@@ -393,6 +412,12 @@ function objectRecord(value: unknown): Record<string, unknown> | null {
 
 function codexHome(): string {
   return process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+}
+
+function piSessionsRoot(): string {
+  if (process.env.PI_CODING_AGENT_SESSION_DIR) return process.env.PI_CODING_AGENT_SESSION_DIR;
+  const agentDir = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent');
+  return path.join(agentDir, 'sessions');
 }
 
 async function parseCodexJsonl(filePath: string): Promise<ParsedSession | null> {
@@ -675,7 +700,7 @@ async function parseJsonlCached(
   fileStat: { size: number; mtimeMs: number }
 ): Promise<ParsedSession | null> {
   const hit = parseJsonlCache.get(filePath);
-  if (hit && hit.size === fileStat.size && hit.mtimeMs === fileStat.mtimeMs) return hit.parsed;
+  if (hit?.size === fileStat.size && hit.mtimeMs === fileStat.mtimeMs) return hit.parsed;
   const parsed = await parseJsonl(filePath);
   // Bound memory: dev machines accumulate thousands of session files over time.
   if (parseJsonlCache.size >= 10_000) parseJsonlCache.clear();
@@ -700,6 +725,7 @@ export async function scanSessions(referenceMs = Date.now()): Promise<ParseResul
     byProvider: {
       claudecode: emptyProviderMetrics(),
       codex: emptyProviderMetrics(),
+      pi: emptyProviderMetrics(),
     },
   };
 
@@ -881,6 +907,94 @@ export async function scanSessions(referenceMs = Date.now()): Promise<ParseResul
       p.tokensOut += parsed.tokens.output;
       p.tokensTotal += parsed.tokens.total;
     }
+  }
+
+  const piRoot = piSessionsRoot();
+  const piFiles: string[] = [];
+  for await (const filePath of walkJsonl(piRoot)) piFiles.push(filePath);
+  // Pi clone/fork sessions copy prior entries verbatim into a newer JSONL file.
+  // Scan chronologically so the original record owns attribution and copied
+  // entries can be ignored by the shared semantic message key.
+  piFiles.sort(
+    (left, right) =>
+      path.basename(left).localeCompare(path.basename(right)) || left.localeCompare(right)
+  );
+  const seenPiMessageKeys = new Set<string>();
+  let piFilesScanned = 0;
+  for (const filePath of piFiles) {
+    piFilesScanned += 1;
+    if (shouldYieldAfterFile(piFilesScanned)) await yieldToEventLoop();
+    let fileStat;
+    try {
+      fileStat = await stat(filePath);
+    } catch {
+      continue;
+    }
+    const parsed = await parseJsonl(filePath, 'pi', seenPiMessageKeys);
+    if (!parsed) continue;
+    sessions.push({
+      provider: 'pi',
+      relPath: `pi:${path.relative(piRoot, filePath)}`,
+      projectPath: parsed.projectPath,
+      title: parsed.title,
+      messageCount: parsed.messageCount,
+      toolCalls: parsed.toolCalls,
+      tokens: parsed.tokens,
+      startTime: parsed.startTime,
+      endTime: parsed.endTime,
+      fileSize: fileStat.size,
+      mtime: fileStat.mtimeMs,
+      isWorktree: parsed.isWorktree,
+    });
+    aggregate.sessions++;
+    aggregate.messages += parsed.messageCount;
+    aggregate.tokens.input += parsed.tokens.input;
+    aggregate.tokens.output += parsed.tokens.output;
+    aggregate.tokens.cacheRead += parsed.tokens.cacheRead;
+    aggregate.tokens.cacheCreation += parsed.tokens.cacheCreation;
+    aggregate.tokens.total += parsed.tokens.total;
+    addProviderMetrics(aggregate, 'pi', parsed);
+    for (let h = 0; h < 24; h++) aggregate.hourly[h] += parsed.hourly[h];
+    allEvents.push(...parsed.events);
+    for (const [day, metrics] of Object.entries(parsed.dailyTokens)) {
+      activeDaySet.add(day);
+      const daily = (aggregate.daily[day] ??= {
+        sessions: 0,
+        messages: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheRead: 0,
+        cacheCreation: 0,
+        tokensTotal: 0,
+        workSeconds: 0,
+      });
+      daily.sessions++;
+      daily.messages += metrics.messages;
+      daily.tokensIn += metrics.tokensIn;
+      daily.tokensOut += metrics.tokensOut;
+      daily.cacheRead += metrics.cacheRead;
+      daily.cacheCreation += metrics.cacheCreation;
+      daily.tokensTotal += metrics.tokensTotal;
+    }
+    const projectPath = parsed.projectPath || '(untracked)';
+    const projectKey = `pi:${projectPath}`;
+    if (!projectMap[projectKey]) {
+      projectMap[projectKey] = {
+        provider: 'pi',
+        cwd: projectPath,
+        sessions: 0,
+        messages: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        tokensTotal: 0,
+      };
+    }
+    const projectMetrics = projectMap[projectKey];
+    projectMetrics.sessions++;
+    projectMetrics.messages += parsed.messageCount;
+    projectMetrics.tokensIn += parsed.tokens.input;
+    projectMetrics.tokensOut += parsed.tokens.output;
+    projectMetrics.tokensTotal += parsed.tokens.total;
   }
 
   // Work seconds per day

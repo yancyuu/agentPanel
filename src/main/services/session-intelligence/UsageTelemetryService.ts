@@ -1,6 +1,6 @@
 /**
- * UsageTelemetryService - scans local Claude Code JSONL sessions as the single
- * usage telemetry source. The service intentionally stays local-only: it does
+ * UsageTelemetryService - scans local Claude Code, Codex, and Pi JSONL sessions
+ * as usage telemetry sources. The service intentionally stays local-only: it does
  * not upload usage, conversation messages, or capability snapshots.
  */
 
@@ -96,7 +96,11 @@ export function localUserRowsFromSessions(sessions: SessionEntry[]): UserUsageTe
         type: 'person' as const,
         displayName:
           projectNameForPath(session.projectPath) ||
-          (session.provider === 'codex' ? 'Local Codex' : 'Local Claude Code'),
+          (session.provider === 'codex'
+            ? 'Local Codex'
+            : session.provider === 'pi'
+              ? 'Local Pi'
+              : 'Local Claude Code'),
         confidence: `${session.provider}-jsonl`,
       },
       provider: session.provider,
@@ -127,6 +131,7 @@ function statusFromCollection(collection: UsageCollectionResult): UsageTelemetry
   const recentByProvider = {
     claudecode: emptyProviderMetrics(),
     codex: emptyProviderMetrics(),
+    pi: emptyProviderMetrics(),
   };
   for (const event of aggregate.events7d) {
     recentMessages += 1;
@@ -198,7 +203,10 @@ async function doScan(cfg?: TelemetryConfig): Promise<UsageTelemetryStatus | nul
     const telemetryCfg = cfg?.telemetry;
     const canonicalUpload = telemetryCfg?.conversationUploadEnabled;
     const legacyUpload = telemetryCfg?.conversations?.uploadEnabled;
-    const conversationUploadOn = canonicalUpload === true || legacyUpload === true;
+    // The canonical field wins whenever present; the legacy nested field is only
+    // a migration fallback and must also be explicitly true. Missing means OFF.
+    const conversationUploadOn =
+      typeof canonicalUpload === 'boolean' ? canonicalUpload : legacyUpload === true;
     if (cfg && conversationUploadOn) {
       try {
         lastLocalScan.conversationUpload = await uploadConversationMessages(

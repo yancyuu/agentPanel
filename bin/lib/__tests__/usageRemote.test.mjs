@@ -13,9 +13,9 @@ import {
 describe('usageRemote provider helpers', () => {
   it('normalizeUploadProviders parses, dedups, and filters to known providers', () => {
     expect(normalizeUploadProviders('claudecode')).toEqual(['claudecode']);
-    expect(normalizeUploadProviders('claudecode,codex')).toEqual(['claudecode', 'codex']);
+    expect(normalizeUploadProviders('claudecode,codex,pi')).toEqual(['claudecode', 'codex', 'pi']);
     expect(normalizeUploadProviders(['claudecode', 'claudecode'])).toEqual(['claudecode']);
-    expect(normalizeUploadProviders('codex+claudecode')).toEqual(['codex', 'claudecode']);
+    expect(normalizeUploadProviders('pi+codex+claudecode')).toEqual(['pi', 'codex', 'claudecode']);
     expect(normalizeUploadProviders('invalid,claudecode')).toEqual(['claudecode']);
     expect(normalizeUploadProviders('')).toEqual([]);
     expect(normalizeUploadProviders(null)).toEqual([]);
@@ -24,11 +24,12 @@ describe('usageRemote provider helpers', () => {
   it('uploadProviderLabel maps known ids and passes unknown through', () => {
     expect(uploadProviderLabel('claudecode')).toBe('Claude Code');
     expect(uploadProviderLabel('codex')).toBe('Codex');
+    expect(uploadProviderLabel('pi')).toBe('Pi');
     expect(uploadProviderLabel('mystery')).toBe('mystery');
   });
 
   it('formatUploadProviders joins labels or reports 未选择', () => {
-    expect(formatUploadProviders(['claudecode', 'codex'])).toBe('Claude Code + Codex');
+    expect(formatUploadProviders(['claudecode', 'codex', 'pi'])).toBe('Claude Code + Codex + Pi');
     expect(formatUploadProviders('claudecode')).toBe('Claude Code');
     expect(formatUploadProviders([])).toBe('未选择');
   });
@@ -98,7 +99,11 @@ describe('usageRemote fetch short-circuits when unauthenticated', () => {
               scene,
               status: 'success',
               inFlight: { count: 0, uploadIds: [] },
-              currentCursor: { targetCursorHash: `${client}-${scene}`, messageCount: 3, fileCount: 1 },
+              currentCursor: {
+                targetCursorHash: `${client}-${scene}`,
+                messageCount: 3,
+                fileCount: 1,
+              },
             },
           ],
         });

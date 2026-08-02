@@ -8,7 +8,6 @@ import { createInterface } from 'node:readline';
 import {
   authedFetch,
   getValidBearerToken,
-  readAuthStore,
   refreshAccessToken,
 } from '@main/services/auth/OpenHermitAuthClient';
 import { getProjectsBasePath } from '@main/utils/pathDecoder';
@@ -62,7 +61,7 @@ const API_TIMEOUT_MS = 8_000;
 // same failing batch forever (cursor never advanced, full rescan retried the
 // identical window every time). Give uploads their own longer timeout.
 const UPLOAD_TIMEOUT_MS = 60_000;
-// Unified upload endpoint for local coding (Claude Code / Codex) usage. Each
+// Unified upload endpoint for local coding (Claude Code / Codex / Pi) usage. Each
 // message carries its own project/conversation context; scene is always `coding`.
 const UPLOAD_ENDPOINT = '/api/v1/report/messages';
 // Fallback content for usage-bearing turns that carry neither readable text nor
@@ -96,7 +95,7 @@ export interface ConversationUploadStatus {
   lastError?: string;
 }
 
-type UploadPlatform = 'claudecode' | 'codex';
+type UploadPlatform = 'claudecode' | 'codex' | 'pi';
 
 interface UploadMessage {
   kind: 'conversation_message';
@@ -262,9 +261,13 @@ function cloudBaseUrlFromHost(host: unknown): string | null {
   const raw = String(host || '').trim();
   if (!raw) return null;
   if (/^https?:\/\//iu.test(raw)) return normalizeCloudBaseUrl(raw);
-  const defaultUrl = new URL(DEFAULT_OPENHERMIT_CLOUD_BASE_URL);
-  const defaultPort = defaultUrl.port ? `:${defaultUrl.port}` : '';
-  return normalizeCloudBaseUrl(`${defaultUrl.protocol}//${raw}${defaultPort}`);
+  try {
+    const defaultUrl = new URL(DEFAULT_OPENHERMIT_CLOUD_BASE_URL);
+    const defaultPort = defaultUrl.port ? `:${defaultUrl.port}` : '';
+    return normalizeCloudBaseUrl(`${defaultUrl.protocol}//${raw}${defaultPort}`);
+  } catch {
+    return null;
+  }
 }
 
 function configuredOpenHermitCloudBaseUrl(existingBaseUrl?: unknown): string {
@@ -475,7 +478,7 @@ function apiUrl(baseUrl: string, apiPath: string): string {
   return `${base}${apiPath}`;
 }
 
-function statusUrl(baseUrl: string, receipt: UploadReceipt): string | null {
+function statusUrl(receipt: UploadReceipt): string | null {
   const url = receipt.statusUrl || receipt.detailUrl;
   if (!url)
     return receipt.uploadId
@@ -528,7 +531,11 @@ function toolNamesFromContent(content: unknown): string {
   for (const item of content) {
     if (!item || typeof item !== 'object') continue;
     const block = item as Record<string, unknown>;
-    if (block.type === 'tool_use' && typeof block.name === 'string' && block.name) {
+    if (
+      (block.type === 'tool_use' || block.type === 'toolCall') &&
+      typeof block.name === 'string' &&
+      block.name
+    ) {
       names.push(block.name);
     }
   }
@@ -540,11 +547,17 @@ function usageFromMessage(
 ): UploadMessage['message']['usage'] | undefined {
   const usage = message.usage as Record<string, unknown> | undefined;
   if (!usage || typeof usage !== 'object') return undefined;
-  const inputTokens = Number(usage.input_tokens ?? usage.inputTokens ?? 0);
-  const outputTokens = Number(usage.output_tokens ?? usage.outputTokens ?? 0);
-  const cacheReadTokens = Number(usage.cache_read_input_tokens ?? usage.cacheReadTokens ?? 0);
+  const inputTokens = Number(usage.input_tokens ?? usage.inputTokens ?? usage.input ?? 0);
+  const outputTokens = Number(usage.output_tokens ?? usage.outputTokens ?? usage.output ?? 0);
+  const cacheReadTokens = Number(
+    usage.cache_read_input_tokens ?? usage.cacheReadTokens ?? usage.cacheRead ?? 0
+  );
   const cacheCreationTokens = Number(
-    usage.cache_creation_input_tokens ?? usage.cacheCreationTokens ?? 0
+    usage.cache_creation_input_tokens ??
+      usage.cacheCreationTokens ??
+      usage.cacheWriteTokens ??
+      usage.cacheWrite ??
+      0
   );
   const totalTokens = resolveUsageTotalTokens(usage, {
     inputTokens,
@@ -568,10 +581,6 @@ function shouldIncludeOccurredAt(
   if (sinceMs > 0 && occurredMs < sinceMs) return false;
   if (untilMs > 0 && occurredMs >= untilMs) return false;
   return true;
-}
-
-function shouldReportScanProgress(filesScanned: number): boolean {
-  return filesScanned === 1 || filesScanned % SCAN_PROGRESS_FILE_INTERVAL === 0;
 }
 
 function shouldYieldDuringScan(filesScanned: number): boolean {
@@ -1254,6 +1263,213 @@ async function collectCodexMessages(
   };
 }
 
+function piSessionsRoot(): string {
+  if (process.env.PI_CODING_AGENT_SESSION_DIR) return process.env.PI_CODING_AGENT_SESSION_DIR;
+  const agentDir = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent');
+  return path.join(agentDir, 'sessions');
+}
+
+interface PiSessionHeader {
+  sessionId: string;
+  projectPath: string;
+  startedAt?: string;
+}
+
+async function readPiSessionHeader(filePath: string): Promise<PiSessionHeader> {
+  const fallback: PiSessionHeader = {
+    sessionId: path.basename(filePath, '.jsonl'),
+    projectPath: path.dirname(filePath),
+  };
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    handle = await open(filePath, 'r');
+    const buffer = Buffer.alloc(64 * 1024);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    const firstLine = buffer
+      .toString('utf-8', 0, bytesRead)
+      .split('\n')
+      .find((line) => line.trim());
+    if (!firstLine) return fallback;
+    const header = JSON.parse(firstLine.trim()) as Record<string, unknown>;
+    if (header.type !== 'session') return fallback;
+    return {
+      sessionId: typeof header.id === 'string' && header.id ? header.id : fallback.sessionId,
+      projectPath: typeof header.cwd === 'string' && header.cwd ? header.cwd : fallback.projectPath,
+      startedAt: typeof header.timestamp === 'string' ? header.timestamp : undefined,
+    };
+  } catch {
+    return fallback;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+function piOccurredAt(
+  entry: Record<string, unknown>,
+  message: Record<string, unknown>,
+  fallback: string
+): string {
+  if (typeof entry.timestamp === 'string' && entry.timestamp) return entry.timestamp;
+  const timestamp = message.timestamp;
+  if (typeof timestamp === 'string' && timestamp) return timestamp;
+  if (typeof timestamp === 'number' && Number.isFinite(timestamp)) {
+    const parsed = new Date(timestamp);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  return fallback;
+}
+
+function piMessageFingerprint(
+  entry: Record<string, unknown>,
+  message: Record<string, unknown>,
+  role: 'user' | 'assistant',
+  occurredAt: string
+): string | null {
+  const entryId = typeof entry.id === 'string' ? entry.id.trim() : '';
+  if (!entryId) return null;
+  const messageTimestamp = message.timestamp ?? occurredAt;
+  return `${entryId}\u0000${String(messageTimestamp)}\u0000${role}`;
+}
+
+async function collectPiMessages(
+  serverCursor: ServerCursor | null | undefined,
+  limit: number,
+  generatedAt: string,
+  sinceMs = 0,
+  untilMs = 0
+): Promise<CollectedMessages> {
+  const messages: UploadMessage[] = [];
+  const files: CursorFileRange[] = [];
+  const maxMessages = Math.max(0, limit);
+  const offsets = cursorOffsetMap(serverCursor);
+  const reportProgress = createScanProgressReporter('pi');
+  const filePaths: string[] = [];
+  for await (const filePath of walkJsonl(piSessionsRoot())) filePaths.push(filePath);
+  filePaths.sort(
+    (left, right) =>
+      path.basename(left).localeCompare(path.basename(right)) || left.localeCompare(right)
+  );
+  const seenMessageFingerprints = new Set<string>();
+  let filesScanned = 0;
+
+  for (const filePath of filePaths) {
+    if (maxMessages > 0 && messages.length >= maxMessages) break;
+    const fileStat = await stat(filePath).catch(() => null);
+    if (!fileStat?.isFile()) continue;
+
+    const key = fileKey(filePath);
+    const pathHash = `sha256-${sha(filePath)}`;
+    const fromOffset = startOffsetFromServerCursor(offsets.get(key), fileStat);
+    const scanEndOffset = fileStat.size;
+    if (fromOffset >= scanEndOffset) {
+      files.push({
+        fileKey: key,
+        pathHash,
+        size: fileStat.size,
+        mtimeMs: Math.trunc(fileStat.mtimeMs),
+        fromOffset,
+        toOffset: scanEndOffset,
+      });
+      filesScanned += 1;
+      await reportProgress(filesScanned, messages.length);
+      continue;
+    }
+
+    const header = await readPiSessionHeader(filePath);
+    let consumedOffset = fromOffset;
+    const stream = createReadStream(filePath, {
+      encoding: 'utf-8',
+      start: fromOffset,
+      end: Math.max(fromOffset, scanEndOffset - 1),
+    });
+    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    let linesScanned = 0;
+    for await (const rawLine of rl) {
+      if (maxMessages > 0 && messages.length >= maxMessages) break;
+      linesScanned += 1;
+      if (linesScanned % SCAN_LINE_YIELD_INTERVAL === 0) await yieldToEventLoop();
+      const nextOffset = Math.min(
+        scanEndOffset,
+        consumedOffset + Buffer.byteLength(rawLine, 'utf-8') + 1
+      );
+      let entry: Record<string, unknown>;
+      try {
+        entry = JSON.parse(rawLine) as Record<string, unknown>;
+      } catch {
+        // Pi appends JSONL while the agent is streaming. Do not advance the
+        // cursor past a partial final record; the next scan will retry it.
+        if (nextOffset >= scanEndOffset) break;
+        consumedOffset = nextOffset;
+        continue;
+      }
+      consumedOffset = nextOffset;
+      if (entry.type !== 'message') continue;
+      const message = objectRecord(entry.message);
+      const role =
+        message?.role === 'user' || message?.role === 'assistant' ? message.role : undefined;
+      if (!message || !role) continue;
+      const occurredAt = piOccurredAt(entry, message, generatedAt);
+      const fingerprint = piMessageFingerprint(entry, message, role, occurredAt);
+      if (!fingerprint || seenMessageFingerprints.has(fingerprint)) continue;
+      seenMessageFingerprints.add(fingerprint);
+      if (!shouldIncludeOccurredAt(occurredAt, sinceMs, untilMs)) continue;
+
+      const usage = role === 'assistant' ? usageFromMessage(message) : undefined;
+      const content =
+        textFromContent(message.content) ||
+        toolNamesFromContent(message.content) ||
+        (usage ? REPORTED_CONTENT_PLACEHOLDER : '');
+      if (!content && !usage) continue;
+      const messageRef = String(entry.id);
+      messages.push({
+        kind: 'conversation_message',
+        eventId: `pi:${sha(fingerprint)}`,
+        reportedAt: generatedAt,
+        project: {
+          projectRef: safeRef('pi-project', header.projectPath),
+          name: path.basename(header.projectPath) || 'Pi',
+          pathHash: `sha256-${sha(header.projectPath)}`,
+        },
+        conversation: {
+          conversationId: header.sessionId,
+          sessionRef: `pi:${header.sessionId}`,
+          startedAt: header.startedAt,
+        },
+        message: {
+          messageRef,
+          parentRef: parentMessageRef(entry.parentId),
+          role,
+          occurredAt,
+          modelName: typeof message.model === 'string' ? message.model : undefined,
+          content,
+          contentFormat: 'text',
+          usage,
+        },
+      });
+    }
+
+    const toOffset =
+      maxMessages > 0 && messages.length >= maxMessages
+        ? Math.min(consumedOffset, scanEndOffset)
+        : consumedOffset;
+    files.push({
+      fileKey: key,
+      pathHash,
+      size: fileStat.size,
+      mtimeMs: Math.trunc(fileStat.mtimeMs),
+      fromOffset,
+      toOffset,
+    });
+    filesScanned += 1;
+    await reportProgress(filesScanned, messages.length);
+  }
+
+  return {
+    messages,
+    clientCursor: buildClientCursor(serverCursor, files, messages.length, generatedAt),
+  };
+}
+
 async function collectMessagesForPlatform(
   platform: UploadPlatform,
   serverCursor: ServerCursor | null | undefined,
@@ -1262,9 +1478,13 @@ async function collectMessagesForPlatform(
   sinceMs = 0,
   untilMs = 0
 ): Promise<CollectedMessages> {
-  return platform === 'codex'
-    ? collectCodexMessages(serverCursor, limit, generatedAt, sinceMs, untilMs)
-    : collectClaudeCodeMessages(serverCursor, limit, generatedAt, sinceMs, untilMs);
+  if (platform === 'codex') {
+    return collectCodexMessages(serverCursor, limit, generatedAt, sinceMs, untilMs);
+  }
+  if (platform === 'pi') {
+    return collectPiMessages(serverCursor, limit, generatedAt, sinceMs, untilMs);
+  }
+  return collectClaudeCodeMessages(serverCursor, limit, generatedAt, sinceMs, untilMs);
 }
 
 function sanitizeDiagnosticText(value: unknown): string {
@@ -1325,8 +1545,7 @@ function parseJsonObject(text: string): Record<string, unknown> {
 
 function uploadStatusFromResult(
   receipt: UploadReceipt,
-  attempted: number,
-  baseUrl: string
+  attempted: number
 ): ConversationUploadStatus {
   const received = typeof receipt.received === 'number' ? receipt.received : attempted;
   const rejectedAtReceive =
@@ -1345,7 +1564,7 @@ function uploadStatusFromResult(
     queued: accepted,
     uploadIds: receipt.uploadId ? [receipt.uploadId] : [],
     lastReceiptId: receipt.receiptId,
-    lastStatusUrl: statusUrl(baseUrl, receipt) || undefined,
+    lastStatusUrl: statusUrl(receipt) || undefined,
     lastUploadStatus: receipt.status,
   };
   // Only an intake-level rejection is a real, actionable failure. A non-terminal
@@ -1472,7 +1691,7 @@ async function postPayload(
   // No per-batch terminal-status polling: that fed display counts only and froze
   // the menu for ~an hour on a 199-batch first backfill (and made the worker hold
   // the lock ~an hour per cycle). The interface is the single source of truth.
-  return uploadStatusFromResult(receipt, payload.messages.length, baseUrl);
+  return uploadStatusFromResult(receipt, payload.messages.length);
 }
 
 // Sum totalTokens across a slice of collected messages. Used to express the
@@ -1522,11 +1741,12 @@ function resolveUploadProviders(
     ? telemetry.uploadProviders
     : telemetry?.platform
       ? [telemetry.platform]
-      : ['claudecode', 'codex'];
+      : ['claudecode', 'codex', 'pi'];
   return [
     ...new Set(
       providers.filter(
-        (provider): provider is UploadPlatform => provider === 'claudecode' || provider === 'codex'
+        (provider): provider is UploadPlatform =>
+          provider === 'claudecode' || provider === 'codex' || provider === 'pi'
       )
     ),
   ];
@@ -1854,8 +2074,11 @@ function isConversationUploadEnabled(cfg: ConversationUploadConfig): boolean {
   const canonical = telemetry?.conversationUploadEnabled;
   const legacy = telemetry?.conversations?.uploadEnabled;
   // Message content is explicit opt-in. A missing setting is always OFF.
+  // The canonical field wins whenever present; the legacy nested field is only
+  // a migration fallback and must also be explicitly true.
   // This must stay aligned with UsageTelemetryService and bin/lib/uploadState.
-  return canonical === true || legacy === true;
+  if (typeof canonical === 'boolean') return canonical;
+  return legacy === true;
 }
 
 async function uploadConversationMessagesLocked(
@@ -1911,32 +2134,38 @@ async function uploadConversationMessagesLocked(
   // eventId-dedup namespaces, so there is no contention between them.
   // appendUploadLog uses single-line atomic appendFile, so interleaved channel
   // logs stay line-coherent.
-  let statuses: ConversationUploadStatus[];
-  try {
-    statuses = await Promise.all(
-      availableProviders.map((platform) =>
-        uploadPlatformMessages(
-          platform,
-          channels.get(platform) ?? null,
-          cfg,
-          home,
-          baseUrl,
-          token,
-          generatedAt
-        )
+  const results = await Promise.allSettled(
+    availableProviders.map((platform) =>
+      uploadPlatformMessages(
+        platform,
+        channels.get(platform) ?? null,
+        cfg,
+        home,
+        baseUrl,
+        token,
+        generatedAt
       )
-    );
-  } catch (error) {
-    // A platform hit MAX_NETWORK_FAILURES (ServerUnavailableError) — the server
-    // is effectively down. Promise.all rejects the moment any platform throws,
-    // so the other channels stop too. Surface it as a normal "try again next
-    // cycle" status instead of letting the rejection crash the worker.
-    const message =
-      error instanceof ServerUnavailableError
-        ? `服务端不可用，已跳过本次上报：${error.message}`
-        : `上报异常：${sanitizeUploadError(error)}`;
+    )
+  );
+  const statuses = results.flatMap((result) =>
+    result.status === 'fulfilled' ? [result.value] : []
+  );
+  const failures = results.flatMap((result) =>
+    result.status === 'rejected' ? [result.reason] : []
+  );
+  if (failures.length > 0) {
+    // Await every provider before releasing the upload lock. Promise.all would
+    // return on the first rejection while other channels kept posting in the
+    // background, leaking work into the next scan/test and allowing overlap.
+    const message = failures
+      .map((error) =>
+        error instanceof ServerUnavailableError
+          ? `服务端不可用，已跳过本次上报：${error.message}`
+          : `上报异常：${sanitizeUploadError(error)}`
+      )
+      .join('；');
     await appendUploadLog(home, 'server-unavailable', { providers, lastError: message });
-    return emptyStatus(true, true, { lastError: message });
+    statuses.push(emptyStatus(true, true, { lastError: message }));
   }
   return mergeStatuses([...unavailableStatuses, ...statuses]);
 }

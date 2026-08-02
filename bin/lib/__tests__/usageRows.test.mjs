@@ -22,6 +22,29 @@ describe('usageRows', () => {
     ]);
   });
 
+  it('renders Pi alongside Claude Code and Codex provider metrics', () => {
+    expect(
+      localServerRows(
+        {
+          recentMessages: 6,
+          recentTokensTotal: 60,
+          recentByProvider: {
+            claudecode: { messages: 1, tokensTotal: 10 },
+            codex: { messages: 2, tokensTotal: 20 },
+            pi: { messages: 3, tokensTotal: 30 },
+          },
+        },
+        undefined
+      )
+    ).toEqual([
+      [
+        '本地（最近 7 天）',
+        'Claude Code 消息 1 · Token 10 ｜ Codex 消息 2 · Token 20 ｜ Pi 消息 3 · Token 30',
+        'info',
+      ],
+    ]);
+  });
+
   it('renders cursor-derived pending rows from upload scan state', () => {
     expect(cursorPendingRows({ pending: 12 })).toEqual([['待上报', '消息 12', 'warn']]);
     expect(cursorPendingRows({ pending: 0 })).toEqual([['待上报', '无', 'info']]);
@@ -79,7 +102,9 @@ describe('usageRows', () => {
     expect(localServerRows({ messages: 0, totalTokens: 0 }, { ok: true, totals: {} })).toEqual([
       ['本地', '消息 0 · Token 0', 'info'],
     ]);
-    expect(localServerRows({ messages: 0, totalTokens: 0 }, { ok: true, totals: { messages: 0 } })).toEqual([
+    expect(
+      localServerRows({ messages: 0, totalTokens: 0 }, { ok: true, totals: { messages: 0 } })
+    ).toEqual([
       ['本地', '消息 0 · Token 0', 'info'],
       ['服务端（全量，不限 7 天）', '消息 0', 'info'],
     ]);
@@ -93,7 +118,12 @@ describe('usageRows', () => {
   it('shows 本地（最近 7 天）from rolling-7d recent* when the worker ships them', () => {
     expect(
       localServerRows(
-        { messages: 196107, totalTokens: 9836330316, recentMessages: 320, recentTokensTotal: 4_000_000 },
+        {
+          messages: 196107,
+          totalTokens: 9836330316,
+          recentMessages: 320,
+          recentTokensTotal: 4_000_000,
+        },
         { ok: true, totals: { messages: 64511, totalTokens: 5706241053 } }
       )
     ).toEqual([
@@ -103,36 +133,49 @@ describe('usageRows', () => {
   });
 
   it('falls back to all-time 本地 when recent* fields are absent (stale worker status)', () => {
-    expect(localServerRows({ messages: 196107, totalTokens: 9836330316 }, { ok: true, totals: {} })).toEqual([
-      ['本地', '消息 196.1K · Token 9836.3M', 'info'],
-    ]);
+    expect(
+      localServerRows({ messages: 196107, totalTokens: 9836330316 }, { ok: true, totals: {} })
+    ).toEqual([['本地', '消息 196.1K · Token 9836.3M', 'info']]);
   });
 });
 
 describe('serverUsageUnauthorized', () => {
   it('is true when the /report/usage ledger returns 401', () => {
-    expect(serverUsageUnauthorized({ ok: false, httpStatus: 401, error: 'usage HTTP 401' }, null)).toBe(true);
+    expect(
+      serverUsageUnauthorized({ ok: false, httpStatus: 401, error: 'usage HTTP 401' }, null)
+    ).toBe(true);
   });
 
   it('is true when a /report/usage/status channel returns 403', () => {
-    expect(serverUsageUnauthorized(null, { errors: [{ platform: 'claudecode', httpStatus: 403 }] })).toBe(true);
+    expect(
+      serverUsageUnauthorized(null, { errors: [{ platform: 'claudecode', httpStatus: 403 }] })
+    ).toBe(true);
   });
 
   it('is true when 401 only appears inside the channel error text', () => {
     expect(
-      serverUsageUnauthorized(null, { errors: [{ platform: 'codex', error: 'usage status codex/coding HTTP 401' }] })
+      serverUsageUnauthorized(null, {
+        errors: [{ platform: 'codex', error: 'usage status codex/coding HTTP 401' }],
+      })
     ).toBe(true);
   });
 
   it('is false when the server is reachable and authorized', () => {
     expect(
-      serverUsageUnauthorized({ ok: true, totals: {} }, { channels: [{ platform: 'claudecode' }], errors: [] })
+      serverUsageUnauthorized(
+        { ok: true, totals: {} },
+        { channels: [{ platform: 'claudecode' }], errors: [] }
+      )
     ).toBe(false);
   });
 
   it('is false for non-auth failures (500 / network)', () => {
-    expect(serverUsageUnauthorized({ ok: false, httpStatus: 500 }, { errors: [{ httpStatus: 500 }] })).toBe(false);
-    expect(serverUsageUnauthorized(null, { errors: [{ error: 'fetch failed (ECONNREFUSED)' }] })).toBe(false);
+    expect(
+      serverUsageUnauthorized({ ok: false, httpStatus: 500 }, { errors: [{ httpStatus: 500 }] })
+    ).toBe(false);
+    expect(
+      serverUsageUnauthorized(null, { errors: [{ error: 'fetch failed (ECONNREFUSED)' }] })
+    ).toBe(false);
   });
 
   it('is false when nothing was fetched', () => {

@@ -31,8 +31,8 @@ interface TelemetryStatus {
   totalTokens: number;
   recentMessages?: number;
   recentTokensTotal?: number;
-  recentByProvider?: { claudecode: ProviderMetrics; codex: ProviderMetrics };
-  byProvider?: { claudecode: ProviderMetrics; codex: ProviderMetrics };
+  recentByProvider?: { claudecode: ProviderMetrics; codex: ProviderMetrics; pi: ProviderMetrics };
+  byProvider?: { claudecode: ProviderMetrics; codex: ProviderMetrics; pi: ProviderMetrics };
   activeDays: number;
   hourly: number[];
   projects: {
@@ -144,8 +144,8 @@ const UsageDashboard = ({ status }: { status: TelemetryStatus }): React.JSX.Elem
         />
         <StatCard
           icon={<Zap size={14} />}
-          label="Claude/Codex"
-          value={`CC ${formatNum(status.recentByProvider?.claudecode?.tokensTotal)} / Codex ${formatNum(status.recentByProvider?.codex?.tokensTotal)}`}
+          label="Claude/Codex/Pi"
+          value={`CC ${formatNum(status.recentByProvider?.claudecode?.tokensTotal)} / Codex ${formatNum(status.recentByProvider?.codex?.tokensTotal)} / Pi ${formatNum(status.recentByProvider?.pi?.tokensTotal)}`}
         />
         <StatCard icon={<Zap size={14} />} label="Input" value={formatNum(status.tokensIn)} />
         <StatCard icon={<Zap size={14} />} label="Output" value={formatNum(status.tokensOut)} />

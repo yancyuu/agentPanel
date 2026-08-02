@@ -198,9 +198,9 @@ export interface TelemetryConfig {
   telemetry?: {
     enabled: boolean;
     /** Data source platform. 'claudecode' remains the local JSONL scanner default. */
-    platform: 'claudecode' | 'codex';
+    platform: 'claudecode' | 'codex' | 'pi';
     /** Explicit CLI upload providers selected by the user. */
-    uploadProviders?: ('claudecode' | 'codex')[];
+    uploadProviders?: ('claudecode' | 'codex' | 'pi')[];
     /** Upload conversation messages to the Bearer-only openHermit message API. */
     conversationUploadEnabled?: boolean;
     /** Legacy metadata upload flag; do not use for message-body upload. */

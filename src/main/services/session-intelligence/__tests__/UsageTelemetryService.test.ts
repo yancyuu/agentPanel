@@ -89,6 +89,27 @@ describe('localUserRowsFromSessions', () => {
     expect(new Set(rows.map((r) => r.provider))).toEqual(new Set(['claudecode', 'codex']));
   });
 
+  it('keeps Pi separate from other providers on the same projectPath', () => {
+    const rows = localUserRowsFromSessions([
+      makeSession({
+        provider: 'claudecode',
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 5 },
+      }),
+      makeSession({
+        provider: 'codex',
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 7 },
+      }),
+      makeSession({
+        provider: 'pi',
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 11 },
+      }),
+    ]);
+    expect(rows).toHaveLength(3);
+    expect(new Set(rows.map((row) => row.provider))).toEqual(
+      new Set(['claudecode', 'codex', 'pi'])
+    );
+  });
+
   it('drops sessions with no tokens and no messages', () => {
     const rows = localUserRowsFromSessions([
       makeSession({
@@ -104,15 +125,18 @@ describe('localUserRowsFromSessions', () => {
     expect(rows[0].messages).toBe(3);
   });
 
-  it('falls back to a provider-specific displayName when projectPath is empty', () => {
+  it.each([
+    ['codex', 'Local Codex'],
+    ['pi', 'Local Pi'],
+  ] as const)('falls back to a provider-specific displayName for %s', (provider, displayName) => {
     const rows = localUserRowsFromSessions([
       makeSession({
-        provider: 'codex',
+        provider,
         projectPath: '',
         tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 5 },
       }),
     ]);
     expect(rows).toHaveLength(1);
-    expect(rows[0].identity.displayName).toBe('Local Codex');
+    expect(rows[0].identity.displayName).toBe(displayName);
   });
 });

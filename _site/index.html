@@ -3,17 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AgentCLI — 把任务交给 AI 助手，集中查看进度和结果</title>
-  <meta name="description" content="写下要做的事，附上相关资料，再选择一个 AI 助手或一支小队。任务进度、完成结果和后续修改都可以在一个桌面应用里查看。" />
-  <meta property="og:title" content="AgentCLI — 桌面 AI 任务助手" />
-  <meta property="og:description" content="提交任务、查看进度、阅读结果，需要调整时直接继续回复。" />
+  <title>AgentCLI — 让智能体真正把工作做完</title>
+  <meta name="description" content="AgentCLI 是面向普通用户的本地 AI 助手客户端。管理智能体、任务、小队、定时任务与交付成果，安装 App 即可使用。" />
+  <meta property="og:title" content="AgentCLI — 本地 AI 助手客户端" />
+  <meta property="og:description" content="不需要学习命令行。把任务交给智能体，跟进过程，审核成果。" />
   <meta property="og:type" content="website" />
   <meta name="theme-color" content="#1769aa" />
-  <link rel="icon" type="image/png" sizes="1024x1024" href="icon.png?v=1.10.1" />
-  <link rel="apple-touch-icon" href="icon.png?v=1.10.1" />
-  <meta property="og:image" content="https://yancyuu.github.io/agentcli/icon.png?v=1.10.1" />
-  <meta name="twitter:card" content="summary" />
-  <meta name="twitter:image" content="https://yancyuu.github.io/agentcli/icon.png?v=1.10.1" />
+  <link rel="icon" href="icon.png" />
   <style>
     :root {
       --ink: #10233d;
@@ -193,7 +189,7 @@
     .product-shot img { display: block; width: 100%; border-radius: 0 0 13px 13px; background: white; }
 
     .trust-strip { background: white; border-bottom: 1px solid var(--line); }
-    .trust-grid { width: min(1180px, calc(100% - 48px)); margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); }
+    .trust-grid { width: min(1180px, calc(100% - 48px)); margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
     .trust-item { padding: 27px 22px; border-right: 1px solid var(--line); }
     .trust-item:last-child { border-right: 0; }
     .trust-item strong { display: block; margin-bottom: 3px; font-size: 14px; }
@@ -239,10 +235,9 @@
     .platform-select { width: 100%; margin-top: 13px; padding: 11px 12px; color: white; border: 1px solid rgba(255,255,255,.2); border-radius: 10px; background: rgba(1, 31, 56, .28); }
     .platform-select option { color: #142236; background: white; }
     .download-note { margin: 12px 0 0 !important; font-size: 12px; }
-    .all-downloads { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid rgba(255,255,255,.13); }
-    .all-downloads a { padding: 18px 20px; border-right: 1px solid rgba(255,255,255,.13); border-bottom: 1px solid rgba(255,255,255,.13); }
-    .all-downloads a:nth-child(3n) { border-right: 0; }
-    .all-downloads a:nth-last-child(-n+3) { border-bottom: 0; }
+    .all-downloads { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid rgba(255,255,255,.13); }
+    .all-downloads a { padding: 18px 20px; border-right: 1px solid rgba(255,255,255,.13); }
+    .all-downloads a:last-child { border-right: 0; }
     .all-downloads strong { display: block; font-size: 13px; }
     .all-downloads span { color: rgba(255,255,255,.58); font-size: 11px; }
 
@@ -275,14 +270,12 @@
       .feature-split, .feature-split.reverse, .download-inner { grid-template-columns: 1fr; }
       .feature-split.reverse .feature-copy, .feature-split.reverse .feature-visual { order: initial; }
       .workflow-grid { grid-template-columns: repeat(2, 1fr); }
-      .trust-grid { grid-template-columns: 1fr; }
+      .trust-grid { grid-template-columns: repeat(2, 1fr); }
       .trust-item:nth-child(2) { border-right: 0; }
       .trust-item:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
       .all-downloads { grid-template-columns: repeat(2, 1fr); }
-      .all-downloads a:nth-child(3n) { border-right: 1px solid rgba(255,255,255,.13); }
-      .all-downloads a:nth-child(2n) { border-right: 0; }
-      .all-downloads a:nth-last-child(-n+3) { border-bottom: 1px solid rgba(255,255,255,.13); }
-      .all-downloads a:nth-last-child(-n+2) { border-bottom: 0; }
+      .all-downloads a:nth-child(2) { border-right: 0; }
+      .all-downloads a:nth-child(-n+2) { border-bottom: 1px solid rgba(255,255,255,.13); }
     }
 
     @media (max-width: 640px) {
@@ -319,14 +312,14 @@
   <header class="site-header">
     <nav class="nav" aria-label="主导航">
       <a class="brand" href="#top">
-        <img class="brand-mark" src="icon.png?v=1.10.1" alt="" />
+        <img class="brand-mark" src="icon.png" alt="" />
         <span>AgentCLI</span>
       </a>
       <div class="nav-links">
-        <a href="#product">能做什么</a>
-        <a href="#workflow">使用步骤</a>
-        <a href="#faq">常见问题</a>
-        <a class="nav-download" href="#download">下载 AgentCLI</a>
+        <a href="#product">产品</a>
+        <a href="#workflow">如何使用</a>
+        <a href="#advanced">高级用户</a>
+        <a class="nav-download" href="#download">下载客户端</a>
       </div>
     </nav>
   </header>
@@ -334,19 +327,21 @@
   <main id="top">
     <section class="hero">
       <div class="hero-inner">
-        <span class="eyebrow"><span class="eyebrow-dot"></span> AgentCLI 桌面版 · v1.10.1</span>
-        <h1>把任务交给 AI 助手，<br />在一个地方查看进度和结果。</h1>
-        <p class="hero-lede">写下要做的事，附上相关资料，再选择一个助手或一支小队。任务完成后可以直接查看结果，需要调整时就在原任务里继续回复。</p>
+        <span class="eyebrow"><span class="eyebrow-dot"></span> 本地优先 · Desktop v1.9.80</span>
+        <h1>让智能体，<br />真正把工作做完。</h1>
+        <p class="hero-lede">不用学编程，也不用守着终端。创建任务、选择智能体或小队、查看进度、审核成果——全部在一个本地客户端里完成。</p>
         <div class="hero-actions">
-          <a id="heroDownload" class="button button-primary" href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-arm64.dmg"><span aria-hidden="true">↓</span><span id="heroDownloadText">下载 AgentCLI</span></a>
-          <a class="button button-secondary" href="#workflow">查看使用方式 <span aria-hidden="true">→</span></a>
+          <a id="heroDownload" class="button button-primary" href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg"><span aria-hidden="true">↓</span><span id="heroDownloadText">下载 macOS 客户端</span></a>
+          <a class="button button-secondary" href="#product">看看它能做什么 <span aria-hidden="true">→</span></a>
         </div>
-        <div id="heroDownloadContext" class="download-context">正在查看适合你电脑的版本…</div>
+        <div id="heroDownloadContext" class="download-context">正在识别你的系统…</div>
         <div class="works-with">
-          <span>可使用</span>
+          <span>可连接</span>
           <strong>Claude Code</strong><span class="runtime-dot">•</span>
           <strong>Codex</strong><span class="runtime-dot">•</span>
-          <strong>内置 Pi 执行器</strong>
+          <strong>Gemini CLI</strong><span class="runtime-dot">•</span>
+          <strong>Cursor</strong><span class="runtime-dot">•</span>
+          <strong>OpenCode</strong>
         </div>
       </div>
       <div class="product-shot" aria-label="AgentCLI 工作台预览">
@@ -357,21 +352,22 @@
 
     <section class="trust-strip" aria-label="产品特点">
       <div class="trust-grid">
-        <div class="trust-item"><strong>下载后按系统提示安装</strong><span>当前测试版尚未完成商业代码签名，安装时请确认系统安全提示</span></div>
-        <div class="trust-item"><strong>任务资料默认保存在本机</strong><span>任务记录、参考文件和完成结果都留在这台电脑上</span></div>
-        <div class="trust-item"><strong>修改不用重新开始</strong><span>在原任务里补充要求，之前的资料和结果都会保留</span></div>
+        <div class="trust-item"><strong>安装一个 App</strong><span>无需预装 Node.js 或 pnpm</span></div>
+        <div class="trust-item"><strong>数据保存在本机</strong><span>默认写入 ~/.hermit/</span></div>
+        <div class="trust-item"><strong>内置 AgentCLI</strong><span>客户端与命令行共用数据</span></div>
+        <div class="trust-item"><strong>交付结果优先</strong><span>成果直接阅读、审核与归档</span></div>
       </div>
     </section>
 
     <section id="product" class="section feature-split">
       <div class="feature-copy">
-        <span class="section-kicker">单个 AI 助手</span>
-        <h2>日常任务，交给一个助手处理。</h2>
-        <p class="section-intro">写下目标，附上图片、文档或压缩包。助手开始处理后，你可以在收件箱查看进度，完成结果也会集中出现在这里。</p>
+        <span class="section-kicker">任务与收件箱</span>
+        <h2>像交代同事一样，把任务交给智能体。</h2>
+        <p class="section-intro">写清楚想要的结果，附上图片、PDF、Office 或 ZIP 文件，然后等待交付。过程状态和需要你处理的反馈会统一进入收件箱。</p>
         <div class="feature-points">
-          <div class="feature-point"><span class="feature-icon">1</span><div><strong>直接说明你要什么</strong><p>用日常语言写清目标、格式和需要注意的事项。</p></div></div>
-          <div class="feature-point"><span class="feature-icon">2</span><div><strong>资料跟着任务走</strong><p>参考文件、补充说明和完成结果都放在同一项任务里。</p></div></div>
-          <div class="feature-point"><span class="feature-icon">3</span><div><strong>需要修改，直接回复</strong><p>指出要调整的地方，助手会接着原任务继续处理。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">1</span><div><strong>不需要写 Prompt 工程</strong><p>用普通语言描述目标，选择合适的智能体即可。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">2</span><div><strong>输入和成果分开管理</strong><p>原始材料进入 input，正式成果按版本归档到 outputs。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">3</span><div><strong>返工不丢上下文</strong><p>直接回复当前任务要求修改，智能体在原任务上继续完成。</p></div></div>
         </div>
       </div>
       <div class="feature-visual"><img src="images/workbench-tasks.png" alt="AgentCLI 任务管理页面" loading="lazy" /></div>
@@ -379,13 +375,13 @@
 
     <section class="section feature-split reverse">
       <div class="feature-copy">
-        <span class="section-kicker">小队协作</span>
-        <h2>内容较多时，让几位助手分头处理。</h2>
-        <p class="section-intro">适合需要查资料、整理、写作和检查一起进行的任务。小队会先确定分工，再由一位负责人汇总结果。</p>
+        <span class="section-kicker">智能体小队</span>
+        <h2>复杂任务，让一支小队协作完成。</h2>
+        <p class="section-intro">成员先进行有限轮次圆桌讨论，自行选出本任务的临时队长。队长负责分工、验收、整合，并向你统一交付最终结果。</p>
         <div class="feature-points">
-          <div class="feature-point"><span class="feature-icon">✓</span><div><strong>先确定分工</strong><p>每位助手负责清楚的一部分，减少重复处理。</p></div></div>
-          <div class="feature-point"><span class="feature-icon">↗</span><div><strong>可以同时推进</strong><p>查找、整理、写作和检查可以分别进行。</p></div></div>
-          <div class="feature-point"><span class="feature-icon">◎</span><div><strong>最后只看一份结果</strong><p>负责人汇总各部分，并标出需要你确认的内容。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">✓</span><div><strong>任务级临时队长</strong><p>不是固定上下级，每次任务都能选择最合适的负责人。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">↗</span><div><strong>并行执行，集中交付</strong><p>成员同步工作，队长最终整合，避免你逐个追进度。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">◎</span><div><strong>重启后继续运行</strong><p>协作状态持久化，客户端刷新或服务重启不会永久卡住。</p></div></div>
         </div>
       </div>
       <div class="feature-visual"><img src="images/workbench-agents.png" alt="AgentCLI 智能体与小队界面" loading="lazy" /></div>
@@ -393,49 +389,45 @@
 
     <section id="workflow" class="section workflow-section">
       <div class="workflow-head">
-        <span class="section-kicker">使用步骤</span>
-        <h2>四步完成一次任务。</h2>
-        <p class="section-intro">从提交要求到确认结果，都在同一项任务里进行。</p>
+        <span class="section-kicker">完整工作闭环</span>
+        <h2>从一句需求，到一份正式成果。</h2>
+        <p class="section-intro">AgentCLI 把执行过程藏到合适的位置，让普通用户只关注目标、反馈和最终交付。</p>
       </div>
       <div class="workflow-grid">
-        <article class="workflow-card"><div class="workflow-number">01</div><h3>说明任务</h3><p>写下目标和要求，并添加相关图片或文档。</p></article>
-        <article class="workflow-card"><div class="workflow-number">02</div><h3>选择助手</h3><p>简单任务选择一个助手，内容较多时可以选择小队。</p></article>
-        <article class="workflow-card"><div class="workflow-number">03</div><h3>查看结果</h3><p>完成后会在收件箱提醒你，报告、图片和附件可以直接打开。</p></article>
-        <article class="workflow-card"><div class="workflow-number">04</div><h3>确认或修改</h3><p>满意就保存结果；需要调整，就在原任务里补充要求。</p></article>
+        <article class="workflow-card"><div class="workflow-number">01</div><h3>创建任务</h3><p>写下目标，添加输入文件，选择单个智能体或小队。</p></article>
+        <article class="workflow-card"><div class="workflow-number">02</div><h3>自动执行</h3><p>智能体自行推进；小队会先讨论、选队长，再并行分工。</p></article>
+        <article class="workflow-card"><div class="workflow-number">03</div><h3>收到交付</h3><p>成果进入收件箱，报告、图片和附件可以直接查看。</p></article>
+        <article class="workflow-card"><div class="workflow-number">04</div><h3>审核归档</h3><p>满意则保存正式版本；需要修改则在原任务继续返工。</p></article>
       </div>
     </section>
 
     <section id="download" class="download-section">
       <div class="download-inner">
         <div class="download-copy">
-          <span class="section-kicker" style="color:#a9ead9">下载 AgentCLI</span>
-          <h2>选择与你的电脑相符的版本。</h2>
-          <p>页面会先显示一个建议版本。下载前，请再确认你的电脑系统和芯片类型。</p>
-          <p>安装后即可打开工作台；首次执行任务前，请登录 Claude Code、Codex，或为随客户端提供的 Pi 执行器配置可用的模型服务。</p>
+          <span class="section-kicker" style="color:#a9ead9">立即开始</span>
+          <h2>下载最适合你电脑的版本。</h2>
+          <p>页面会根据当前系统自动推荐。Apple Silicon Mac 优先使用桌面 DMG；其他系统会显示当前可用的独立安装包。</p>
+          <p>桌面客户端已内置 AgentCLI、cc-connect 与 Pi 运行时，不需要再通过 npm 安装。</p>
         </div>
         <div class="download-card">
-          <div class="detected-label">建议版本</div>
+          <div class="detected-label">已为你推荐</div>
           <h3 id="recommendedTitle">macOS 客户端</h3>
-          <div id="recommendedDetail" class="download-detail">Apple Silicon · DMG · 211 MB</div>
-          <a id="recommendedDownload" class="button button-primary" href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-arm64.dmg">下载 macOS 客户端</a>
+          <div id="recommendedDetail" class="download-detail">Apple Silicon · DMG · 208 MB</div>
+          <a id="recommendedDownload" class="button button-primary" href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg">下载 macOS 客户端</a>
           <select id="platformSelect" class="platform-select" aria-label="选择其他系统版本">
             <option value="macArm">macOS Apple Silicon</option>
             <option value="macIntel">macOS Intel</option>
             <option value="windows">Windows x64</option>
-            <option value="windowsArm">Windows ARM64</option>
             <option value="linux">Linux x64</option>
-            <option value="linuxArm">Linux ARM64</option>
           </select>
-          <p id="downloadNote" class="download-note">下载后打开 DMG，将 AgentCLI 拖入“应用程序”。当前 macOS 构建尚未经过 Apple 公证；若首次打开被拦截，请在“应用程序”中右键 AgentCLI，选择“打开”并再次确认。无需关闭系统安全保护。</p>
+          <p id="downloadNote" class="download-note">下载后打开 DMG，将 AgentCLI 拖入“应用程序”。</p>
         </div>
       </div>
       <div class="all-downloads">
-        <a href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-arm64.dmg"><strong>macOS Apple Silicon</strong><span>DMG 桌面客户端</span></a>
-        <a href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-x64.dmg"><strong>macOS Intel</strong><span>DMG 桌面客户端</span></a>
-        <a href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-Setup-1.10.1-x64.exe"><strong>Windows x64</strong><span>安装程序</span></a>
-        <a href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-Setup-1.10.1-arm64.exe"><strong>Windows ARM64</strong><span>安装程序</span></a>
-        <a href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-x86_64.AppImage"><strong>Linux x64</strong><span>AppImage</span></a>
-        <a href="https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-arm64.AppImage"><strong>Linux ARM64</strong><span>AppImage</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg"><strong>macOS Apple Silicon</strong><span>DMG 桌面客户端</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-macos-x64.zip"><strong>macOS Intel</strong><span>ZIP 独立包</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-windows-x64.zip"><strong>Windows x64</strong><span>ZIP 独立包</span></a>
+        <a href="https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-linux-x64.zip"><strong>Linux x64</strong><span>ZIP 独立包</span></a>
       </div>
     </section>
 
@@ -468,43 +460,40 @@
       </details>
     </section>
 
-    <section id="faq" class="faq">
+    <section class="faq">
       <h2>常见问题</h2>
-      <details open><summary>我不会编程，可以使用吗？</summary><p>可以。你只需要说明想要什么结果，并提供相关资料。创建任务、查看进度和提出修改都可以在桌面界面中完成。</p></details>
-      <details><summary>我的任务和文件保存在哪里？</summary><p>任务记录和文件默认保存在这台电脑上。使用外部 AI 服务处理任务时，完成任务所需的文字、文件或必要上下文可能会发送给该服务，具体范围取决于你选择的服务和设置。AgentBus 数据上报需要另外连接并授权。</p></details>
-      <details><summary>安装后还需要其他软件吗？</summary><p>一般不需要。安装 AgentCLI 后，按首次启动页面的提示完成设置即可。使用 Claude Code、Codex 或 Pi 时，仍需登录或配置相应的模型服务；Pi 是随客户端提供的执行器，不包含免费模型。</p></details>
-      <details><summary>什么时候用一个助手，什么时候用小队？</summary><p>日常整理、写作或检查任务通常选择一个助手即可。需要同时查资料、整理内容、撰写和复核时，可以选择小队。</p></details>
-      <details><summary>我应该下载哪个 Mac 版本？</summary><p>点击屏幕左上角的苹果菜单，选择“关于本机”。如果显示 Apple M 系列芯片，请选择 Apple 芯片版；如果显示 Intel 处理器，请选择 Intel 芯片版。当前测试版尚未经过 Apple 公证；若系统阻止首次打开，请在“应用程序”中右键 AgentCLI，选择“打开”并确认，不要关闭 Gatekeeper 或系统安全保护。</p></details>
-      <details><summary>当前有哪些版本？</summary><p>目前提供 macOS Apple Silicon、macOS Intel、Windows x64、Windows ARM64、Linux x64 和 Linux ARM64 版本。Mac 使用 DMG，Windows 使用安装程序，Linux 使用 AppImage；请按系统和芯片类型选择。</p></details>
+      <details open><summary>我完全不会编程，也能使用吗？</summary><p>可以。桌面客户端的默认界面只使用“任务、收件箱、智能体、小队、交付成果”等普通工作语言，CLI、端口、Session 和内部日志默认隐藏。</p></details>
+      <details><summary>数据和任务文件会上传到云端吗？</summary><p>默认本地运行，任务与配置存放在本机 <code>~/.hermit/</code> 和智能体项目目录。只有你主动配置企业团队总线及对应授权范围后，指定的数据才会进行上报。</p></details>
+      <details><summary>安装 App 后是否还需要 Node.js 或 npm？</summary><p>不需要。桌面安装包包含 AgentCLI、Node 运行能力、cc-connect 和 Pi。没有 Claude Code 或 Codex 时，客户端会优先使用内置 Pi。</p></details>
+      <details><summary>为什么终端里暂时找不到 agentcli？</summary><p>客户端会创建 <code>~/.hermit/bin/agentcli</code>，并在已有 PATH 的可写标准目录中创建安全链接。如果系统没有可写目录或已有同名用户命令，客户端不会覆盖；此时可直接运行完整路径。</p></details>
+      <details><summary>当前有哪些桌面版本？</summary><p>当前正式桌面客户端首先提供 macOS Apple Silicon DMG；macOS Intel、Windows 和 Linux 目前提供独立 ZIP 包。后续会继续补齐对应桌面安装器。</p></details>
     </section>
   </main>
 
   <footer class="footer">
     <div class="footer-inner">
-      <a class="brand" href="#top"><img class="brand-mark" src="icon.png?v=1.10.1" alt="" /><span>AgentCLI</span></a>
+      <a class="brand" href="#top"><img class="brand-mark" src="icon.png" alt="" /><span>AgentCLI</span></a>
       <div class="footer-links"><a href="#download">下载</a><a href="#advanced">高级用户</a><a href="https://github.com/yancyuu/agentcli">GitHub</a><span>© 2026 AgentCLI</span></div>
     </div>
   </footer>
 
   <script>
-    const DOWNLOADS = {"macArm":{"label":"macOS 客户端","shortLabel":"macOS Apple Silicon","detail":"Apple Silicon · DMG · 211 MB","filename":"AgentCLI-1.10.1-arm64.dmg","href":"https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-arm64.dmg","kind":"desktop"},"macIntel":{"label":"macOS Intel 客户端","shortLabel":"macOS Intel","detail":"Intel x64 · DMG · 216 MB","filename":"AgentCLI-1.10.1-x64.dmg","href":"https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-x64.dmg","kind":"desktop"},"windows":{"label":"Windows x64 客户端","shortLabel":"Windows x64","detail":"Windows x64 · 安装程序 · 187 MB","filename":"AgentCLI-Setup-1.10.1-x64.exe","href":"https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-Setup-1.10.1-x64.exe","kind":"desktop"},"windowsArm":{"label":"Windows ARM64 客户端","shortLabel":"Windows ARM64","detail":"Windows ARM64 · 安装程序 · 179 MB","filename":"AgentCLI-Setup-1.10.1-arm64.exe","href":"https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-Setup-1.10.1-arm64.exe","kind":"desktop"},"linux":{"label":"Linux x64 客户端","shortLabel":"Linux x64","detail":"Linux x64 · AppImage · 198 MB","filename":"AgentCLI-1.10.1-x86_64.AppImage","href":"https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-x86_64.AppImage","kind":"desktop"},"linuxArm":{"label":"Linux ARM64 客户端","shortLabel":"Linux ARM64","detail":"Linux ARM64 · AppImage · 197 MB","filename":"AgentCLI-1.10.1-arm64.AppImage","href":"https://github.com/yancyuu/agentcli/releases/download/1.10.1/AgentCLI-1.10.1-arm64.AppImage","kind":"desktop"}};
+    const DOWNLOADS = {"macArm":{"label":"macOS 客户端","shortLabel":"macOS Apple Silicon","detail":"Apple Silicon · DMG · 208 MB","filename":"AgentCLI-1.9.80-arm64.dmg","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/AgentCLI-1.9.80-arm64.dmg","kind":"desktop"},"macIntel":{"label":"macOS Intel 独立包","shortLabel":"macOS Intel","detail":"Intel x64 · ZIP · 131 MB","filename":"agentcli-macos-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-macos-x64.zip","kind":"portable"},"windows":{"label":"Windows 独立包","shortLabel":"Windows x64","detail":"Windows x64 · ZIP · 123 MB","filename":"agentcli-windows-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-windows-x64.zip","kind":"portable"},"linux":{"label":"Linux 独立包","shortLabel":"Linux x64","detail":"Linux x64 · ZIP · 136 MB","filename":"agentcli-linux-x64.zip","href":"https://github.com/yancyuu/agentcli/releases/download/1.9.80/agentcli-linux-x64.zip","kind":"portable"}};
 
     function updateDownload(key) {
       const item = DOWNLOADS[key] || DOWNLOADS.macArm;
       const isDesktop = item.kind === 'desktop';
       document.getElementById('recommendedTitle').textContent = item.label;
-      document.getElementById('recommendedDetail').textContent = item.detail + ' · v1.10.1';
+      document.getElementById('recommendedDetail').textContent = item.detail + ' · v1.9.80';
       document.getElementById('recommendedDownload').href = item.href;
       document.getElementById('recommendedDownload').textContent = '下载' + item.label;
       document.getElementById('platformSelect').value = key;
-      document.getElementById('downloadNote').textContent = key === 'macArm' || key === 'macIntel'
-        ? '下载后打开 DMG，将 AgentCLI 拖入“应用程序”。当前构建尚未经过 Apple 公证；若首次打开被拦截，请右键 AgentCLI，选择“打开”并确认，无需关闭系统安全保护。'
-        : isDesktop
-          ? '下载后打开安装文件，并按系统提示完成安装。当前测试版尚未完成商业代码签名，请核对下载来源与系统提示。'
-          : '当前提供免 Node.js 的 ZIP 便携版；解压后按包内说明运行。';
+      document.getElementById('downloadNote').textContent = isDesktop
+        ? '下载后打开 DMG，将 AgentCLI 拖入“应用程序”。'
+        : '当前系统提供免 Node.js 的独立 ZIP 包；解压后按包内说明运行。';
       document.getElementById('heroDownload').href = item.href;
       document.getElementById('heroDownloadText').textContent = '下载' + item.label;
-      document.getElementById('heroDownloadContext').textContent = '当前显示：' + item.shortLabel + ' · ' + item.detail + '。下载前请确认系统和芯片类型。';
+      document.getElementById('heroDownloadContext').textContent = '已识别：' + item.shortLabel + ' · ' + item.detail;
     }
 
     function detectBasicPlatform() {
@@ -519,14 +508,10 @@
 
     async function detectPlatform() {
       let key = detectBasicPlatform();
-      if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+      if (key === 'macArm' && navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
         try {
           const values = await navigator.userAgentData.getHighEntropyValues(['architecture', 'bitness']);
-          const architecture = String(values.architecture).toLowerCase();
-          const isArm = architecture.includes('arm') || architecture.includes('aarch');
-          if (key === 'macArm' && architecture.includes('x86')) key = 'macIntel';
-          else if (key === 'windows' && isArm) key = 'windowsArm';
-          else if (key === 'linux' && isArm) key = 'linuxArm';
+          if (String(values.architecture).toLowerCase().includes('x86')) key = 'macIntel';
         } catch (_) {
           // Safari does not expose CPU architecture. Modern macOS defaults to Apple Silicon.
         }

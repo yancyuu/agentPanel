@@ -23,7 +23,9 @@ export function formatNumber(value) {
 }
 
 function hasField(object, field) {
-  return object && typeof object === 'object' && Object.prototype.hasOwnProperty.call(object, field);
+  return (
+    object && typeof object === 'object' && Object.prototype.hasOwnProperty.call(object, field)
+  );
 }
 
 function finiteNumber(value) {
@@ -45,7 +47,8 @@ function providerParts(metrics) {
 export function cursorPendingRows(upload) {
   if (!upload || typeof upload !== 'object') return [];
   const lastError = typeof upload.lastError === 'string' ? upload.lastError.trim() : '';
-  const hasPending = hasField(upload, 'pending') && upload.pending !== undefined && upload.pending !== null;
+  const hasPending =
+    hasField(upload, 'pending') && upload.pending !== undefined && upload.pending !== null;
   const pending = hasPending ? Number(upload.pending) : NaN;
   if (lastError && (!hasPending || !Number.isFinite(pending) || pending <= 0)) {
     const message = /HTTP\s*(401|403)|授权不可用/u.test(lastError)
@@ -58,12 +61,94 @@ export function cursorPendingRows(upload) {
   // Express the backlog in tokens — its real cost — when the scan reported
   // per-message usage. Falls back to a message count for channels / legacy
   // data that carry no usage, so the row never goes empty.
-  const hasTok = hasField(upload, 'pendingTokens') && upload.pendingTokens !== undefined && upload.pendingTokens !== null;
+  const hasTok =
+    hasField(upload, 'pendingTokens') &&
+    upload.pendingTokens !== undefined &&
+    upload.pendingTokens !== null;
   const pendingTokens = hasTok ? Number(upload.pendingTokens) : NaN;
   if (Number.isFinite(pendingTokens) && pendingTokens > 0) {
     return [['待上报', `Token ${formatNumber(pendingTokens)}`, 'warn']];
   }
   return [['待上报', `消息 ${formatNumber(pending)}`, 'warn']];
+}
+
+const LOCAL_PROVIDER_LABELS = [
+  ['claudecode', 'Claude Code'],
+  ['codex', 'Codex'],
+  ['pi', 'Pi'],
+];
+
+function localUsageRow(telemetry) {
+  const local = telemetry && typeof telemetry === 'object' ? telemetry : {};
+  const allMessages = hasField(local, 'messages') ? finiteNumber(local.messages) : NaN;
+  const allTokens = hasField(local, 'totalTokens') ? finiteNumber(local.totalTokens) : NaN;
+  const recentMessages = hasField(local, 'recentMessages')
+    ? finiteNumber(local.recentMessages)
+    : NaN;
+  const recentTokens = hasField(local, 'recentTokensTotal')
+    ? finiteNumber(local.recentTokensTotal)
+    : NaN;
+  const useRecent = Number.isFinite(recentMessages) || Number.isFinite(recentTokens);
+  const label = useRecent ? '本地（最近 7 天）' : '本地';
+  const providerMetrics = useRecent ? local.recentByProvider : local.byProvider;
+  const segments = LOCAL_PROVIDER_LABELS.flatMap(([provider, providerLabel]) => {
+    const parts = providerParts(providerMetrics?.[provider]);
+    return parts.length ? [`${providerLabel} ${parts.join(' · ')}`] : [];
+  });
+  if (segments.length) return [label, segments.join(' ｜ '), 'info'];
+
+  const messages = useRecent ? recentMessages : allMessages;
+  const tokens = useRecent ? recentTokens : allTokens;
+  const parts = [];
+  if (Number.isFinite(messages)) parts.push(`消息 ${formatNumber(messages)}`);
+  if (Number.isFinite(tokens)) parts.push(`Token ${formatNumber(tokens)}`);
+  return parts.length ? [label, parts.join(' · '), 'info'] : null;
+}
+
+function serverFailureSuffix(authoritative) {
+  if (!authoritative.httpStatus) return authoritative.error || '无响应';
+  let suffix = `HTTP ${authoritative.httpStatus}`;
+  if (authoritative.body) suffix += ` · ${authoritative.body}`;
+  return suffix;
+}
+
+function serverUsageRows(authoritative) {
+  if (!authoritative || typeof authoritative !== 'object') return [];
+  if (!authoritative.ok) {
+    return [
+      ['服务端（全量）', `读取 /report/usage 失败：${serverFailureSuffix(authoritative)}`, 'error'],
+    ];
+  }
+
+  const totals =
+    authoritative.totals && typeof authoritative.totals === 'object' ? authoritative.totals : {};
+  const rows = [];
+  const parts = [];
+  const hasMessages = hasField(totals, 'messages') || hasField(authoritative, 'messages');
+  const hasTokens =
+    hasField(totals, 'totalTokens') ||
+    hasField(totals, 'tokens') ||
+    hasField(authoritative, 'totalTokens') ||
+    hasField(authoritative, 'tokensTotal');
+  const messages = hasMessages ? finiteNumber(totals.messages ?? authoritative.messages) : NaN;
+  const tokens = hasTokens
+    ? finiteNumber(
+        totals.totalTokens ??
+          totals.tokens ??
+          authoritative.totalTokens ??
+          authoritative.tokensTotal
+      )
+    : NaN;
+  if (Number.isFinite(messages)) parts.push(`消息 ${formatNumber(messages)}`);
+  if (Number.isFinite(tokens)) parts.push(`Token ${formatNumber(tokens)}`);
+  if (parts.length) rows.push(['服务端（全量，不限 7 天）', parts.join(' · '), 'info']);
+
+  const hasRejected = hasField(totals, 'rejected') || hasField(authoritative, 'rejected');
+  const rejected = hasRejected ? finiteNumber(totals.rejected ?? authoritative.rejected) : NaN;
+  if (Number.isFinite(rejected) && rejected > 0) {
+    rows.push(['服务端拒绝', formatNumber(rejected), 'error']);
+  }
+  return rows;
 }
 
 /**
@@ -72,71 +157,8 @@ export function cursorPendingRows(upload) {
  * server receive" needs. Cursor backlog is rendered separately.
  */
 export function localServerRows(telemetry, authoritative) {
-  const rows = [];
-  const local = telemetry && typeof telemetry === 'object' ? telemetry : {};
-  const locMsg = hasField(local, 'messages') ? finiteNumber(local.messages) : NaN;
-  const locTok = hasField(local, 'totalTokens') ? finiteNumber(local.totalTokens) : NaN;
-  // 本地 — rolling 7-day volume. The worker ships recentMessages/
-  // recentTokensTotal summed over the last 7 days (RECENT_DAYS=7 in the parser,
-  // cutoff7d in UsageTelemetryService). Falls back to the all-time tally under
-  // a plain 本地 label only for a stale pre-update status.
-  const recentMsg = hasField(local, 'recentMessages') ? finiteNumber(local.recentMessages) : NaN;
-  const recentTok = hasField(local, 'recentTokensTotal') ? finiteNumber(local.recentTokensTotal) : NaN;
-  const useRecent = Number.isFinite(recentMsg) || Number.isFinite(recentTok);
-  const localLabel = useRecent ? '本地（最近 7 天）' : '本地';
-  const localMsg = useRecent ? recentMsg : locMsg;
-  const localTok = useRecent ? recentTok : locTok;
-
-  // Deliberately omit sessions: local JSONL files and server conversation
-  // ledgers do not share one stable cardinality.
-  const providerMetrics = useRecent ? local.recentByProvider : local.byProvider;
-  const claudecodeParts = providerParts(providerMetrics?.claudecode);
-  const codexParts = providerParts(providerMetrics?.codex);
-  if (claudecodeParts.length || codexParts.length) {
-    const segments = [];
-    if (claudecodeParts.length) segments.push(`Claude Code ${claudecodeParts.join(' · ')}`);
-    if (codexParts.length) segments.push(`Codex ${codexParts.join(' · ')}`);
-    rows.push([localLabel, segments.join(' ｜ '), 'info']);
-  } else {
-    const localParts = [];
-    if (Number.isFinite(localMsg)) localParts.push(`消息 ${formatNumber(localMsg)}`);
-    if (Number.isFinite(localTok)) localParts.push(`Token ${formatNumber(localTok)}`);
-    if (localParts.length) rows.push([localLabel, localParts.join(' · '), 'info']);
-  }
-
-  // 服务端 — what the server received. Omit entirely when /report/usage wasn't read.
-  let srvMsg = NaN;
-  let srvTok = NaN;
-  if (authoritative && typeof authoritative === 'object') {
-    if (authoritative.ok) {
-      const totals = authoritative.totals && typeof authoritative.totals === 'object' ? authoritative.totals : {};
-      const hasSrvMsg = hasField(totals, 'messages') || hasField(authoritative, 'messages');
-      const hasSrvTok =
-        hasField(totals, 'totalTokens') ||
-        hasField(totals, 'tokens') ||
-        hasField(authoritative, 'totalTokens') ||
-        hasField(authoritative, 'tokensTotal');
-      srvMsg = hasSrvMsg ? finiteNumber(totals.messages ?? authoritative.messages) : NaN;
-      srvTok = hasSrvTok
-        ? finiteNumber(totals.totalTokens ?? totals.tokens ?? authoritative.totalTokens ?? authoritative.tokensTotal)
-        : NaN;
-      const srvParts = [];
-      if (Number.isFinite(srvMsg)) srvParts.push(`消息 ${formatNumber(srvMsg)}`);
-      if (Number.isFinite(srvTok)) srvParts.push(`Token ${formatNumber(srvTok)}`);
-      if (srvParts.length) rows.push(['服务端（全量，不限 7 天）', srvParts.join(' · '), 'info']);
-      const rejected = hasField(totals, 'rejected') || hasField(authoritative, 'rejected')
-        ? finiteNumber(totals.rejected ?? authoritative.rejected)
-        : NaN;
-      if (Number.isFinite(rejected) && rejected > 0) rows.push(['服务端拒绝', formatNumber(rejected), 'error']);
-    } else {
-      const suffix = authoritative.httpStatus
-        ? `HTTP ${authoritative.httpStatus}${authoritative.body ? ` · ${authoritative.body}` : ''}`
-        : authoritative.error || '无响应';
-      rows.push(['服务端（全量）', `读取 /report/usage 失败：${suffix}`, 'error']);
-    }
-  }
-
-  return rows;
+  const localRow = localUsageRow(telemetry);
+  return [...(localRow ? [localRow] : []), ...serverUsageRows(authoritative)];
 }
 
 /**
@@ -151,7 +173,8 @@ export function localServerRows(telemetry, authoritative) {
 export function serverUsageUnauthorized(authoritativeUsage, remoteUsage) {
   if (authoritativeUsage?.httpStatus === 401 || authoritativeUsage?.httpStatus === 403) return true;
   const remoteErrors = Array.isArray(remoteUsage?.errors) ? remoteUsage.errors : [];
-  if (remoteErrors.some((error) => error?.httpStatus === 401 || error?.httpStatus === 403)) return true;
+  if (remoteErrors.some((error) => error?.httpStatus === 401 || error?.httpStatus === 403))
+    return true;
   // Fallback: some transports surface the status only inside the error/body text.
   const texts = [
     authoritativeUsage?.error,

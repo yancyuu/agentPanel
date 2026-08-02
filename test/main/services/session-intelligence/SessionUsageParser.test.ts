@@ -4,12 +4,11 @@ import * as path from 'path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { scanProjectStats, scanSessions } from '@main/services/session-intelligence/SessionUsageParser';
 import {
-  encodePath,
-  encodePathPortable,
-  setClaudeBasePathOverride,
-} from '@main/utils/pathDecoder';
+  scanProjectStats,
+  scanSessions,
+} from '@main/services/session-intelligence/SessionUsageParser';
+import { encodePath, encodePathPortable, setClaudeBasePathOverride } from '@main/utils/pathDecoder';
 
 let tmpDir: string;
 let claudeBase: string;
@@ -80,6 +79,7 @@ beforeEach(() => {
   claudeBase = path.join(tmpDir, '.claude');
   fs.mkdirSync(path.join(claudeBase, 'projects'), { recursive: true });
   process.env.CODEX_HOME = path.join(tmpDir, '.codex');
+  process.env.PI_CODING_AGENT_SESSION_DIR = path.join(tmpDir, '.pi', 'agent', 'sessions');
   setClaudeBasePathOverride(claudeBase);
 });
 
@@ -87,6 +87,7 @@ afterEach(() => {
   vi.useRealTimers();
   setClaudeBasePathOverride(null);
   delete process.env.CODEX_HOME;
+  delete process.env.PI_CODING_AGENT_SESSION_DIR;
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -95,7 +96,10 @@ describe('scanProjectStats', () => {
     const workDir = path.join(tmpDir, 'hermit_project');
     const portableDir = encodePathPortable(workDir);
     expect(portableDir).not.toBe(encodePath(workDir));
-    writeSessionJsonl(path.join(projectDirFor(workDir, portableDir), 'session-portable.jsonl'), workDir);
+    writeSessionJsonl(
+      path.join(projectDirFor(workDir, portableDir), 'session-portable.jsonl'),
+      workDir
+    );
 
     const stats = await scanProjectStats(workDir);
 
@@ -214,16 +218,17 @@ describe('scanSessions', () => {
     const workDir = path.join(tmpDir, 'recent-window-project');
     const sessionPath = path.join(projectDirFor(workDir), 'session-recent-window.jsonl');
     fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
-    const assistantLine = (timestamp: string, tokens: number) => JSON.stringify({
-      type: 'assistant',
-      cwd: workDir,
-      timestamp,
-      message: {
-        role: 'assistant',
-        content: `usage ${tokens}`,
-        usage: { input_tokens: tokens, output_tokens: 0, total_tokens: tokens },
-      },
-    });
+    const assistantLine = (timestamp: string, tokens: number) =>
+      JSON.stringify({
+        type: 'assistant',
+        cwd: workDir,
+        timestamp,
+        message: {
+          role: 'assistant',
+          content: `usage ${tokens}`,
+          usage: { input_tokens: tokens, output_tokens: 0, total_tokens: tokens },
+        },
+      });
     fs.writeFileSync(
       sessionPath,
       [
@@ -292,6 +297,124 @@ describe('scanSessions', () => {
     expect(result.sessions.some((session) => session.provider === 'codex')).toBe(true);
   });
 
+  it('includes Pi usage and deduplicates entries copied by clone/fork sessions', async () => {
+    const piSessionsRoot = process.env.PI_CODING_AGENT_SESSION_DIR!;
+    const projectPath = path.join(tmpDir, 'pi-project');
+    const projectDir = path.join(piSessionsRoot, '--tmp-pi-project--');
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    const originalMessages = [
+      {
+        type: 'message',
+        id: 'user0001',
+        parentId: null,
+        timestamp: '2026-07-20T00:00:01.000Z',
+        message: { role: 'user', content: 'Inspect Pi usage', timestamp: 1_784_505_601_000 },
+      },
+      {
+        type: 'message',
+        id: 'assist01',
+        parentId: 'user0001',
+        timestamp: '2026-07-20T00:00:02.000Z',
+        message: {
+          role: 'assistant',
+          provider: 'openai',
+          model: 'gpt-test',
+          timestamp: 1_784_505_602_000,
+          content: [{ type: 'toolCall', id: 'call-1', name: 'read', arguments: {} }],
+          usage: {
+            input: 10,
+            output: 2,
+            cacheRead: 3,
+            cacheWrite: 1,
+            totalTokens: 16,
+          },
+        },
+      },
+    ];
+    const originalPath = path.join(
+      projectDir,
+      '2026-07-20T00-00-00-000Z_00000000-0000-0000-0000-000000000001.jsonl'
+    );
+    fs.writeFileSync(
+      originalPath,
+      [
+        {
+          type: 'session',
+          version: 3,
+          id: '00000000-0000-0000-0000-000000000001',
+          timestamp: '2026-07-20T00:00:00.000Z',
+          cwd: projectPath,
+        },
+        ...originalMessages,
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n') + '\n'
+    );
+
+    fs.writeFileSync(
+      path.join(projectDir, '2026-07-20T01-00-00-000Z_00000000-0000-0000-0000-000000000002.jsonl'),
+      [
+        {
+          type: 'session',
+          version: 3,
+          id: '00000000-0000-0000-0000-000000000002',
+          timestamp: '2026-07-20T01:00:00.000Z',
+          cwd: projectPath,
+          parentSession: originalPath,
+        },
+        ...originalMessages,
+        {
+          type: 'message',
+          id: 'user0002',
+          parentId: 'assist01',
+          timestamp: '2026-07-20T01:00:01.000Z',
+          message: { role: 'user', content: 'Continue', timestamp: 1_784_509_201_000 },
+        },
+        {
+          type: 'message',
+          id: 'assist02',
+          parentId: 'user0002',
+          timestamp: '2026-07-20T01:00:02.000Z',
+          message: {
+            role: 'assistant',
+            provider: 'anthropic',
+            model: 'claude-test',
+            timestamp: 1_784_509_202_000,
+            content: [{ type: 'text', text: 'Done' }],
+            usage: {
+              input: 5,
+              output: 1,
+              cacheRead: 2,
+              cacheWrite: 0,
+              totalTokens: 8,
+            },
+          },
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n') + '\n'
+    );
+
+    const result = await scanSessions(Date.parse('2026-07-20T12:00:00.000Z'));
+
+    expect(result.aggregate.byProvider.pi).toMatchObject({
+      sessions: 2,
+      messages: 4,
+      tokensIn: 15,
+      tokensOut: 3,
+      cacheRead: 5,
+      cacheCreation: 1,
+      tokensTotal: 24,
+    });
+    expect(result.aggregate.tokens.total).toBe(24);
+    expect(result.aggregate.events7d.filter((event) => event.provider === 'pi')).toHaveLength(2);
+    expect(result.sessions.filter((session) => session.provider === 'pi')).toHaveLength(2);
+    expect(result.sessions.find((session) => session.relPath.includes('0001'))?.toolCalls).toEqual({
+      read: 1,
+    });
+  });
+
   it('does not sum cumulative total_token_usage snapshots (no double-count)', async () => {
     // Real Codex logs can carry ONLY cumulative `total_token_usage` (no
     // `last_token_usage`). Three snapshots 100 -> 200 -> 300 are cumulative;
@@ -300,14 +423,21 @@ describe('scanSessions', () => {
     process.env.CODEX_HOME = codexHome;
     const sessionDir = path.join(codexHome, 'sessions', '2026', '07', '02');
     fs.mkdirSync(sessionDir, { recursive: true });
-    const tokenLine = (cumulative: number, ts: string) => JSON.stringify({
-      timestamp: ts,
-      type: 'event_msg',
-      payload: {
-        type: 'token_count',
-        info: { total_token_usage: { input_tokens: cumulative, output_tokens: 0, total_tokens: cumulative } },
-      },
-    });
+    const tokenLine = (cumulative: number, ts: string) =>
+      JSON.stringify({
+        timestamp: ts,
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: cumulative,
+              output_tokens: 0,
+              total_tokens: cumulative,
+            },
+          },
+        },
+      });
     const base = '2026-07-02T00:';
     fs.writeFileSync(
       path.join(sessionDir, 'rollout-cumulative.jsonl'),
