@@ -169,10 +169,6 @@ vi.mock('@renderer/components/team/attachments/SourceMessageAttachments', () => 
   SourceMessageAttachments: () => null,
 }));
 
-vi.mock('@renderer/components/team/taskLogs/TaskLogsPanel', () => ({
-  TaskLogsPanel: () => null,
-}));
-
 import { TaskDetailDialog } from '@renderer/components/team/dialogs/TaskDetailDialog';
 import { TaskDetailPanel } from '@renderer/components/team/dialogs/TaskDetailPanel';
 

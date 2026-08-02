@@ -337,7 +337,11 @@ const FolderBrowser = ({ value, onChange, fieldError }: FolderBrowserProps): Rea
             <Button variant="outline" onClick={() => setOpen(false)}>
               取消
             </Button>
-            <Button onClick={handleConfirm} disabled={!currentPath.trim()}>
+            <Button
+              onClick={handleConfirm}
+              disabled={!currentPath.trim()}
+              className="bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent)] hover:opacity-90 disabled:opacity-40"
+            >
               选择
             </Button>
           </DialogFooter>

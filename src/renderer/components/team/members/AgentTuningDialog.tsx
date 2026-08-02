@@ -27,6 +27,8 @@ function formatTime(value: string): string {
   return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }
 
+const REPLY_TIMEOUT_MS = 90_000;
+
 export const AgentTuningDialog = ({
   open,
   teamName,
@@ -44,6 +46,17 @@ export const AgentTuningDialog = ({
     () => allMessages.filter((message) => message.conversationId === conversationId),
     [allMessages, conversationId]
   );
+
+  // 最后一条是我发的 → agent 尚未回复（流式回复落进 messages 后自动解除）
+  const lastMessage = messages[messages.length - 1];
+  const awaitingReply = Boolean(lastMessage && lastMessage.from === 'user');
+  const [replyTimedOut, setReplyTimedOut] = useState(false);
+  useEffect(() => {
+    setReplyTimedOut(false);
+    if (!open || !awaitingReply || sending) return;
+    const timer = setTimeout(() => setReplyTimedOut(true), REPLY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [open, awaitingReply, sending, lastMessage?.messageId]);
 
   useEffect(() => {
     if (!open) return;
@@ -87,8 +100,33 @@ export const AgentTuningDialog = ({
           ref={scrollRef}
           className="min-h-0 flex-1 overflow-y-auto border-y border-[var(--color-border-subtle)] py-2"
         >
+          {messages.length > 0 && (sending || awaitingReply) ? (
+            <div
+              className="border-b border-[var(--color-border-subtle)] px-1 py-3"
+              data-testid="tuning-typing"
+            >
+              <div className="mb-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                <span className="font-medium text-[var(--color-text-secondary)]">
+                  {member.name}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+                <span className="inline-flex gap-1" aria-hidden>
+                  <span className="size-1.5 animate-pulse rounded-full bg-indigo-400" />
+                  <span className="size-1.5 animate-pulse rounded-full bg-indigo-400 [animation-delay:150ms]" />
+                  <span className="size-1.5 animate-pulse rounded-full bg-indigo-400 [animation-delay:300ms]" />
+                </span>
+                {sending ? '正在发送…' : '正在输入…'}
+              </div>
+            </div>
+          ) : null}
           {messages.length === 0 ? (
             <div className="flex h-full min-h-64 flex-col items-center justify-center px-8 text-center text-[var(--color-text-muted)]">
+              {sending ? (
+                <p className="text-sm" data-testid="tuning-sending-empty">
+                  正在发送…
+                </p>
+              ) : null}
               <p className="text-sm">告诉它你希望怎么改</p>
               <p className="mt-1 text-xs leading-5 opacity-75">
                 例如：“回答再简短一点”“先给结论，再解释原因”“以后不要主动修改文件”。
@@ -132,6 +170,11 @@ export const AgentTuningDialog = ({
             autoFocus
           />
           {sendError ? <p className="mb-2 text-xs text-red-500">{sendError}</p> : null}
+          {replyTimedOut ? (
+            <p className="mb-2 text-xs text-amber-500" data-testid="tuning-reply-timeout">
+              等待回复超时：{member.name} 可能未在运行，可到「运行时」设置检查后再试。
+            </p>
+          ) : null}
           <div className="flex items-center justify-between border-t border-[var(--color-border-subtle)] pt-3">
             <span className="text-[11px] text-[var(--color-text-muted)]">
               Enter 发送，Shift + Enter 换行
@@ -143,7 +186,7 @@ export const AgentTuningDialog = ({
               className="inline-flex h-8 items-center gap-1.5 rounded-full bg-indigo-600 px-3 text-xs font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Send size={13} />
-              {sending ? '发送中…' : '发送'}
+              {sending ? '正在发送…' : awaitingReply ? '等待回复…' : '发送'}
             </button>
           </div>
         </div>

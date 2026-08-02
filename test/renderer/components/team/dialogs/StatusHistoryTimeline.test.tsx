@@ -91,4 +91,25 @@ describe('WorkflowTimeline', () => {
     const host = renderTimeline([]);
     expect(host.textContent).toContain('暂无流程记录');
   });
+
+  it('兼容 at 字段的老事件（不再显示 ??:??）', () => {
+    const legacyEvent = {
+      id: 'e-legacy',
+      type: 'review_approved',
+      from: 'review',
+      to: 'approved',
+      // 老数据/种子数据：时间在 at 字段，无 timestamp
+      at: '2026-07-31T09:30:00.000Z',
+      timestamp: undefined,
+    } as unknown as TaskHistoryEvent;
+    const host = renderTimeline([legacyEvent]);
+    const expected = new Date('2026-07-31T09:30:00.000Z').toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    expect(host.textContent).toContain(expected);
+    expect(host.textContent).not.toContain('??:??');
+  });
 });

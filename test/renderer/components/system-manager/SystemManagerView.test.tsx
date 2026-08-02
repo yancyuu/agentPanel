@@ -567,4 +567,42 @@ describe('SystemManagerView', () => {
 
     act(() => root.unmount());
   });
+
+  it('全盘扫描 prompt 已收窄为核心健康检查（防 pi 超时）', async () => {
+    getStatusMock.mockResolvedValue(baseStatus());
+    getConfigMock.mockResolvedValue(baseConfig());
+    mockAdminLoopRuntime();
+    fetchTeamsMock.mockResolvedValue(undefined);
+
+    const { host, root } = renderSystemManager();
+    await act(async () => {
+      root.render(<SystemManagerView />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      Array.from(host.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('开始全盘扫描'))
+        ?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const runCall = diagnosticFetchMock.mock.calls.find(([url, init]) =>
+      String(url).endsWith('/api/system-manager/diagnostics/run') &&
+      (init as RequestInit | undefined)?.method === 'POST'
+    );
+    expect(runCall).toBeDefined();
+    const body = String((runCall?.[1] as RequestInit).body);
+    expect(body).toContain('核心健康检查');
+    expect(body).toContain('不要扩展范围');
+    expect(body).not.toContain('记忆漂移');
+    expect(body).not.toContain('临时文件');
+    expect(body).not.toContain('脏 worktree');
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
 });

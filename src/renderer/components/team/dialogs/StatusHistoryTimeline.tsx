@@ -16,6 +16,12 @@ interface WorkflowTimelineProps {
   memberColorMap?: Map<string, string>;
 }
 
+/** 事件时间：timestamp 优先，兼容老数据的 at 字段 */
+function eventTimeOf(event: TaskHistoryEvent): string | undefined {
+  const candidate = event.timestamp ?? (event as unknown as { at?: string }).at;
+  return typeof candidate === 'string' && candidate ? candidate : undefined;
+}
+
 export const WorkflowTimeline = ({ events, memberColorMap }: WorkflowTimelineProps) => {
   if (events.length === 0) {
     return <div className="px-3 py-2 text-xs text-[var(--color-text-muted)]">暂无流程记录</div>;
@@ -25,7 +31,9 @@ export const WorkflowTimeline = ({ events, memberColorMap }: WorkflowTimelinePro
     <div className="px-3 py-2">
       {events.map((event, idx) => {
         const isLast = idx === events.length - 1;
-        const time = formatTime(event.timestamp);
+        // 兼容老数据/种子数据：部分事件的时间在 at 字段
+        const eventTime = eventTimeOf(event);
+        const time = eventTime ? formatTime(eventTime) : '??:??';
 
         return (
           <div key={event.id} className="flex">
@@ -55,7 +63,7 @@ export const WorkflowTimeline = ({ events, memberColorMap }: WorkflowTimelinePro
                 </div>
               </TooltipTrigger>
               <TooltipContent side="bottom">
-                {new Date(event.timestamp).toLocaleString()}
+                {eventTime ? new Date(eventTime).toLocaleString() : '时间未知'}
               </TooltipContent>
             </Tooltip>
           </div>

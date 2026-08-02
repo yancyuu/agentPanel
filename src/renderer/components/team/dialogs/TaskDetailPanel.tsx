@@ -2,12 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from '@renderer/api';
 import { MarkdownViewer } from '@renderer/components/chat/viewers/MarkdownViewer';
-import { OngoingIndicator } from '@renderer/components/common/OngoingIndicator';
 import { LightboxLockProvider } from '@renderer/components/team/attachments/ImageLightbox';
 import { CollapsibleTeamSection } from '@renderer/components/team/CollapsibleTeamSection';
 import { FileIcon } from '@renderer/components/team/editor/FileIcon';
 import { MemberBadge } from '@renderer/components/team/MemberBadge';
-import { TaskLogsPanel } from '@renderer/components/team/taskLogs/TaskLogsPanel';
 import { Badge } from '@renderer/components/ui/badge';
 import { Button } from '@renderer/components/ui/button';
 import {
@@ -52,7 +50,6 @@ import {
   type ParsedTaskLinkHref,
   parseTaskLinkHref,
 } from '@renderer/utils/taskReferenceUtils';
-import { isLeadMember, isLeadMemberName } from '@shared/utils/leadDetection';
 import { getTaskKanbanColumn } from '@shared/utils/reviewState';
 import { canDisplayTaskChanges } from '@shared/utils/taskChangeState';
 import {
@@ -78,7 +75,6 @@ import {
   Pencil,
   PenLine,
   RefreshCw,
-  ScrollText,
   SquarePen,
   Trash2,
   X,
@@ -174,11 +170,6 @@ export const TaskDetailPanel = ({
   const recordTaskChangePresence = useStore((s) => s.recordTaskChangePresence);
   const setSelectedTeamTaskChangePresence = useStore((s) => s.setSelectedTeamTaskChangePresence);
 
-  const [logsRefreshing, setLogsRefreshing] = useState(false);
-  const [executionPreviewOnline, setExecutionPreviewOnline] = useState(false);
-  const [logsSectionOpen, setLogsSectionOpen] = useState(false);
-  const [taskLogActivityActive, setTaskLogActivityActive] = useState(false);
-  const [taskLogStreamCount, setTaskLogStreamCount] = useState<number | undefined>(undefined);
   const [changesSectionOpen, setChangesSectionOpen] = useState(false);
   const [taskChangesFiles, setTaskChangesFiles] = useState<FileChangeSummary[] | null>(null);
   const [taskChangesLoading, setTaskChangesLoading] = useState(false);
@@ -252,11 +243,6 @@ export const TaskDetailPanel = ({
     setTaskChangesFiles(null);
     setTaskChangesLoading(false);
     setTaskChangesError(null);
-    setLogsRefreshing(false);
-    setExecutionPreviewOnline(false);
-    setLogsSectionOpen(false);
-    setTaskLogActivityActive(false);
-    setTaskLogStreamCount(undefined);
   }, [open, currentTask?.id]);
 
   // Track whether a lightbox is open to block Dialog dismiss events.
@@ -608,11 +594,6 @@ export const TaskDetailPanel = ({
     .map((t) => t.id);
   const isTodo = status === 'pending' && !kanbanColumn;
   const canReassign = isTodo && onOwnerChange;
-  const leadName = members.find((m) => isLeadMember(m))?.name ?? 'lead';
-  const isLeadOwnedTask =
-    (currentTask.owner ?? '').trim().toLowerCase() === leadName.trim().toLowerCase() ||
-    isLeadMemberName((currentTask.owner ?? '').trim().toLowerCase());
-  const allowLeadExecutionPreview = true;
 
   const detailContent = (
     <LightboxLockProvider value={setLightboxOpen}>
@@ -1252,42 +1233,6 @@ export const TaskDetailPanel = ({
                   : '该任务没有文件变更记录'}
               </p>
             ) : null}
-          </CollapsibleTeamSection>
-        ) : null}
-
-        {/* Execution Logs — sessions that reference this task */}
-        {!compactForInbox && variant === 'team' ? (
-          <CollapsibleTeamSection
-            key={`task-logs:${currentTask.id}`}
-            title="执行记录"
-            icon={<ScrollText size={14} />}
-            badge={taskLogStreamCount}
-            headerExtra={
-              taskLogActivityActive ? <OngoingIndicator size="sm" title="有新的任务日志" /> : null
-            }
-            contentClassName="pl-2.5 overflow-visible"
-            headerClassName="-mx-6 w-[calc(100%+3rem)]"
-            headerContentClassName="pl-6"
-            defaultOpen={false}
-            onOpenChange={setLogsSectionOpen}
-            keepMounted
-          >
-            <div className="min-w-0">
-              <TaskLogsPanel
-                teamName={teamName}
-                task={currentTask}
-                isOpen={logsSectionOpen}
-                taskSince={taskSince}
-                isExecutionRefreshing={logsRefreshing}
-                isExecutionPreviewOnline={executionPreviewOnline}
-                onRefreshingChange={setLogsRefreshing}
-                showSubagentPreview={Boolean(currentTask.owner) && !isLeadOwnedTask}
-                showLeadPreview={allowLeadExecutionPreview && isLeadOwnedTask}
-                onPreviewOnlineChange={setExecutionPreviewOnline}
-                onTaskLogActivityChange={setTaskLogActivityActive}
-                onTaskLogCountChange={setTaskLogStreamCount}
-              />
-            </div>
           </CollapsibleTeamSection>
         ) : null}
 

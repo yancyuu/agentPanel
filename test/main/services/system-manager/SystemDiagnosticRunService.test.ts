@@ -71,4 +71,46 @@ describe('SystemDiagnosticRunService', () => {
     expect((await service.getCurrent())?.result).toContain('运行环境正常');
     service.dispose();
   });
+
+  it('默认 40 分钟超时且文案可操作', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'agentcli-diagnostic-timeout-'));
+    temporaryDirectories.push(root);
+    const directCli = new FakeDirectCli();
+    const service = new SystemDiagnosticRunService({
+      hermitHome: root,
+      directCli,
+      ensureSystemManager: vi.fn(() => Promise.resolve()),
+      dispatchMessage: vi.fn(() => Promise.resolve()),
+      broadcast: vi.fn(),
+      timeoutMs: 50,
+    });
+
+    // 默认（不传 timeoutMs）应为 40 分钟
+    const defaultService = new SystemDiagnosticRunService({
+      hermitHome: root,
+      directCli,
+      ensureSystemManager: vi.fn(() => Promise.resolve()),
+      dispatchMessage: vi.fn(() => Promise.resolve()),
+      broadcast: vi.fn(),
+    });
+    expect(
+      (defaultService as unknown as { timeoutMs: number }).timeoutMs
+    ).toBe(40 * 60_000);
+
+    await service.start({
+      actionId: 'runtime-health',
+      title: '运行环境检查',
+      prompt: '只读检查',
+      workDir: root,
+    });
+    await vi.waitFor(async () => {
+      expect((await service.getCurrent())?.status).toBe('failed');
+    });
+    const current = await service.getCurrent();
+    expect(current?.error).toContain('诊断超时');
+    expect(current?.error).toContain('pi 运行时');
+    expect(directCli.killed.length).toBeGreaterThan(0);
+    service.dispose();
+    defaultService.dispose();
+  });
 });

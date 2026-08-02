@@ -84,6 +84,9 @@ describe('FolderBrowser 空目录手动输入', () => {
       (button) => button.textContent?.trim() === '选择'
     );
     expect((confirmButton as HTMLButtonElement).disabled).toBe(false);
+    // 主按钮样式：accent 实心白字，不再低对比度
+    expect(confirmButton?.className).toContain('bg-[var(--color-accent)]');
+    expect(confirmButton?.className).toContain('text-white');
     act(() => {
       confirmButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });

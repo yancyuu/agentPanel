@@ -67,7 +67,8 @@ export class SystemDiagnosticRunService {
 
   constructor(private readonly dependencies: SystemDiagnosticRunServiceDependencies) {
     this.stateFile = path.join(dependencies.hermitHome, 'system-manager', 'diagnostic-run.json');
-    this.timeoutMs = dependencies.timeoutMs ?? 20 * 60_000;
+    // pi 在用户环境可能较慢（多扩展 + 远端模型），给足 40 分钟保底
+    this.timeoutMs = dependencies.timeoutMs ?? 40 * 60_000;
     dependencies.directCli.on('event', this.handleDirectCliEvent);
   }
 
@@ -119,7 +120,11 @@ export class SystemDiagnosticRunService {
     this.dependencies.broadcast(run);
     this.timeout = setTimeout(() => {
       this.dependencies.directCli.kill(sessionKey);
-      void this.finish('failed', undefined, '诊断响应超时，请缩小扫描范围后重试。');
+      void this.finish(
+        'failed',
+        undefined,
+        '诊断超时：可缩小范围重试，或检查 pi 运行时是否加载了过多扩展。'
+      );
     }, this.timeoutMs);
 
     try {

@@ -52,19 +52,18 @@ const ALL_AGENT_FOLDERS_SCOPE = `必须覆盖所有已管理且未删除的数�
 const FULL_SCAN_ACTION: DiagnosticAction = {
   id: 'full-scan',
   title: '全盘扫描',
-  description: '一次检查记忆、临时文件、运行环境和任务状态。',
+  description: '核心健康检查：员工是否在线、任务是否积压、交付是否待审。',
   icon: ScanLine,
-  prompt: `请执行一次 AgentCLI 全盘健康扫描，并用普通用户能理解的中文输出结果。
+  // 默认收窄到核心健康检查项，避免在慢运行时（多扩展 pi + 远端模型）上超时；
+  // 记忆漂移 / 临时文件等大范围项走下方「常用扫描」按需单项执行。
+  prompt: `请执行一次 AgentCLI 核心健康检查，并用普通用户能理解的中文输出结果。
 
-${ALL_AGENT_FOLDERS_SCOPE}
-
-检查：
-1. 每个数字员工目录中的记忆、CLAUDE.md、AGENTS.md、角色说明是否重复、冲突、过期或发生记忆漂移。
-2. 每个数字员工的团队目录和实际工作目录中的临时文件、日志、截图、陈旧报告、脏 worktree 和可清理候选。
+只检查三项，不要扩展范围：
+1. 每个数字员工的运行状态：团队目录与工作目录是否可访问、运行时是否在线；不可访问的列出原因。
+2. 全局任务积压：长期无进展、等待用户补充、无人负责、交付后待审核过久的任务。
 3. Workbench、内置 AgentCLI、任务总线、运行时和外部连接是否可用。
-4. 全局任务中是否有长期无进展、等待补充、无人负责或待审核积压。
 
-输出扫描覆盖率（数字员工总数 / 已扫描 / 跳过）、逐员工结果，以及“正常 / 需关注 / 建议处理”三组汇总；每条说明发生了什么和用户下一步应点哪里。${READ_ONLY_BOUNDARY}`,
+先通过 AgentCLI 团队清单和 ~/.hermit/teams/*/team.json 建立员工清单，再逐项给出“正常 / 需关注 / 建议处理”三组汇总；每条说明发生了什么和用户下一步应点哪里。不要逐字读取员工文档内容，不要读取或输出敏感正文。${READ_ONLY_BOUNDARY}`,
 };
 
 const QUICK_DIAGNOSTICS: readonly DiagnosticAction[] = [
