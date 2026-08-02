@@ -650,7 +650,17 @@ export class DirectCliSessionManager extends EventEmitter {
     }
     const args =
       params.harness === 'pi'
-        ? ['--print', '--mode', 'text', '--no-session', '--no-approve']
+        ? // 一次性自动化调用必须裸跑：用户配置的扩展（MCP 适配器等）可能拖慢甚至挂死启动
+          [
+            '--print',
+            '--mode',
+            'text',
+            '--no-session',
+            '--no-approve',
+            '--no-extensions',
+            '--no-skills',
+            '--no-prompt-templates',
+          ]
         : [
             'exec',
             '--json',

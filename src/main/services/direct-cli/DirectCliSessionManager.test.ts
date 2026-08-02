@@ -258,7 +258,16 @@ describe('DirectCliSessionManager', () => {
     child.stdout.emit('data', 'Pi 已完成交付');
     child.emitExit(0);
 
-    expect(spawnArgs).toEqual(['--print', '--mode', 'text', '--no-session', '--no-approve']);
+    expect(spawnArgs).toEqual([
+      '--print',
+      '--mode',
+      'text',
+      '--no-session',
+      '--no-approve',
+      '--no-extensions',
+      '--no-skills',
+      '--no-prompt-templates',
+    ]);
     expect(stdin).toBe('完成任务');
     expect(events).toContainEqual(
       expect.objectContaining({ kind: 'complete', text: 'Pi 已完成交付' })
