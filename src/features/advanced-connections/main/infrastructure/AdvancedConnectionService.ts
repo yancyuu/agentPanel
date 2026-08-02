@@ -30,6 +30,16 @@ import {
   mergePermissionDecisions,
   parseProviderManifest,
 } from '../../core/domain/providerManifest';
+import { agentbusCompatibilityManifest } from '@shared/authSync/compatManifest.mjs';
+
+function compatibilityManifest(): ProviderManifestV1 {
+  return agentbusCompatibilityManifest() as ProviderManifestV1;
+}
+import {
+  isDefaultAgentbusRecord,
+  removeAuthStore,
+  writeAuthStoreThrough,
+} from '@shared/authSync/index.mjs';
 
 import {
   type ConnectionSecretStore,
@@ -306,45 +316,6 @@ function endpointUrl(baseUrl: string, endpoint: string | undefined, label: strin
   return resolved.toString();
 }
 
-function compatibilityManifest(): ProviderManifestV1 {
-  return {
-    schemaVersion: 1,
-    provider: {
-      id: 'openhermit-agentbus',
-      displayName: 'AgentBus 兼容服务',
-      description: '兼容当前 AgentBus 用户授权、用量上报与 Token 池接口。',
-    },
-    apiVersion: 'compat-v1',
-    capabilities: [
-      { id: 'identity', displayName: '内部用户授权' },
-      { id: 'team-bus', displayName: '团队总线' },
-      { id: 'reporting', displayName: '数据上报' },
-      { id: 'token-pool', displayName: 'Token 池' },
-    ],
-    authMethods: [
-      {
-        id: 'company-login',
-        type: 'device_code',
-        displayName: '公司账号登录',
-        requestedScopes: ['auth:user.id:read', 'upload:read', 'upload:write'],
-      },
-    ],
-    endpoints: {
-      authStart: '/api/v1/auth/start',
-      authPoll: '/api/v1/auth/poll',
-      authRefresh: '/api/v1/auth/refresh',
-      authMe: '/api/v1/auth/me',
-      authLogout: '/api/v1/auth/logout',
-      reportUsage: '/api/v1/report/usage',
-      reportMessages: '/api/v1/report/messages',
-      tokenCatalog: '/api/v1/token-distribution-v3/aliyun/discover',
-      tokenProvision: '/api/v1/token-distribution-v3/aliyun/auto-provision',
-      tokenOperation: '/api/v1/token-distribution-v3/aliyun/provisioning-runs/{operationId}',
-      tokenClaim: '/api/v1/token-distribution-v3/aliyun/provisioning-runs/{operationId}/receipt',
-    },
-  };
-}
-
 function tokenPayload(value: unknown, nowMs: number): TokenPayload | null {
   const payload = asRecord(value);
   const accessToken = stringValue(payload.access_token);
@@ -435,6 +406,7 @@ function providerErrorMessage(payload: Record<string, unknown>, fallback: string
 export class AdvancedConnectionService {
   private readonly rootDir: string;
   private readonly indexPath: string;
+  private readonly authStorePath: string;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;
   private readonly secretStore: ConnectionSecretStore;
@@ -448,6 +420,7 @@ export class AdvancedConnectionService {
   constructor(options: AdvancedConnectionServiceOptions) {
     this.rootDir = path.join(options.hermitHome, 'connections');
     this.indexPath = path.join(this.rootDir, 'index.json');
+    this.authStorePath = path.join(options.hermitHome, 'auth', 'openhermit.json');
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? (() => new Date());
     this.secretStore =
@@ -594,12 +567,14 @@ export class AdvancedConnectionService {
 
   async remove(connectionId: string): Promise<void> {
     this.cancelAuthAttempts(connectionId);
+    const record = await this.requireRecord(connectionId);
     await this.mutateIndex((index) => {
-      const next = index.connections.filter((record) => record.id !== connectionId);
+      const next = index.connections.filter((candidate) => candidate.id !== connectionId);
       if (next.length === index.connections.length) throw new Error('连接不存在');
       index.connections = next;
     });
     await this.secretStore.delete(connectionId);
+    await this.removeAuthStoreForCli(record);
   }
 
   async updatePermissions(
@@ -704,6 +679,7 @@ export class AdvancedConnectionService {
       }).catch(() => null);
     }
     await this.secretStore.delete(connectionId);
+    await this.removeAuthStoreForCli(record);
     const updated = await this.updateRecord(connectionId, (current) => ({
       ...current,
       state: current.manifest.authMethods.length ? 'auth_required' : 'ready',
@@ -1246,6 +1222,8 @@ export class AdvancedConnectionService {
           return;
         }
         this.attempts.delete(attempt.id);
+        const loggedIn = await this.requireRecord(attempt.connectionId).catch(() => null);
+        if (loggedIn) await this.syncAuthStoreToCli(loggedIn);
         await Promise.resolve(this.onAuthenticated?.(attempt.connectionId)).catch(() => undefined);
         return;
       }
@@ -1420,6 +1398,7 @@ export class AdvancedConnectionService {
         updatedAt: this.now().toISOString(),
       };
       await this.writeSecret(next);
+      await this.syncAuthStoreToCli(record);
       return next;
     } catch {
       await this.secretStore.delete(record.id);
@@ -1463,5 +1442,38 @@ export class AdvancedConnectionService {
 
   private async writeSecret(secret: ConnectionSecret): Promise<void> {
     await this.secretStore.put(secret.connectionId, JSON.stringify(secret));
+  }
+
+  /** App → CLI 写穿透（仅默认 AgentBus 连接；失败不阻断自身流程） */
+  private async syncAuthStoreToCli(record: StoredConnectionRecord): Promise<void> {
+    if (!isDefaultAgentbusRecord(record)) return;
+    try {
+      const secret = await this.readSecret(record.id, record);
+      if (!secret) return;
+      await writeAuthStoreThrough({
+        authStorePath: this.authStorePath,
+        record: record as never,
+        secret,
+        now: this.now().toISOString(),
+      });
+    } catch (error) {
+      console.warn(
+        '[auth-sync] App→CLI 写穿透失败（不影响本次操作）:',
+        error instanceof Error ? error.message : error
+      );
+    }
+  }
+
+  /** App 显式登出/删除默认连接时同步删除 CLI auth store */
+  private async removeAuthStoreForCli(record: StoredConnectionRecord): Promise<void> {
+    if (!isDefaultAgentbusRecord(record)) return;
+    try {
+      await removeAuthStore({ authStorePath: this.authStorePath });
+    } catch (error) {
+      console.warn(
+        '[auth-sync] 删除 CLI 登录态失败（不影响本次操作）:',
+        error instanceof Error ? error.message : error
+      );
+    }
   }
 }

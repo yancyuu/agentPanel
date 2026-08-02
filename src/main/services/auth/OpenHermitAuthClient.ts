@@ -180,6 +180,19 @@ export async function refreshAccessToken(
       updatedAt: new Date().toISOString(),
     };
     await writeAuthStore(home, refreshed);
+    // worker 刷新同样写穿透到 App 默认连接（失败不阻断）
+    try {
+      const { writeConnectionThrough } = await import('@shared/authSync/index.mjs');
+      await writeConnectionThrough({
+        connectionsDir: path.join(home, 'connections'),
+        store: refreshed as never,
+      });
+    } catch (error) {
+      console.warn(
+        '[auth-sync] worker→App 写穿透失败（不影响本次刷新）:',
+        error instanceof Error ? error.message : error
+      );
+    }
     return refreshed;
   } catch {
     return store ?? null;

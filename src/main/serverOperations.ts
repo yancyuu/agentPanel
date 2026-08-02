@@ -570,7 +570,7 @@ export function createServerOperations({
         telemetry: {
           enabled: true,
           platform: 'claudecode',
-          uploadProviders: ['claudecode', 'codex'],
+          uploadProviders: ['claudecode', 'codex', 'pi'],
           conversationUploadEnabled: false,
           conversations: {
             uploadEnabled: false,

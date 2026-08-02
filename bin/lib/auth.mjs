@@ -29,6 +29,10 @@ import {
   DEFAULT_OPENHERMIT_CLOUD_BASE_URL,
   migrateLegacyCloudBaseUrl,
 } from '../../src/shared/constants/cloudConfig.mjs';
+import {
+  clearConnectionAuth,
+  writeConnectionThrough,
+} from '../../src/shared/authSync/index.mjs';
 
 const AUTH_CALLBACK_PATH = '/oauth/openhermit/callback';
 const AUTH_STORE_SCHEMA_VERSION = 1;
@@ -189,6 +193,32 @@ function readOpenHermitAuthStatus() {
 function writeOpenHermitAuthStore(store) {
   ensureAuthStoreDir();
   atomicWriteFile(getAuthStorePath(), `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
+}
+
+// CLI → App 登录态写穿透（design D1/D3）：登录/刷新成功后同步默认 AgentBus 连接。
+// 失败只警告，绝不阻断 CLI 自身的登录流程。
+async function bridgeAuthStoreToApp(store) {
+  try {
+    await writeConnectionThrough({
+      connectionsDir: path.join(hermitHome, 'connections'),
+      store,
+    });
+  } catch (error) {
+    console.error(
+      `${brandLogPrefix()} App 登录态同步失败（不影响本次登录）：${error instanceof Error ? error.message : error}`
+    );
+  }
+}
+
+// CLI 登出：同步清除 App 默认连接登录态。
+async function bridgeLogoutToApp() {
+  try {
+    await clearConnectionAuth({ connectionsDir: path.join(hermitHome, 'connections') });
+  } catch (error) {
+    console.error(
+      `${brandLogPrefix()} App 登录态同步失败（不影响本次登出）：${error instanceof Error ? error.message : error}`
+    );
+  }
 }
 
 function deleteOpenHermitAuthStore() {
@@ -791,6 +821,7 @@ async function performRawOAuthLogin({ quiet = false } = {}) {
     const account = await fetchOAuthUserInfo(config, tokenPayload.access_token);
     const store = buildAuthStoreFromToken(config, tokenPayload, account);
     writeOpenHermitAuthStore(store);
+    await bridgeAuthStoreToApp(store);
     return authStatusFromStore(store);
   } catch (err) {
     await server.close().catch(() => undefined);
@@ -987,6 +1018,7 @@ async function performDeviceAuthLogin({ quiet = false, controlUrl = null } = {})
       normalizeHermitAuthIdentity(tokenPayload.identity) || tokenPayload.account || null;
     const store = buildAuthStoreFromToken(config, tokenPayload, account);
     writeOpenHermitAuthStore(store);
+    await bridgeAuthStoreToApp(store);
     return authStatusFromStore(store);
   } finally {
     if (interactiveCancel) {
@@ -1033,6 +1065,7 @@ async function refreshExpiredOpenHermitToken(store) {
       updatedAt: new Date().toISOString(),
     };
     writeOpenHermitAuthStore(refreshedStore);
+    await bridgeAuthStoreToApp(refreshedStore);
     return refreshedStore;
   } catch {
     // Refresh is best-effort. Keep the local store private and unchanged on network failures.
@@ -1301,6 +1334,7 @@ async function runAuthDevLogin({ exitOnDone = true, requireCode = true, quiet = 
   }
   const store = buildDevAuthStore();
   writeOpenHermitAuthStore(store);
+  await bridgeAuthStoreToApp(store);
   const auth = authStatusFromStore(store);
   const result = { ok: true, command: 'auth dev-login', hermitHome, auth };
   if (!quiet && jsonRequested) printJson(result);
@@ -1382,6 +1416,7 @@ async function runAuthLogout({ exitOnDone = true } = {}) {
     }
   }
   deleteOpenHermitAuthStore();
+  await bridgeLogoutToApp();
   const result = { ok: true, command: 'auth logout', hermitHome };
   if (jsonRequested) printJson(result);
   console.log(

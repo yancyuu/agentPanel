@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -170,6 +170,197 @@ describe('AdvancedConnectionService', () => {
     await expect(service.startAuthentication(connection.id, 'device')).rejects.toThrow(
       '授权页面必须使用 HTTPS'
     );
+  });
+
+  it('bridges App login/refresh/logout to the CLI auth store (managedDefault only)', async () => {
+    let refreshCount = 0;
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      await Promise.resolve();
+      const url = requestUrl(input);
+      if (url.endsWith('/.well-known/hermit-provider.json')) return jsonResponse({}, 404);
+      if (url.endsWith('/api/v1/auth/me') && !new Headers(init?.headers).get('Authorization')) {
+        return jsonResponse({}, 401);
+      }
+      if (url.endsWith('/api/v1/auth/start')) {
+        return jsonResponse({
+          flow_id: 'flow-1',
+          poll_secret: 'poll-secret-1',
+          authorization_url: 'https://login.company.test/authorize',
+          expires_in: 600,
+          interval: 1,
+        });
+      }
+      if (url.includes('/api/v1/auth/poll?')) {
+        return jsonResponse({
+          access_token: 'app-access-token',
+          refresh_token: 'app-refresh-token',
+          token_type: 'Bearer',
+          scopes: ['upload:read'],
+          expires_in: 30,
+        });
+      }
+      if (url.endsWith('/api/v1/auth/me')) {
+        return jsonResponse({
+          status: 'ok',
+          account: { id: 'u-1', display_name: '测试用户', tenant_name: '测试公司' },
+        });
+      }
+      if (url.endsWith('/api/v1/auth/refresh')) {
+        refreshCount += 1;
+        return jsonResponse({
+          access_token: 'app-access-token-v2',
+          refresh_token: 'app-refresh-token-v2',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        });
+      }
+      if (url.endsWith('/api/v1/auth/logout')) return jsonResponse({ ok: true });
+      if (url.endsWith('/api/v1/token-distribution-v3/aliyun/discover')) {
+        return jsonResponse({ discovery_id: 'd-1', model_apis: [] });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const authStorePath = path.join(hermitHome, 'auth', 'openhermit.json');
+    const readCliStore = async () =>
+      JSON.parse(await readFile(authStorePath, 'utf8').catch(() => 'null')) as never;
+    const service = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: fetchImpl as typeof fetch,
+      secretStore: new MemorySecretStore(),
+    });
+    const connection = await service.ensureDefaultConnection('https://bus.company.test');
+
+    // 1) App 登录 → CLI auth store 立即已登录（账号与 App 一致）
+    await service.startAuthentication(connection.id, 'company-login');
+    let cliStore = await readCliStore();
+    for (let attempt = 0; attempt < 20 && cliStore === null; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      cliStore = await readCliStore();
+    }
+    expect(cliStore).toMatchObject({
+      provider: 'openhermit',
+      issuer: 'https://bus.company.test',
+      account: { id: 'u-1', name: '测试用户', tenantName: '测试公司' },
+      token: { accessToken: 'app-access-token', refreshToken: 'app-refresh-token' },
+    });
+
+    // 2) App 刷新成功 → CLI store token 写穿透一致
+    await service.tokenCatalog(connection.id);
+    expect(refreshCount).toBe(1);
+    cliStore = await readCliStore();
+    expect(cliStore).toMatchObject({
+      token: { accessToken: 'app-access-token-v2', refreshToken: 'app-refresh-token-v2' },
+    });
+
+    // 3) App 登出 → CLI auth store 删除
+    await service.logout(connection.id);
+    expect(await readCliStore()).toBeNull();
+  });
+
+  it('does not bridge non-default connections or cascade CLI store deletion on refresh failure', async () => {
+    let refreshShouldFail = false;
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      await Promise.resolve();
+      const url = requestUrl(input);
+      if (url.endsWith('/.well-known/hermit-provider.json')) {
+        return jsonResponse({
+          schemaVersion: 1,
+          provider: { id: 'standard-provider', displayName: '标准 Provider' },
+          apiVersion: '2026-01-01',
+          capabilities: [{ id: 'identity', displayName: '授权' }],
+          authMethods: [{ id: 'device', type: 'device_code', displayName: '登录' }],
+          endpoints: {
+            authStart: '/api/auth/start',
+            authPoll: '/api/auth/poll',
+            authRefresh: '/api/auth/refresh',
+            authMe: '/api/auth/me',
+            authLogout: '/api/auth/logout',
+          },
+        });
+      }
+      if (url.endsWith('/api/auth/start')) {
+        return jsonResponse({
+          flow_id: 'flow-1',
+          poll_secret: 'poll-secret-1',
+          authorization_url: 'https://login.company.test/authorize',
+          expires_in: 600,
+          interval: 1,
+        });
+      }
+      if (url.includes('/api/auth/poll?')) {
+        return jsonResponse({
+          access_token: 'standard-access-token',
+          refresh_token: 'standard-refresh-token',
+          token_type: 'Bearer',
+          expires_in: 30,
+        });
+      }
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse({ status: 'ok', account: { id: 'u-2', display_name: '标准用户' } });
+      }
+      if (url.endsWith('/api/auth/refresh')) {
+        if (refreshShouldFail) return jsonResponse({ error: 'invalid_grant' }, 401);
+        return jsonResponse({ access_token: 'standard-access-token-v2', expires_in: 3600 });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const authStorePath = path.join(hermitHome, 'auth', 'openhermit.json');
+    const service = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: fetchImpl as typeof fetch,
+      secretStore: new MemorySecretStore(),
+    });
+
+    // 非默认连接登录：不写 CLI store（D1 只桥接 managedDefault）
+    const custom = await service.create({ baseUrl: 'https://provider.company.test' });
+    await service.startAuthentication(custom.id, 'device');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const cliStoreAfterCustomLogin = await readFile(authStorePath, 'utf8').catch(() => null);
+    expect(cliStoreAfterCustomLogin).toBeNull();
+
+    // 手工种一个 CLI store，随后 App 默认连接刷新失败：不级联删除（D2）
+    const defaultConnection = await service.ensureDefaultConnection('https://bus.company.test');
+    const { writeJsonAtomic } = await import('@shared/authSync/index.mjs');
+    await writeJsonAtomic(authStorePath, {
+      provider: 'openhermit',
+      token: { accessToken: 'cli-token', updatedAt: '2026-01-01T00:00:00.000Z' },
+    });
+    const secretStore = new MemorySecretStore();
+    void secretStore;
+    // 默认连接写入一个即将过期且刷新会失败的 secret
+    const failingService = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: fetchImpl as typeof fetch,
+      secretStore: new MemorySecretStore(),
+    });
+    const expiring = {
+      schemaVersion: 1 as const,
+      connectionId: defaultConnection.id,
+      providerId: 'openhermit-agentbus',
+      issuerOrigin: 'https://bus.company.test',
+      accessToken: 'stale-token',
+      refreshToken: 'stale-refresh',
+      tokenType: 'Bearer',
+      scopes: [],
+      expiresAt: '2020-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await (
+      failingService as never as { secretStore: { put(id: string, s: string): Promise<void> } }
+    ).secretStore.put(defaultConnection.id, JSON.stringify(expiring));
+    refreshShouldFail = true;
+    const refreshed = await (
+      failingService as never as {
+        getValidSecret(record: unknown): Promise<unknown>;
+      }
+    ).getValidSecret(defaultConnection);
+
+    expect(refreshed).toBeNull();
+    // App 自身降级（secret 删除、state 回退），但 CLI store 保留
+    const cliStore = JSON.parse(await readFile(authStorePath, 'utf8')) as {
+      token?: { accessToken?: string };
+    };
+    expect(cliStore.token?.accessToken).toBe('cli-token');
   });
 
   it('creates the default AgentBus connection only once without blocking on discovery', async () => {

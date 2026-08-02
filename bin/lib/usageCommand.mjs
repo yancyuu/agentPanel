@@ -355,7 +355,8 @@ export async function waitForOpenHermitServerReadyWithLogs(pid, timeoutMs = 30_0
 
 // --- Usage task-bus settings helpers ----------------------------------------
 
-function buildLocalUsageTaskBusConfig(current = {}) {
+// Exported for tests: old-config opt-in semantics are asserted in bin/lib/__tests__.
+export function buildLocalUsageTaskBusConfig(current = {}) {
   const existing = current && typeof current === 'object' ? current : {};
   const redis =
     existing.redis && typeof existing.redis === 'object'
@@ -370,12 +371,13 @@ function buildLocalUsageTaskBusConfig(current = {}) {
   );
   const canonicalUpload = existingTelemetry.conversationUploadEnabled;
   const legacyUpload = existingTelemetry.conversations?.uploadEnabled;
+  // 消息正文上报必须显式 opt-in：老配置缺 canonical 字段时不得默认补 true。
   const conversationUploadEnabled =
     typeof canonicalUpload === 'boolean'
       ? canonicalUpload
       : typeof legacyUpload === 'boolean'
         ? legacyUpload
-        : true;
+        : false;
   return {
     ...existing,
     enabled: Boolean(existing.enabled),

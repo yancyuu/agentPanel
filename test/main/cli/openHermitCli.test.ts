@@ -717,13 +717,13 @@ describe('AgentCLI read-only workspace commands', { timeout: 30_000 }, () => {
         OPENHERMIT_USAGE_WORKER_MODE: 'test',
         OPENHERMIT_SKIP_LAUNCHCTL: '1',
       });
+      // 消息正文上报必须显式 opt-in：usage start/stop 只开关本地扫描，
+      // 未显式开启 conversationUploadEnabled 时 reconcile 不会拉起上报 worker。
       expect(JSON.parse(reconciled.stdout)).toMatchObject({
         ok: true,
         command: 'usage reconcile',
-        reconciled: true,
+        reconciled: false,
       });
-      // 用量上报默认开启：reconcile 会把 worker 恢复到期望的运行状态
-      expect(existsSync(path.join(hermitHome, 'telemetry/worker.pid'))).toBe(true);
     });
   });
 
