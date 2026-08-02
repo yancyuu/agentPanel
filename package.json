@@ -32,6 +32,7 @@
     "dist/",
     "dist-renderer/",
     "vendor/cc-connect/",
+    "vendor/openspec/",
     "branding.json",
     "tsconfig.json",
     "package.json",
@@ -68,7 +69,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "prepare": "husky"
+    "prepare": "husky",
+    "fetch:vendor:openspec": "node ./scripts/fetch-vendor-openspec.mjs"
   },
   "lint-staged": {
     "src/**/*.{ts,tsx,js,jsx}": [
@@ -91,7 +93,8 @@
     "yaml": "^2.8.2"
   },
   "optionalDependencies": {
-    "cc-connect": "1.4.1"
+    "cc-connect": "1.4.1",
+    "@fission-ai/openspec": "1.7.0"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.0",

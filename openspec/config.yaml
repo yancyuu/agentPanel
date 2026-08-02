@@ -1,0 +1,49 @@
+schema: spec-driven
+
+# 工作台核心抽象（宪法）——创建任何工件时都必须遵守
+context: |
+  技术栈：TypeScript / React / Fastify / Electron / zustand / vitest；包管理 pnpm；可见文案简体中文。
+
+  核心概念只有 4 个，其余皆为投影（可重建，不配当概念）：
+  - 员工：干活的实体。带着自己的工作区、能力（skills/specs）、行为契约。
+  - 消息：沟通的唯一载体。append-only 日志，conversationId 串线程。任务评论已
+    删除，沟通一律走消息。
+  - 任务：工作的唯一载体。一台状态机（pending → doing → review → approved），
+    交付版本（deliveries）与反馈条目（feedbackItems）挂在任务上。评审状态以
+    historyEvents 为单一事实源，reviewState/kanbanColumn 等字段一律派生，
+    不得新增第二种事实源。
+  - 产物：沉淀的唯一载体。openspec living specs（工作流/技能/行为契约），
+    必须 git-merge 友好。
+  投影：收件箱 = 消息 × 任务；时间线 = 事件；未读 = 已读位置；调教 = 特殊前缀会话。
+
+  架构约束：
+  - 多机方向是 Git 仓库同步：任何新存储设计必须 git-merge 友好；
+    单文件 JSON 是反模式（board.json 是已知债务，不得效仿）。
+  - 引入新概念前必须回答三问：它决定忘掉什么？忘掉的东西里有没有忘不得的？
+    留下的概念是不是每个都非留不可（删掉一个会怎样）？答不上来就打回。
+  - 产品内部机制（任务状态机、评审闭环、收件箱）不套用 openspec；
+    openspec 只管「产物」。别把好抽象用成锤子。
+
+# Per-artifact rules (optional)
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
