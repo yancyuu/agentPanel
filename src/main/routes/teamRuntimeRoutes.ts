@@ -25,6 +25,8 @@ export interface DirectCliMessageInput {
   attachments?: AttachmentPayload[];
   messageId: string;
   conversationId?: string;
+  /** 显式指定本次派发的运行时；缺省按团队 manifest 的 harness */
+  harness?: 'claudecode' | 'codex' | 'pi';
 }
 
 interface TeamRuntimeOperationDependencies {
@@ -179,6 +181,8 @@ export function createTeamRuntimeOperations(
     } catch {
       // Route identity can already be the canonical local team slug.
     }
+    // 显式指定的运行时优先（如诊断固定走 pi），否则按团队 manifest
+    harness = params.harness ?? harness;
     const message = {
       text: params.text,
       attachments: params.attachments,

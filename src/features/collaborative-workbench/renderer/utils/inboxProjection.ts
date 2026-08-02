@@ -1,6 +1,6 @@
 import { getReviewStateFromTask } from '@shared/utils/reviewState';
 
-import type { GlobalTask, TaskComment } from '@shared/types';
+import type { GlobalTask } from '@shared/types';
 
 export type InboxTaskView = 'in_progress' | 'review' | 'completed';
 export type InboxAttentionKind = 'clarification' | 'unread' | 'review' | 'unassigned' | 'recent';
@@ -14,10 +14,18 @@ export interface InboxTaskProjection {
   updatedAtMs: number;
 }
 
+/** 收件箱任务行动态条目（deliveries/feedbackItems 的统一投影，取代已删除的任务评论） */
+export interface InboxTaskActivityItem {
+  id: string;
+  author: string;
+  text: string;
+  createdAt: string;
+}
+
 export interface InboxTaskMessageProjection {
   task: GlobalTask;
   key: string;
-  latestMessage: TaskComment;
+  latestMessage: InboxTaskActivityItem;
   unreadCount: number;
   updatedAtMs: number;
 }
@@ -35,8 +43,32 @@ export function getGlobalTaskKey(task: Pick<GlobalTask, 'teamName' | 'id'>): str
   return `${task.teamName}:${task.id}`;
 }
 
-export function getTaskFeedbackComments(comments: readonly TaskComment[]): TaskComment[] {
-  return comments.filter((comment) => comment.author.trim().toLocaleLowerCase() !== 'user');
+/**
+ * 任务行动态 = 交付（deliveries，agent 侧）+ 反馈条目（feedbackItems，用户侧），
+ * 按时间序合并；与右栏评审邮件线程同源，不再读已删除的 comments 字段。
+ */
+export function getTaskInboxActivityItems(task: GlobalTask): InboxTaskActivityItem[] {
+  const items: InboxTaskActivityItem[] = [];
+  for (const delivery of task.deliveries ?? []) {
+    const summary = delivery.summary?.trim();
+    items.push({
+      id: `delivery:${delivery.version}`,
+      author: task.owner?.trim() || 'agent',
+      text: `交付 第 ${delivery.version} 版${summary ? `：${summary}` : ''}`,
+      createdAt: delivery.deliveredAt,
+    });
+  }
+  for (const item of task.feedbackItems ?? []) {
+    items.push({ id: item.id, author: 'user', text: item.text, createdAt: item.createdAt });
+  }
+  return items.sort((a, b) => toTimestamp(a.createdAt) - toTimestamp(b.createdAt));
+}
+
+/** agent 侧的动态条目（未读计数只算这些——用户自己的操作不算未读） */
+export function getAgentActivityItems(task: GlobalTask): InboxTaskActivityItem[] {
+  return getTaskInboxActivityItems(task).filter(
+    (item) => item.author.trim().toLocaleLowerCase() !== 'user'
+  );
 }
 
 export function findReferencedTask(
@@ -91,7 +123,7 @@ export function projectInboxTaskMessages({
     .filter((task) => task.status !== 'deleted' && !task.deletedAt && !task.teamDeleted)
     .filter((task) => teamName === 'all' || task.teamName === teamName)
     .map((task) => {
-      const latestMessage = getTaskFeedbackComments(task.comments ?? []).at(-1);
+      const latestMessage = getTaskInboxActivityItems(task).at(-1);
       if (!latestMessage) return null;
       const key = getGlobalTaskKey(task);
       return {

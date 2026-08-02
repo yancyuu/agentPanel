@@ -3,10 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '@renderer/api';
 import { MarkdownViewer } from '@renderer/components/chat/viewers/MarkdownViewer';
 import { OngoingIndicator } from '@renderer/components/common/OngoingIndicator';
-import {
-  ImageLightbox,
-  LightboxLockProvider,
-} from '@renderer/components/team/attachments/ImageLightbox';
+import { LightboxLockProvider } from '@renderer/components/team/attachments/ImageLightbox';
 import { CollapsibleTeamSection } from '@renderer/components/team/CollapsibleTeamSection';
 import { FileIcon } from '@renderer/components/team/editor/FileIcon';
 import { MemberBadge } from '@renderer/components/team/MemberBadge';
@@ -32,10 +29,7 @@ import {
   getThemedText,
 } from '@renderer/constants/teamColors';
 import { useTheme } from '@renderer/hooks/useTheme';
-import { useViewportCommentRead } from '@renderer/hooks/useViewportCommentRead';
-import { getLegacyCutoff, getReadCommentIds } from '@renderer/services/commentReadStorage';
 import { useStore } from '@renderer/store';
-import { isImageMimeType } from '@renderer/utils/attachmentUtils';
 import {
   agentAvatarUrl,
   buildMemberAvatarMap,
@@ -80,7 +74,6 @@ import {
   ImageIcon,
   Link2,
   Loader2,
-  MessageSquare,
   PackageCheck,
   Pencil,
   PenLine,
@@ -97,16 +90,12 @@ import { SourceMessageAttachments } from '../attachments/SourceMessageAttachment
 
 import { WorkflowTimeline } from './StatusHistoryTimeline';
 import { TaskAttachments } from './TaskAttachments';
-import { TaskCommentAwaitingReply } from './TaskCommentAwaitingReply';
-import { type TaskCommentAttachmentCapability, TaskCommentInput } from './TaskCommentInput';
-import { TaskCommentsSection } from './TaskCommentsSection';
 import { TaskDeliveriesSection } from './TaskDeliveriesSection';
 
 import type {
   FileChangeSummary,
   KanbanTaskState,
   ResolvedTeamMember,
-  TaskAttachmentMeta,
   TaskChangeSetV2,
   TeamTaskWithKanban,
 } from '@shared/types';
@@ -149,12 +138,10 @@ export interface TaskDetailPanelProps {
   onViewChanges?: (taskId: string, filePath?: string) => void;
   onOpenInEditor?: (filePath: string) => void;
   onDeleteTask?: (taskId: string) => void;
-  commentAttachmentCapability?: TaskCommentAttachmentCapability;
-  commentPlaceholder?: string;
-  commentSendLabel?: string;
-  commentContextHint?: string;
   /** Consumer-focused presentation: prioritize goal, deliverable, and collaboration. */
   compactForInbox?: boolean;
+  /** 收件箱提供的成果区自定义内容（评审邮件线程）；缺省为只读交付成果区 */
+  deliveriesContent?: React.ReactNode;
   /** Extra content rendered in the dialog header (e.g. "Open team" button). */
   headerExtra?: React.ReactNode;
 }
@@ -175,11 +162,8 @@ export const TaskDetailPanel = ({
   onViewChanges,
   onOpenInEditor,
   onDeleteTask,
-  commentAttachmentCapability,
-  commentPlaceholder,
-  commentSendLabel,
-  commentContextHint,
   compactForInbox = false,
+  deliveriesContent,
   headerExtra,
 }: TaskDetailPanelProps): React.JSX.Element => {
   const colorMap = useMemo(() => buildMemberColorMap(members), [members]);
@@ -275,12 +259,6 @@ export const TaskDetailPanel = ({
     setTaskLogStreamCount(undefined);
   }, [open, currentTask?.id]);
 
-  const [replyTo, setReplyTo] = useState<{
-    taskId: string;
-    author: string;
-    text: string;
-  } | null>(null);
-
   // Track whether a lightbox is open to block Dialog dismiss events.
   // Using a ref for synchronous reads (no render cycle delay) + a stable
   // callback so context consumers never cause re-renders.
@@ -289,87 +267,18 @@ export const TaskDetailPanel = ({
     lightboxOpenRef.current = isOpen;
   }, []);
 
-  // Callback-ref + useState for the scrollable DialogContent — needed as IO root
-  // for viewport-based read tracking. Using useState (not useRef) ensures that
-  // useViewportObserver recreates the IntersectionObserver when the portal mounts
-  // and the DOM element becomes available.
+  // Callback-ref + useState for the scrollable DialogContent.
   const [dialogContentEl, setDialogContentEl] = useState<HTMLDivElement | null>(null);
-  const handleReply = useCallback(
-    (author: string, text: string) => {
-      if (currentTask) setReplyTo({ taskId: currentTask.id, author, text });
-    },
-    [currentTask]
-  );
-  const clearReply = useCallback(() => setReplyTo(null), []);
-
-  const effectiveReplyTo =
-    replyTo && replyTo.taskId === currentTask?.id
-      ? { author: replyTo.author, text: replyTo.text }
-      : null;
-
-  // Snapshot unread comment IDs when dialog opens — these will show blue dots.
-  // Dots persist for the duration of the dialog session; markAsRead happens
-  // per-comment via IntersectionObserver inside TaskCommentsSection.
-  const unreadSnapshotRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!open || !currentTask) {
-      unreadSnapshotRef.current = new Set();
-      return;
-    }
-    const comments = currentTask.comments ?? [];
-    if (comments.length === 0) {
-      unreadSnapshotRef.current = new Set();
-      return;
-    }
-    const readIds = getReadCommentIds(teamName, currentTask.id);
-    const cutoff = getLegacyCutoff(teamName, currentTask.id);
-    const unread = new Set<string>();
-    for (const c of comments) {
-      if (readIds.has(c.id)) continue;
-      const ts = new Date(c.createdAt).getTime();
-      if (cutoff > 0 && ts <= cutoff) continue;
-      unread.add(c.id);
-    }
-    unreadSnapshotRef.current = unread;
-  }, [open, teamName, currentTask?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- snapshot unread IDs only when the task identity changes
-
-  // Viewport-based comment read tracking (replaces mark-all-on-mount)
-  const { registerComment, flush: flushCommentRead } = useViewportCommentRead({
-    teamName,
-    taskId: currentTask?.id ?? '',
-    scrollContainer: dialogContentEl,
-  });
 
   const handleClose = useCallback(() => {
-    flushCommentRead();
-    setReplyTo(null);
     onClose();
-  }, [onClose, flushCommentRead]);
-
-  // Collect image attachments from comments for the Attachments section
-  const commentImageAttachments = useMemo(() => {
-    const comments = currentTask?.comments ?? [];
-    const result: { attachment: TaskAttachmentMeta; commentText: string; commentAuthor: string }[] =
-      [];
-    for (const c of comments) {
-      if (!c.attachments) continue;
-      for (const att of c.attachments) {
-        if (isImageMimeType(att.mimeType)) {
-          result.push({ attachment: att, commentText: c.text, commentAuthor: c.author });
-        }
-      }
-    }
-    return result;
-  }, [currentTask?.comments]);
+  }, [onClose]);
 
   const sourceAttachmentCount =
     currentTask?.sourceMessageId && currentTask?.sourceMessage?.attachments?.length
       ? currentTask.sourceMessage.attachments.length
       : 0;
-  const relatedFileCount =
-    (currentTask?.attachments?.length ?? 0) +
-    commentImageAttachments.length +
-    sourceAttachmentCount;
+  const relatedFileCount = (currentTask?.attachments?.length ?? 0) + sourceAttachmentCount;
 
   // Lazy-load task changes for any displayable state (in_progress, review, approved, completed).
   const canShowTaskChanges = currentTask ? canDisplayTaskChanges(currentTask) : false;
@@ -1169,39 +1078,37 @@ export const TaskDetailPanel = ({
         {(currentTask.deliveries?.length ?? 0) > 0 ||
         (currentTask.feedbackItems?.length ?? 0) > 0 ? (
           <CollapsibleTeamSection
+            key={`task-deliveries:${currentTask.id}`}
             title="交付成果"
             icon={<PackageCheck size={14} />}
-            badge={
-              (currentTask.deliveries?.length ?? 0) > 0 ? currentTask.deliveries!.length : undefined
-            }
             headerExtra={
-              <>
-                {(currentTask.feedbackItems ?? []).some((item) => item.status === 'open') ? (
-                  <span className="pointer-events-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-300">
-                    {
-                      (currentTask.feedbackItems ?? []).filter((item) => item.status === 'open')
-                        .length
-                    }{' '}
-                    条待处理
-                  </span>
-                ) : null}
-                {currentTask.reviewState === 'review' ? (
-                  <span className="pointer-events-auto rounded-full bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:text-indigo-300">
-                    请检查结果
-                  </span>
-                ) : null}
-              </>
+              (currentTask.feedbackItems ?? []).some((item) => item.status === 'open') ? (
+                <span className="pointer-events-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-300">
+                  {
+                    (currentTask.feedbackItems ?? []).filter((item) => item.status === 'open')
+                      .length
+                  }{' '}
+                  条待处理
+                </span>
+              ) : null
             }
             contentClassName="pl-2.5"
             headerClassName="-mx-6 w-[calc(100%+3rem)]"
             headerContentClassName="pl-6"
             defaultOpen
           >
-            <TaskDeliveriesSection
-              deliveries={currentTask.deliveries}
-              feedbackItems={currentTask.feedbackItems}
-              onOpenHunk={variant === 'team' && onViewChanges ? handleOpenHunkAnchor : undefined}
-            />
+            {deliveriesContent ?? (
+              <TaskDeliveriesSection
+                deliveries={currentTask.deliveries}
+                feedbackItems={currentTask.feedbackItems}
+                onOpenHunk={variant === 'team' && onViewChanges ? handleOpenHunkAnchor : undefined}
+                reviewLocationHint={
+                  currentTask.reviewState === 'review' || currentTask.reviewState === 'needsFix'
+                    ? '评审请在收件箱进行'
+                    : undefined
+                }
+              />
+            )}
           </CollapsibleTeamSection>
         ) : null}
 
@@ -1228,13 +1135,6 @@ export const TaskDetailPanel = ({
               taskId={currentTask.id}
               attachments={currentTask.attachments ?? []}
             />
-            {commentImageAttachments.length > 0 ? (
-              <CommentImagesGrid
-                items={commentImageAttachments}
-                teamName={teamName}
-                taskId={currentTask.id}
-              />
-            ) : null}
           </CollapsibleTeamSection>
         ) : null}
 
@@ -1422,53 +1322,10 @@ export const TaskDetailPanel = ({
           </CollapsibleTeamSection>
         ) : null}
 
-        {/* Task collaboration */}
-        <CollapsibleTeamSection
-          title="任务协作"
-          icon={<MessageSquare size={14} />}
-          badge={
-            (currentTask.comments?.length ?? 0) > 0
-              ? (currentTask.comments?.length ?? 0)
-              : undefined
-          }
-          contentClassName="min-w-0 overflow-x-hidden pl-0"
-          headerClassName="-mx-6 w-[calc(100%+3rem)]"
-          headerContentClassName="pl-6"
-          defaultOpen
-        >
-          <TaskCommentsSection
-            teamName={teamName}
-            taskId={currentTask.id}
-            comments={currentTask.comments ?? []}
-            members={members}
-            hideHeader
-            hideInput
-            onReply={handleReply}
-            onTaskRefClick={onScrollToTask ? handleDependencyClick : undefined}
-            containerClassName="min-w-0"
-            unreadCommentIds={unreadSnapshotRef.current}
-            registerCommentForViewport={registerComment}
-          />
-          <TaskCommentAwaitingReply
-            comments={currentTask.comments}
-            taskOwner={currentTask.owner}
-            taskCreatedBy={currentTask.createdBy}
-            members={members}
-          />
-          <div className="min-w-0 px-2.5 pt-2">
-            <TaskCommentInput
-              teamName={teamName}
-              taskId={currentTask.id}
-              members={members}
-              replyTo={effectiveReplyTo}
-              onClearReply={clearReply}
-              attachmentCapability={commentAttachmentCapability}
-              placeholder={commentPlaceholder}
-              sendLabel={commentSendLabel}
-              contextHint={commentContextHint}
-            />
-          </div>
-        </CollapsibleTeamSection>
+        {/* 任务评论已移除：沟通统一走消息线程（收件箱） */}
+        <div className="px-1 text-[11px] text-[var(--color-text-muted)] opacity-70">
+          沟通已统一到消息线程；请在收件箱回复该任务的交付邮件。
+        </div>
       </div>
     </LightboxLockProvider>
   );
@@ -1507,115 +1364,5 @@ export const TaskDetailPanel = ({
         {detailContent}
       </DialogContent>
     </Dialog>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Comment images grid — accumulated images from task comments
-// ---------------------------------------------------------------------------
-
-interface CommentImageItem {
-  attachment: TaskAttachmentMeta;
-  commentText: string;
-  commentAuthor: string;
-}
-
-const CommentImagesGrid = ({
-  items,
-  teamName,
-  taskId,
-}: {
-  items: CommentImageItem[];
-  teamName: string;
-  taskId: string;
-}): React.JSX.Element => {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
-  return (
-    <div className="mt-3 space-y-1">
-      <div className="flex items-center gap-1.5">
-        <MessageSquare size={12} className="text-[var(--color-text-muted)]" />
-        <span className="text-[11px] font-medium text-[var(--color-text-muted)]">来自评论</span>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {items.map((item) => (
-          <CommentImageThumbnail
-            key={item.attachment.id}
-            item={item}
-            teamName={teamName}
-            taskId={taskId}
-            onPreview={setPreviewUrl}
-          />
-        ))}
-      </div>
-      {previewUrl ? (
-        <ImageLightbox open onClose={() => setPreviewUrl(null)} src={previewUrl} alt="评论附件" />
-      ) : null}
-    </div>
-  );
-};
-
-const CommentImageThumbnail = ({
-  item,
-  teamName,
-  taskId,
-  onPreview,
-}: {
-  item: CommentImageItem;
-  teamName: string;
-  taskId: string;
-  onPreview: (dataUrl: string) => void;
-}): React.JSX.Element => {
-  const getTaskAttachmentData = useStore((s) => s.getTaskAttachmentData);
-  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const base64 = await getTaskAttachmentData(
-          teamName,
-          taskId,
-          item.attachment.id,
-          item.attachment.mimeType
-        );
-        if (!cancelled && base64) {
-          setThumbUrl(`data:${item.attachment.mimeType};base64,${base64}`);
-        }
-      } catch {
-        // ignore
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [teamName, taskId, item.attachment.id, item.attachment.mimeType, getTaskAttachmentData]);
-
-  // Truncate comment text for tooltip
-  const tooltipText = `${item.commentAuthor}: ${item.commentText.length > 200 ? item.commentText.slice(0, 200) + '...' : item.commentText}`;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          className="group relative flex size-16 cursor-pointer items-center justify-center overflow-hidden rounded border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:border-[var(--color-border-emphasis)] disabled:cursor-default"
-          disabled={!thumbUrl}
-          onClick={() => thumbUrl && onPreview(thumbUrl)}
-        >
-          {thumbUrl ? (
-            <img src={thumbUrl} alt={item.attachment.filename} className="size-full object-cover" />
-          ) : (
-            <Loader2 size={12} className="animate-spin text-[var(--color-text-muted)]" />
-          )}
-          <div className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-0.5 py-px text-center text-[7px] text-white opacity-0 transition-opacity group-hover:opacity-100">
-            {item.attachment.filename}
-          </div>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-[300px] text-xs">
-        {tooltipText}
-      </TooltipContent>
-    </Tooltip>
   );
 };

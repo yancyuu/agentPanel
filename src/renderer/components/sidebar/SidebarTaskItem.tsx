@@ -3,9 +3,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
 import { getTeamColorSet } from '@renderer/constants/teamColors';
 import { useTheme } from '@renderer/hooks/useTheme';
-import { useUnreadCommentCount } from '@renderer/hooks/useUnreadCommentCount';
+import { useUnreadActivityCount } from '@renderer/hooks/useUnreadActivityCount';
 import { useStore } from '@renderer/store';
-import { buildMemberColorMap, REVIEW_STATE_DISPLAY } from '@renderer/utils/memberHelpers';
+import { buildMemberColorMap } from '@renderer/utils/memberHelpers';
 import { nameColorSet } from '@renderer/utils/projectColor';
 import { projectColor } from '@renderer/utils/projectColor';
 import { projectLabelFromPath } from '@renderer/utils/taskGrouping';
@@ -19,7 +19,7 @@ import type { LucideIcon } from 'lucide-react';
 
 const statusConfig: Record<TeamTaskStatus, { icon: LucideIcon; color: string; label: string }> = {
   pending: { icon: Circle, color: 'text-amber-400', label: 'pending' },
-  in_progress: { icon: Loader2, color: 'text-indigo-400', label: 'in progress' },
+  in_progress: { icon: Loader2, color: 'text-orange-400', label: 'in progress' },
   completed: { icon: CheckCircle2, color: 'text-emerald-400', label: 'completed' },
   deleted: { icon: Circle, color: 'text-zinc-500', label: 'deleted' },
 };
@@ -80,7 +80,7 @@ export const SidebarTaskItem = ({
 }: SidebarTaskItemProps): React.JSX.Element => {
   const openGlobalTaskDetail = useStore((s) => s.openGlobalTaskDetail);
   const teamMembers = useStore(useShallow((s) => s.teamByName[task.teamName]?.members));
-  const unreadCount = useUnreadCommentCount(task.teamName, task.id, task.comments);
+  const unreadCount = useUnreadActivityCount(task.teamName, task.id, task);
   const { isLight } = useTheme();
 
   const isRenaming = renamingKey === `${task.teamName}:${task.id}`;
@@ -212,13 +212,6 @@ export const SidebarTaskItem = ({
                     </span>
                   ))}
                 {displaySubject}
-                {task.reviewState === 'needsFix' && (
-                  <span
-                    className={`ml-1.5 inline-block rounded-full px-1.5 py-0.5 align-middle text-[10px] font-medium leading-none ${REVIEW_STATE_DISPLAY.needsFix.bg} ${REVIEW_STATE_DISPLAY.needsFix.text}`}
-                  >
-                    {REVIEW_STATE_DISPLAY.needsFix.label}
-                  </span>
-                )}
               </span>
             </TooltipTrigger>
             <TooltipContent side="right" sideOffset={6}>

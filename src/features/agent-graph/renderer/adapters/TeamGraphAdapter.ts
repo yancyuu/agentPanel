@@ -8,7 +8,7 @@
  * Class-based with ES #private fields and DI-ready constructor.
  */
 
-import { getUnreadCount } from '@renderer/services/commentReadStorage';
+import { getUnreadCount } from '@renderer/services/taskActivityReadStorage';
 import {
   agentAvatarUrl,
   buildMemberAvatarMap,
@@ -79,9 +79,9 @@ export class TeamGraphAdapter {
   readonly #seenMessageIds = new Set<string>();
   #initialMessagesSeen = false;
   #messageParticleCutoffMs: number | null = null;
-  readonly #seenCommentCounts = new Map<string, number>();
-  #initialCommentsSeen = false;
-  #commentParticleCutoffMs: number | null = null;
+  readonly #seenDeliveryCounts = new Map<string, number>();
+  #initialDeliveriesSeen = false;
+  #deliveryParticleCutoffMs: number | null = null;
 
   // ─── Static factory ──────────────────────────────────────────────────────
   static create(): TeamGraphAdapter {
@@ -107,7 +107,7 @@ export class TeamGraphAdapter {
     activeTools?: Record<string, Record<string, ActiveToolCall>>,
     finishedVisible?: Record<string, Record<string, ActiveToolCall>>,
     toolHistory?: Record<string, ActiveToolCall[]>,
-    commentReadState?: Record<string, unknown>,
+    activityReadState?: Record<string, unknown>,
     provisioningProgress?: TeamProvisioningProgress | null,
     memberSpawnSnapshot?: MemberSpawnStatusesSnapshot,
     slotAssignments?: Record<string, GraphOwnerSlotAssignment>,
@@ -133,9 +133,9 @@ export class TeamGraphAdapter {
       this.#seenMessageIds.clear();
       this.#initialMessagesSeen = false;
       this.#messageParticleCutoffMs = null;
-      this.#seenCommentCounts.clear();
-      this.#initialCommentsSeen = false;
-      this.#commentParticleCutoffMs = null;
+      this.#seenDeliveryCounts.clear();
+      this.#initialDeliveriesSeen = false;
+      this.#deliveryParticleCutoffMs = null;
     }
 
     this.#lastTeamName = teamName;
@@ -194,7 +194,7 @@ export class TeamGraphAdapter {
       edges,
       teamData,
       teamName,
-      commentReadState,
+      activityReadState,
       memberNodeIdByAlias,
       leadId,
       leadName
@@ -211,7 +211,7 @@ export class TeamGraphAdapter {
       edges,
       memberNodeIdByAlias
     );
-    this.#buildCommentParticles(
+    this.#buildDeliveryParticles(
       particles,
       teamData,
       teamName,
@@ -245,9 +245,9 @@ export class TeamGraphAdapter {
     this.#seenMessageIds.clear();
     this.#initialMessagesSeen = false;
     this.#messageParticleCutoffMs = null;
-    this.#seenCommentCounts.clear();
-    this.#initialCommentsSeen = false;
-    this.#commentParticleCutoffMs = null;
+    this.#seenDeliveryCounts.clear();
+    this.#initialDeliveriesSeen = false;
+    this.#deliveryParticleCutoffMs = null;
     this.#lastTeamName = '';
   }
 
@@ -607,7 +607,7 @@ export class TeamGraphAdapter {
     edges: GraphEdge[],
     data: TeamGraphData,
     teamName: string,
-    commentReadState?: Record<string, unknown>,
+    activityReadState?: Record<string, unknown>,
     memberNodeIdByAlias?: ReadonlyMap<string, string>,
     leadId?: string,
     leadName?: string
@@ -651,13 +651,17 @@ export class TeamGraphAdapter {
         ? task.blocks.map((id) => taskDisplayIds.get(id) ?? `#${id.slice(0, 6)}`)
         : undefined;
 
-      const totalCommentCount = task.comments?.length ?? 0;
-      const unreadCommentCount = commentReadState
+      const taskDeliveries = task.deliveries ?? [];
+      const totalDeliveryCount = taskDeliveries.length;
+      const unreadDeliveryCount = activityReadState
         ? getUnreadCount(
-            commentReadState as Parameters<typeof getUnreadCount>[0],
+            activityReadState as Parameters<typeof getUnreadCount>[0],
             teamName,
             task.id,
-            task.comments ?? []
+            taskDeliveries.map((delivery) => ({
+              id: `delivery:${delivery.version}`,
+              createdAt: delivery.deliveredAt,
+            }))
           )
         : 0;
 
@@ -679,8 +683,8 @@ export class TeamGraphAdapter {
         isBlocked: isTaskBlocked(task, taskStateById),
         blockedByDisplayIds,
         blocksDisplayIds,
-        totalCommentCount: totalCommentCount > 0 ? totalCommentCount : undefined,
-        unreadCommentCount: unreadCommentCount > 0 ? unreadCommentCount : undefined,
+        totalDeliveryCount: totalDeliveryCount > 0 ? totalDeliveryCount : undefined,
+        unreadDeliveryCount: unreadDeliveryCount > 0 ? unreadDeliveryCount : undefined,
         domainRef: { kind: 'task', teamName, taskId: task.id },
       });
     }
@@ -956,9 +960,6 @@ export class TeamGraphAdapter {
         continue;
       }
 
-      // Skip comment notifications — #buildCommentParticles handles them with real text
-      if (msg.summary?.startsWith('Comment on ')) continue;
-
       // Handle noise messages: skip pure heartbeat/shutdown/terminated rows; keep idle only when it carries a peer summary.
       const msgText = msg.text ?? '';
       const idleLabel = getIdleGraphLabel(msgText);
@@ -1049,7 +1050,7 @@ export class TeamGraphAdapter {
     }
   }
 
-  #buildCommentParticles(
+  #buildDeliveryParticles(
     particles: GraphParticle[],
     data: TeamGraphData,
     teamName: string,
@@ -1058,13 +1059,13 @@ export class TeamGraphAdapter {
     edges: GraphEdge[],
     memberNodeIdByAlias: ReadonlyMap<string, string>
   ): void {
-    // First call: record current comment counts without creating particles.
-    // This prevents pre-existing comments from spawning particles when the graph opens.
-    if (!this.#initialCommentsSeen) {
-      this.#initialCommentsSeen = true;
-      this.#commentParticleCutoffMs = Date.now();
+    // First call: record current delivery counts without creating particles.
+    // This prevents pre-existing deliveries from spawning particles when the graph opens.
+    if (!this.#initialDeliveriesSeen) {
+      this.#initialDeliveriesSeen = true;
+      this.#deliveryParticleCutoffMs = Date.now();
       for (const task of data.tasks) {
-        this.#seenCommentCounts.set(task.id, task.comments?.length ?? 0);
+        this.#seenDeliveryCounts.set(task.id, task.deliveries?.length ?? 0);
       }
       return;
     }
@@ -1078,23 +1079,23 @@ export class TeamGraphAdapter {
     for (const task of data.tasks) {
       if (task.status === 'deleted') continue;
 
-      const prevCount = this.#seenCommentCounts.get(task.id) ?? 0;
-      const currentCount = task.comments?.length ?? 0;
+      const prevCount = this.#seenDeliveryCounts.get(task.id) ?? 0;
+      const currentCount = task.deliveries?.length ?? 0;
 
       if (currentCount > prevCount) {
         for (let index = prevCount; index < currentCount; index += 1) {
-          const newComment = task.comments?.[index];
-          if (!newComment) continue;
+          const newDelivery = task.deliveries?.[index];
+          if (!newDelivery) continue;
           if (
             TeamGraphAdapter.#isBeforeParticleCutoff(
-              newComment.createdAt,
-              this.#commentParticleCutoffMs
+              newDelivery.deliveredAt,
+              this.#deliveryParticleCutoffMs
             )
           ) {
             continue;
           }
           const authorNodeId = TeamGraphAdapter.#resolveParticipantId(
-            newComment.author,
+            task.owner ?? 'agent',
             leadId,
             leadName,
             memberNodeIdByAlias
@@ -1121,19 +1122,24 @@ export class TeamGraphAdapter {
 
           if (authorNodeId) {
             particles.push({
-              id: `particle:comment:${teamName}:${task.id}:${index + 1}`,
+              id: `particle:delivery:${teamName}:${task.id}:${index + 1}`,
               edgeId,
               progress: 0,
-              kind: 'task_comment',
-              color: memberColors.get(newComment.author) ?? '#cc88ff',
-              label: TeamGraphAdapter.#buildParticleLabel(newComment.text, 'comment'),
-              preview: TeamGraphAdapter.#buildParticlePreview(newComment.text),
+              kind: 'task_delivery',
+              color: memberColors.get(task.owner ?? '') ?? '#cc88ff',
+              label: TeamGraphAdapter.#buildParticleLabel(
+                newDelivery.summary?.trim() || newDelivery.result,
+                'delivery'
+              ),
+              preview: TeamGraphAdapter.#buildParticlePreview(
+                newDelivery.summary?.trim() || newDelivery.result
+              ),
             });
           }
         }
       }
 
-      this.#seenCommentCounts.set(task.id, currentCount);
+      this.#seenDeliveryCounts.set(task.id, currentCount);
     }
   }
 
@@ -1355,11 +1361,11 @@ export class TeamGraphAdapter {
 
   static #buildParticleLabel(
     text: string | undefined,
-    kind: 'inbox' | 'comment',
+    kind: 'inbox' | 'delivery',
     max = 52
   ): string | undefined {
     const normalized = TeamGraphAdapter.#normalizeParticleText(text);
-    const prefix = kind === 'comment' ? '\u{1F4AC}' : '\u{2709}';
+    const prefix = kind === 'delivery' ? '\u{1F4E6}' : '\u{2709}';
     if (!normalized) return prefix;
     const clipped =
       normalized.length > max

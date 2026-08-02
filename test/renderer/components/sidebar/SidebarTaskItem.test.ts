@@ -16,8 +16,8 @@ vi.mock('../../../../src/renderer/store', () => ({
   useStore: (selector: (state: typeof storeState) => unknown) => selector(storeState),
 }));
 
-vi.mock('../../../../src/renderer/hooks/useUnreadCommentCount', () => ({
-  useUnreadCommentCount: () => unreadCountValue,
+vi.mock('../../../../src/renderer/hooks/useUnreadActivityCount', () => ({
+  useUnreadActivityCount: () => unreadCountValue,
 }));
 
 vi.mock('../../../../src/renderer/hooks/useTheme', () => ({

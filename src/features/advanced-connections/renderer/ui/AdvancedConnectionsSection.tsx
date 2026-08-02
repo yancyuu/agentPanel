@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import {
   AlertTriangle,
   Check,
@@ -15,11 +17,7 @@ import {
 import {
   type AdvancedConnectionSummary,
   type AdvancedConnectionTokenCatalogSummary,
-  ALL_DATA_PERMISSION_IDS,
-  DATA_PERMISSION_LABELS,
-  type DataPermissionId,
   type DiscoverAdvancedConnectionResponse,
-  type PermissionDecision,
 } from '../../contracts';
 
 interface AdvancedConnectionsSectionProps {
@@ -39,11 +37,8 @@ interface AdvancedConnectionsSectionProps {
   onRemoveConnection: (connectionId: string) => void;
   onStartAuth: (connection: AdvancedConnectionSummary) => void;
   onLogout: (connectionId: string) => void;
-  onPermissionChange: (
-    connectionId: string,
-    permissionId: DataPermissionId,
-    decision: PermissionDecision
-  ) => void;
+  /** 用户确认 HTTP 传输风险后持久化放行（per-connection） */
+  onAllowInsecure: (connectionId: string) => void;
   onSyncConnection: (connectionId: string) => void;
   onPullRemoteTasks: (connectionId: string) => void;
   onCheckTokenCatalog: (connectionId: string) => void;
@@ -72,18 +67,6 @@ function connectionAllowsSecrets(connection: AdvancedConnectionSummary): boolean
   }
 }
 
-function relevantPermissionIds(connection: AdvancedConnectionSummary): DataPermissionId[] {
-  const capabilities = new Set(connection.capabilities.map((item) => item.id));
-  return ALL_DATA_PERMISSION_IDS.filter((id) => {
-    if (id.startsWith('team.')) return capabilities.has('team-bus');
-    if (id.startsWith('usage.') || id === 'capabilities.inventory') {
-      return capabilities.has('reporting');
-    }
-    // Raw credential delegation is intentionally unavailable in the first open-provider slice.
-    return false;
-  });
-}
-
 export function AdvancedConnectionsSection({
   connections,
   host,
@@ -101,13 +84,18 @@ export function AdvancedConnectionsSection({
   onRemoveConnection,
   onStartAuth,
   onLogout,
-  onPermissionChange,
+  onAllowInsecure,
   onSyncConnection,
   onPullRemoteTasks,
   onCheckTokenCatalog,
   onClaimAndApplyToken,
   onRefresh,
 }: Readonly<AdvancedConnectionsSectionProps>): React.JSX.Element {
+  // 等待用户确认 HTTP 传输风险的连接 id（确认后按连接持久化，不再重复询问）
+  const [insecureConfirmId, setInsecureConfirmId] = useState<string | null>(null);
+  const insecureConfirmConnection = insecureConfirmId
+    ? (connections.find((connection) => connection.id === insecureConfirmId) ?? null)
+    : null;
   return (
     <div className="space-y-4">
       <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)]">
@@ -270,19 +258,14 @@ export function AdvancedConnectionsSection({
       ) : (
         <div className="space-y-3">
           {connections.map((connection) => {
-            const permissions = relevantPermissionIds(connection);
             const authenticated =
               connection.secretPresent &&
               ['authenticated', 'ready', 'connected'].includes(connection.state);
             const tokenPool = connection.capabilities.some((item) => item.id === 'token-pool');
-            const secretsAllowed = connectionAllowsSecrets(connection);
+            // HTTPS 或回环地址直接允许；其余 HTTP 需用户先确认传输风险（per-connection 持久化）
+            const transportReady =
+              connectionAllowsSecrets(connection) || connection.insecureAllowed;
             const catalog = catalogs[connection.id];
-            const syncEnabled = permissions.some(
-              (permissionId) =>
-                permissionId !== 'team.tasks.read' &&
-                connection.permissions[permissionId] === 'granted'
-            );
-            const pullEnabled = connection.permissions['team.tasks.read'] === 'granted';
             return (
               <article
                 key={connection.id}
@@ -342,9 +325,15 @@ export function AdvancedConnectionsSection({
                     ) : (
                       <button
                         type="button"
-                        onClick={() => onStartAuth(connection)}
+                        data-testid={`auth:${connection.id}`}
+                        onClick={() => {
+                          if (!transportReady) {
+                            setInsecureConfirmId(connection.id);
+                            return;
+                          }
+                          onStartAuth(connection);
+                        }}
                         disabled={
-                          !secretsAllowed ||
                           busyAction === `auth:${connection.id}` ||
                           connection.state === 'authenticating'
                         }
@@ -356,11 +345,7 @@ export function AdvancedConnectionsSection({
                         ) : (
                           <KeyRound className="size-3.5" />
                         )}
-                        {!secretsAllowed
-                          ? '需要 HTTPS'
-                          : connection.state === 'authenticating'
-                            ? '等待授权'
-                            : '登录授权'}
+                        {connection.state === 'authenticating' ? '等待授权' : '登录授权'}
                       </button>
                     )}
                     <button
@@ -375,7 +360,7 @@ export function AdvancedConnectionsSection({
                   </div>
                 </div>
 
-                <div className="grid gap-4 p-4 lg:grid-cols-[0.8fr_1.2fr]">
+                <div className="p-4">
                   <div>
                     <p className="text-[11px] font-semibold text-[var(--color-text-secondary)]">
                       服务能力
@@ -397,9 +382,7 @@ export function AdvancedConnectionsSection({
                       <div className="mt-4 flex flex-wrap gap-2">
                         <button
                           type="button"
-                          disabled={
-                            !authenticated || !syncEnabled || busyAction === `sync:${connection.id}`
-                          }
+                          disabled={!authenticated || busyAction === `sync:${connection.id}`}
                           onClick={() => onSyncConnection(connection.id)}
                           className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 text-xs text-[var(--color-text-secondary)] disabled:opacity-45"
                         >
@@ -413,11 +396,7 @@ export function AdvancedConnectionsSection({
                         {connection.capabilities.some((item) => item.id === 'team-bus') ? (
                           <button
                             type="button"
-                            disabled={
-                              !authenticated ||
-                              !pullEnabled ||
-                              busyAction === `pull:${connection.id}`
-                            }
+                            disabled={!authenticated || busyAction === `pull:${connection.id}`}
                             onClick={() => onPullRemoteTasks(connection.id)}
                             className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 text-xs text-[var(--color-text-secondary)] disabled:opacity-45"
                           >
@@ -443,7 +422,7 @@ export function AdvancedConnectionsSection({
                             type="button"
                             disabled={
                               !authenticated ||
-                              !secretsAllowed ||
+                              !transportReady ||
                               busyAction === `catalog:${connection.id}`
                             }
                             onClick={() => onCheckTokenCatalog(connection.id)}
@@ -460,7 +439,7 @@ export function AdvancedConnectionsSection({
                             type="button"
                             disabled={
                               !authenticated ||
-                              !secretsAllowed ||
+                              !transportReady ||
                               !catalog?.discoveryId ||
                               busyAction === `claim:${connection.id}`
                             }
@@ -489,62 +468,54 @@ export function AdvancedConnectionsSection({
                       </div>
                     ) : null}
                   </div>
-
-                  <div>
-                    <p className="text-[11px] font-semibold text-[var(--color-text-secondary)]">
-                      允许的数据范围
-                    </p>
-                    <p className="mt-1 text-[10px] leading-4 text-[var(--color-text-muted)]">
-                      登录后默认开启不含项目名称、成员或本地路径的聚合用量；其余范围默认关闭。你可以随时关闭聚合用量，只有服务声明并建立对应数据通道后才会发送。
-                    </p>
-                    <div className="mt-3 space-y-2">
-                      {permissions.map((permissionId) => {
-                        const metadata = DATA_PERMISSION_LABELS[permissionId];
-                        const granted = connection.permissions[permissionId] === 'granted';
-                        const pending =
-                          busyAction === `permission:${connection.id}:${permissionId}`;
-                        return (
-                          <label
-                            key={permissionId}
-                            className="flex cursor-pointer items-start justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5"
-                          >
-                            <span className="min-w-0">
-                              <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-text)]">
-                                {metadata.label}
-                                {metadata.risk === 'high' ? (
-                                  <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[9px] text-red-400">
-                                    高风险
-                                  </span>
-                                ) : null}
-                              </span>
-                              <span className="mt-0.5 block text-[10px] leading-4 text-[var(--color-text-muted)]">
-                                {metadata.description}
-                              </span>
-                            </span>
-                            <input
-                              type="checkbox"
-                              checked={granted}
-                              disabled={pending}
-                              onChange={(event) =>
-                                onPermissionChange(
-                                  connection.id,
-                                  permissionId,
-                                  event.target.checked ? 'granted' : 'denied'
-                                )
-                              }
-                              className="mt-1 size-4 accent-[var(--color-accent)]"
-                            />
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
                 </div>
               </article>
             );
           })}
         </div>
       )}
+
+      {insecureConfirmConnection ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          data-testid="insecure-confirm-dialog"
+          className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+        >
+          <div className="w-full max-w-md rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-5 shadow-floating">
+            <h4 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+              <AlertTriangle className="size-4 text-amber-500" />
+              非加密连接确认
+            </h4>
+            <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">
+              {insecureConfirmConnection.label}（{insecureConfirmConnection.baseUrl}）
+              未使用加密传输，登录凭据在传输中可能被窃听。仍要继续吗？
+            </p>
+            <p className="mt-2 text-[11px] leading-4 text-[var(--color-text-muted)]">
+              确认后仅对该连接记住选择，之后不再询问。
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setInsecureConfirmId(null)}
+                className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onAllowInsecure(insecureConfirmConnection.id);
+                  setInsecureConfirmId(null);
+                }}
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500"
+              >
+                仍要继续
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

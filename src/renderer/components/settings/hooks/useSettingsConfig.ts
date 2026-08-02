@@ -48,7 +48,7 @@ export interface SafeConfig {
     notifyOnUserInbox: boolean;
     notifyOnClarifications: boolean;
     notifyOnStatusChange: boolean;
-    notifyOnTaskComments: boolean;
+    notifyOnTaskDeliveries: boolean;
     notifyOnTaskCreated: boolean;
     notifyOnAllTasksCompleted: boolean;
     notifyOnCrossTeamMessage: boolean;
@@ -190,7 +190,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
         notifyOnUserInbox: displayConfig?.notifications?.notifyOnUserInbox ?? true,
         notifyOnClarifications: displayConfig?.notifications?.notifyOnClarifications ?? true,
         notifyOnStatusChange: displayConfig?.notifications?.notifyOnStatusChange ?? true,
-        notifyOnTaskComments: displayConfig?.notifications?.notifyOnTaskComments ?? true,
+        notifyOnTaskDeliveries: displayConfig?.notifications?.notifyOnTaskDeliveries ?? true,
         notifyOnTaskCreated: displayConfig?.notifications?.notifyOnTaskCreated ?? true,
         notifyOnAllTasksCompleted: displayConfig?.notifications?.notifyOnAllTasksCompleted ?? true,
         notifyOnCrossTeamMessage: displayConfig?.notifications?.notifyOnCrossTeamMessage ?? true,

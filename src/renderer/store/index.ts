@@ -4,7 +4,7 @@
 
 import { api } from '@renderer/api';
 import { syncRendererTelemetry } from '@renderer/sentry';
-import { cleanupStale as cleanupCommentReadState } from '@renderer/services/commentReadStorage';
+import { cleanupStale as cleanupActivityReadState } from '@renderer/services/taskActivityReadStorage';
 import { normalizePath } from '@renderer/utils/pathNormalize';
 import { refreshCliStatusForCurrentMode } from '@renderer/utils/refreshCliStatus';
 import {
@@ -164,7 +164,7 @@ export const useStore = create<AppState>()((...args) => ({
  * Call this once when the app starts (e.g., in App.tsx useEffect).
  */
 export function initializeNotificationListeners(): () => void {
-  void cleanupCommentReadState();
+  void cleanupActivityReadState();
   const cleanupFns: (() => void)[] = [];
   let cliStatusTimer: ReturnType<typeof setTimeout> | null = null;
   useStore.getState().subscribeProvisioningProgress();

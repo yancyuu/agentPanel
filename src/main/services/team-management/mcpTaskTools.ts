@@ -19,7 +19,9 @@
 import { getDerivedReviewState } from '@shared/utils/taskHistory';
 
 import { archiveTaskDeliverable } from './TaskDeliverableArchiveService';
+import { buildDeliveryThreadMessage } from './reviewThreadMessages';
 
+import type { AppendGroupMessageInput } from './TeamWorkspaceService';
 import type { TeamProvisioningService } from './TeamProvisioningService';
 import type { Task } from './TeamWorkspaceService';
 import type { FeedbackAnchor, TaskHistoryEvent, TeamReviewState } from '@shared/types/team';
@@ -35,6 +37,30 @@ type TaskToolService = Pick<
   | 'addFeedbackItem'
   | 'appendTaskHistoryEvent'
 >;
+
+/**
+ * 评审邮件线程写入钩子（可选）：交付/退回/通过时把评审事件写进
+ * messages/group.jsonl 并广播 inbox SSE；写入失败不影响任务操作本身。
+ */
+export interface McpReviewThreadHooks {
+  appendMessage?: (teamSlug: string, input: AppendGroupMessageInput) => Promise<unknown>;
+  broadcastInboxChange?: (teamSlug: string) => void;
+}
+
+async function appendReviewThreadMessage(
+  hooks: McpReviewThreadHooks | undefined,
+  teamSlug: string,
+  input: AppendGroupMessageInput
+): Promise<void> {
+  if (!hooks?.appendMessage) return;
+  try {
+    await hooks.appendMessage(teamSlug, input);
+    hooks.broadcastInboxChange?.(teamSlug);
+  } catch (error) {
+    // 消息线程只是展示层镜像，写入失败不影响任务操作
+    console.warn('[review-thread] 交付线程消息写入失败（不影响任务状态）:', error);
+  }
+}
 
 /** 退回达到该次数后需要人工介入 */
 export const HUMAN_INTERVENTION_REVISION_THRESHOLD = 3;
@@ -95,7 +121,8 @@ function currentReviewState(task: Task): TeamReviewState {
 export async function executeMcpTool(
   svc: TaskToolService,
   toolName: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  reviewThreadHooks?: McpReviewThreadHooks
 ): Promise<McpToolContent> {
   const text = (result: unknown): McpToolContent => [
     { type: 'text', text: JSON.stringify(result, null, 2) },
@@ -137,7 +164,13 @@ export async function executeMcpTool(
     const result = asString(args.result);
     if (result) {
       // 带 result 时记录为一条交付成果（delivery）
-      await svc.addDelivery(teamSlug, taskId, { result });
+      const { delivery } = await svc.addDelivery(teamSlug, taskId, { result });
+      const existing = await readTaskOrThrow(svc, teamSlug, taskId);
+      await appendReviewThreadMessage(
+        reviewThreadHooks,
+        teamSlug,
+        buildDeliveryThreadMessage(teamSlug, existing, delivery)
+      );
     }
     const task = await svc.patchTask(teamSlug, taskId, { status: 'done' });
     const event: TaskHistoryEvent = {
@@ -186,6 +219,11 @@ export async function executeMcpTool(
       note: summary?.trim() || undefined,
     };
     await svc.appendTaskHistoryEvent(teamSlug, dispatchId, event);
+    await appendReviewThreadMessage(
+      reviewThreadHooks,
+      teamSlug,
+      buildDeliveryThreadMessage(teamSlug, existing, delivery)
+    );
     return text({
       ...task,
       historyEvents: [...(task.historyEvents ?? []), event],

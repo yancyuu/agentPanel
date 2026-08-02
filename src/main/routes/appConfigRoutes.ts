@@ -16,7 +16,7 @@ export const DEFAULT_APP_CONFIG = {
     notifyOnUserInbox: true,
     notifyOnClarifications: true,
     notifyOnStatusChange: true,
-    notifyOnTaskComments: true,
+    notifyOnTaskDeliveries: true,
     notifyOnTaskCreated: true,
     notifyOnAllTasksCompleted: true,
     notifyOnCrossTeamMessage: true,

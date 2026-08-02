@@ -12,6 +12,14 @@ import {
 } from '../services/team-management/mcpTaskTools';
 import { archiveTaskDeliverable } from '../services/team-management/TaskDeliverableArchiveService';
 import {
+  buildApprovalThreadMessage,
+  buildFeedbackThreadMessage,
+  buildPrecipitationSuggestionMessage,
+  PRECIPITATION_SUGGESTION_SOURCE,
+  reviewThreadConversationId,
+} from '../services/team-management/reviewThreadMessages';
+import {
+  type AppendGroupMessageInput,
   type Task,
   type TaskStatus,
   teamRoot,
@@ -21,7 +29,6 @@ import type {
   FeedbackAnchor,
   GlobalTask,
   TaskAttachmentMeta,
-  TaskComment,
   TaskHistoryEvent,
   TaskRef,
   TeamReviewState,
@@ -60,6 +67,12 @@ interface TeamTaskRouteDependencies {
     input: { text: string; anchor?: FeedbackAnchor }
   ): Promise<unknown>;
   appendTaskHistoryEvent(teamName: string, taskId: string, event: TaskHistoryEvent): Promise<Task>;
+  /** 评审邮件线程：把评审事件写进 messages/group.jsonl（展示层镜像，失败不影响任务操作） */
+  appendInboxMessage?(teamName: string, input: AppendGroupMessageInput): Promise<unknown>;
+  /** 读团队消息（沉淀建议判重用，可选；缺失时建议消息直接写入） */
+  readInboxMessages?(teamName: string): Promise<Array<{ meta?: Record<string, unknown> | null }>>;
+  /** 评审线程写入后广播 inbox SSE */
+  broadcastInboxChange?(teamName: string): void;
   dispatchTask(teamName: string, task: Task): Promise<void>;
   listProjects(): Promise<{ name: string }[]>;
   listTeams?(): Promise<{ slug: string }[]>;
@@ -144,7 +157,6 @@ export function toTeamTask(task: Task): TeamTaskResponse {
     blocks: task.blocks,
     blockedBy: task.blockedBy,
     related: task.related,
-    comments: task.comments,
     needsClarification: task.needsClarification,
     deletedAt: task.deletedAt ?? undefined,
     attachments: task.attachments?.map(({ filePath: _filePath, ...attachment }) => attachment),
@@ -175,12 +187,20 @@ function currentReviewState(task: Pick<Task, 'historyEvents' | 'reviewState'>): 
   return task.reviewState ?? 'none';
 }
 
-function isTaskCancellationComment(text: string): boolean {
-  const normalized = text
-    .trim()
-    .replace(/[\s，。！？、,.!?]/gu, '')
-    .toLocaleLowerCase();
-  return new Set(['任务取消', '取消任务', '不用做了', '停止任务', '终止任务']).has(normalized);
+/** 评审事件写收件箱线程（展示层镜像）：写入失败不影响评审操作本身 */
+async function appendReviewThreadMessage(
+  dependencies: TeamTaskRouteDependencies,
+  teamName: string,
+  input: AppendGroupMessageInput
+): Promise<void> {
+  if (!dependencies.appendInboxMessage) return;
+  try {
+    await dependencies.appendInboxMessage(teamName, input);
+    dependencies.broadcastInboxChange?.(teamName);
+  } catch (error) {
+    // 评审线程只是展示补充，失败记 warn 即可
+    console.warn('[review-thread] 评审线程消息写入失败（不影响评审状态）:', error);
+  }
 }
 
 async function listTaskBoardNames(dependencies: TeamTaskRouteDependencies): Promise<string[]> {
@@ -288,10 +308,6 @@ function isClarificationValue(value: unknown): value is ClarificationValue {
 
 function isRelationshipType(value: unknown): value is RelationshipType {
   return RELATIONSHIP_TYPES.has(value);
-}
-
-function hasUnsupportedCommentAttachments(value: unknown): boolean {
-  return value !== undefined && (!Array.isArray(value) || value.length > 0);
 }
 
 const TASK_ATTACHMENT_MIME_TYPES = new Set([
@@ -503,9 +519,15 @@ function isUpdateKanbanPatch(value: unknown): value is UpdateKanbanPatch {
   const patch = value as Record<string, unknown>;
   if (patch.op === 'remove') return true;
   if (patch.op === 'set_column') {
-    return patch.column === 'review' || patch.column === 'approved';
+    return (
+      (patch.column === 'review' || patch.column === 'approved') &&
+      (patch.force === undefined || typeof patch.force === 'boolean')
+    );
   }
-  return patch.op === 'request_changes';
+  if (patch.op === 'request_changes') {
+    return patch.anchor === undefined || asFeedbackAnchor(patch.anchor) !== undefined;
+  }
+  return false;
 }
 
 function createUpdateKanbanHandler(dependencies: TeamTaskRouteDependencies): UpdateKanbanHandler {
@@ -537,7 +559,7 @@ function createUpdateKanbanHandler(dependencies: TeamTaskRouteDependencies): Upd
         const openFeedback = (existingTask.feedbackItems ?? []).filter(
           (item) => item.status === 'open'
         );
-        if (openFeedback.length > 0) {
+        if (openFeedback.length > 0 && request.body.force !== true) {
           return reply.code(409).send({
             ok: false,
             error: `仍有 ${openFeedback.length} 条未处理的反馈，不能归档。`,
@@ -548,9 +570,22 @@ function createUpdateKanbanHandler(dependencies: TeamTaskRouteDependencies): Upd
         }
       }
 
+      // force 通过：遗留的 open 反馈视为不再处理，归档前统一标记已解决
+      const resolvedFeedbackItems =
+        column === 'approved' &&
+        request.body.force === true &&
+        (existingTask.feedbackItems ?? []).some((item) => item.status === 'open')
+          ? (existingTask.feedbackItems ?? []).map((item) =>
+              item.status === 'open'
+                ? { ...item, status: 'resolved' as const, resolvedAt: timestamp }
+                : item
+            )
+          : undefined;
+
       const task = await dependencies.patchTask(request.params.name, existingTask.id, {
         status: 'done',
         reviewState: column,
+        ...(resolvedFeedbackItems ? { feedbackItems: resolvedFeedbackItems } : {}),
         ...(column === 'approved' ? { revisionCount: 0, needsHumanIntervention: false } : {}),
       });
       if (column === 'approved') {
@@ -564,6 +599,7 @@ function createUpdateKanbanHandler(dependencies: TeamTaskRouteDependencies): Upd
           await dependencies.patchTask(request.params.name, existingTask.id, {
             status: existingTask.status,
             reviewState: existingTask.reviewState,
+            feedbackItems: existingTask.feedbackItems,
             revisionCount: existingTask.revisionCount,
             needsHumanIntervention: existingTask.needsHumanIntervention,
           });
@@ -590,6 +626,33 @@ function createUpdateKanbanHandler(dependencies: TeamTaskRouteDependencies): Upd
               actor: 'reviewer',
             };
       await dependencies.appendTaskHistoryEvent(request.params.name, existingTask.id, event);
+      if (column === 'approved') {
+        await appendReviewThreadMessage(
+          dependencies,
+          request.params.name,
+          buildApprovalThreadMessage(request.params.name, existingTask)
+        );
+        // 归档后沉淀建议（D7）：同一任务只建议一次，失败仅记日志
+        try {
+          const conversationId = reviewThreadConversationId(existingTask.id);
+          const threadMessages =
+            (await dependencies.readInboxMessages?.(request.params.name)) ?? [];
+          const alreadySuggested = threadMessages.some(
+            (message) =>
+              message.meta?.source === PRECIPITATION_SUGGESTION_SOURCE &&
+              message.meta?.conversationId === conversationId
+          );
+          if (!alreadySuggested) {
+            await appendReviewThreadMessage(
+              dependencies,
+              request.params.name,
+              buildPrecipitationSuggestionMessage(request.params.name, existingTask)
+            );
+          }
+        } catch (error) {
+          console.warn('[review-thread] 沉淀建议消息写入失败（不影响归档）:', error);
+        }
+      }
       dependencies.broadcastTaskChange?.(request.params.name, existingTask.id);
       return {
         ok: true,
@@ -598,12 +661,32 @@ function createUpdateKanbanHandler(dependencies: TeamTaskRouteDependencies): Upd
     }
 
     // request_changes — 与 MCP reject_result 同语义：
-    // 有 comment 时创建 open 的 FeedbackItem（不再把反馈写成评论），
+    // 有 comment 时创建 open 的 FeedbackItem（可带 anchor，不再把反馈写成评论），
     // 无 comment 时不建条目但退回计数照旧；status 回 doing、revisionCount+1，
     // >= 3 次置 needsHumanIntervention。
     const comment = request.body.comment?.trim() ?? '';
+    const anchor = asFeedbackAnchor(request.body.anchor);
     if (comment) {
-      await dependencies.addFeedbackItem(request.params.name, existingTask.id, { text: comment });
+      await dependencies.addFeedbackItem(request.params.name, existingTask.id, {
+        text: comment,
+        ...(anchor ? { anchor } : {}),
+      });
+      await appendReviewThreadMessage(
+        dependencies,
+        request.params.name,
+        buildFeedbackThreadMessage(request.params.name, existingTask, comment, anchor)
+      );
+    }
+    // 任务已处于 needsFix：同一轮退回中追加意见，只补反馈条目，
+    // 不重复翻转状态/累计退回次数/追加历史事件/派发返工。
+    if (currentReviewState(existingTask) === 'needsFix') {
+      dependencies.broadcastTaskChange?.(request.params.name, existingTask.id);
+      return {
+        ok: true,
+        task: toTeamTask(existingTask),
+        revisionCount: existingTask.revisionCount ?? 0,
+        needsHumanIntervention: existingTask.needsHumanIntervention ?? false,
+      };
     }
     const revisionCount = (existingTask.revisionCount ?? 0) + 1;
     const needsHumanIntervention = revisionCount >= HUMAN_INTERVENTION_REVISION_THRESHOLD;
@@ -748,37 +831,6 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
     }
     dependencies.broadcastTaskChange?.(match.ownerTeamSlug, match.task.id);
     return { ok: true, task: toTeamTask(task), teamName: match.ownerTeamSlug };
-  });
-
-  app.post<{
-    Params: { id: string };
-    Body: { team?: string; text?: string };
-  }>('/api/task-bus/tasks/:id/comments', async (request, reply) => {
-    const actorTeam = normalizeTaskBusActor(request.body?.team);
-    const text = normalizeTaskBusText(request.body?.text);
-    if (!actorTeam || !text) {
-      return reply.code(400).send({ ok: false, error: 'team and text required' });
-    }
-    const match = await resolveTaskBusTask(dependencies, request.params.id);
-    if (!match) return reply.code(404).send({ ok: false, error: 'task not found' });
-    if (match === 'ambiguous') {
-      return reply.code(409).send({ ok: false, error: 'task id is ambiguous' });
-    }
-    if (!canReadTaskBusTask(match, actorTeam)) {
-      return reply.code(403).send({ ok: false, error: 'task is not visible to this team' });
-    }
-    const comment: TaskComment = {
-      id: randomUUID(),
-      author: match.task.assignee ?? actorTeam,
-      text,
-      createdAt: new Date().toISOString(),
-      type: 'regular',
-    };
-    const task = await dependencies.patchTask(match.ownerTeamName, match.task.id, {
-      comments: [...(match.task.comments ?? []), comment],
-    });
-    dependencies.broadcastTaskChange?.(match.ownerTeamSlug, match.task.id);
-    return { ok: true, comment, task: toTeamTask(task), teamName: match.ownerTeamSlug };
   });
 
   app.post<{
@@ -1101,50 +1153,6 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
       }
     }
   );
-
-  app.post<{
-    Params: { name: string; id: string };
-    Body: { text?: string; taskRefs?: unknown[]; attachments?: unknown[]; anchor?: unknown };
-  }>('/api/teams/:name/tasks/:id/comments', async (request, reply) => {
-    const text = request.body?.text?.trim();
-    if (!text) return reply.code(400).send({ error: 'text required' });
-    if (hasUnsupportedCommentAttachments(request.body?.attachments)) {
-      return reply.code(400).send({
-        error: '浏览器模式暂不支持评论附件，请移除附件后重试。',
-      });
-    }
-    try {
-      const tasks = await dependencies.readTasks(request.params.name);
-      const existingTask = tasks.find((task) => task.id === request.params.id);
-      if (!existingTask) return reply.code(404).send({ error: 'not found' });
-      const createdAt = new Date().toISOString();
-      const anchor = asFeedbackAnchor(request.body?.anchor);
-      const comment: TaskComment = {
-        id: randomUUID(),
-        author: 'user',
-        text,
-        createdAt,
-        type: 'regular',
-        ...(anchor ? { anchor } : {}),
-        taskRefs: normalizeTaskRefs(request.body?.taskRefs),
-      };
-      const cancellationRequested = isTaskCancellationComment(text);
-      const task = await dependencies.patchTask(request.params.name, request.params.id, {
-        comments: [...(existingTask.comments ?? []), comment],
-        needsClarification: undefined,
-        ...(cancellationRequested
-          ? { status: 'done', deletedAt: createdAt, reviewState: undefined }
-          : { status: existingTask.assignee ? 'doing' : existingTask.status }),
-      });
-      if (task.assignee && !cancellationRequested) {
-        await dependencies.dispatchTask(request.params.name, task).catch(() => {});
-      }
-      dependencies.broadcastTaskChange?.(request.params.name, request.params.id);
-      return comment;
-    } catch (error) {
-      return reply.code(500).send(dependencies.reply500(error));
-    }
-  });
 
   app.post<{
     Params: { name: string; id: string };

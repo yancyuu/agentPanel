@@ -195,7 +195,6 @@ describe('createTeam', () => {
     expect(fs.existsSync(path.join(workDir, 'CLAUDE.md'))).toBe(false);
     const agentsMd = fs.readFileSync(path.join(workDir, 'AGENTS.md'), 'utf8');
     expect(agentsMd).toContain('agentcli --port');
-    expect(agentsMd).toContain('tasks comment --team');
     expect(agentsMd).toContain('Do not use MCP, Skills');
   });
 });

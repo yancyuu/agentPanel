@@ -52,6 +52,7 @@ import {
   registerTeamProvisioningCompatibilityRoutes,
 } from './routes/teamCompatibilityRoutes';
 import { registerTeamConfigRoutes } from './routes/teamConfigRoutes';
+import { registerTeamAssetRoutes } from './routes/teamAssetRoutes';
 import { registerTeamDirectoryRoutes } from './routes/teamDirectoryRoutes';
 import { registerTeamMessageRoutes } from './routes/teamMessageRoutes';
 import { CC_AGENT_TYPES } from './routes/teamRouteUtils';
@@ -86,6 +87,15 @@ import { SystemDiagnosticRunService } from './services/system-manager/SystemDiag
 import { WorkspaceCleanupService } from './services/system-manager/WorkspaceCleanupService';
 import { ClaudeBinaryResolver } from './services/team/ClaudeBinaryResolver';
 import { CommentReadStateService } from './services/team-management/CommentReadStateService';
+import {
+  ensureOpenspecProject,
+  pointerFileForHarness,
+} from './services/team-management/openspecProject';
+import { ensureOpenspecWrapperCommand } from './services/team-management/openspecRuntime';
+import {
+  getPiRuntimeStatus,
+  refreshPiRuntimeStatus,
+} from './services/system-manager/PiRuntimeStatus';
 import { materializeTaskInputs } from './services/team-management/TaskInputMaterializer';
 import { readUsageTelemetryWorkerStatus } from './telemetry/worker';
 import { createServerOperations } from './serverOperations';
@@ -97,6 +107,7 @@ import type { HermitConfig, HermitConfigStore, ServerEnvironment } from './serve
 import type { ServerContext } from './serverContext';
 import type { ServerOperations } from './serverOperations';
 import type { TeamProvisioningService } from './services/team-management';
+import type { AppendGroupMessageInput } from './services/team-management/TeamWorkspaceService';
 import type { FastifyInstance, FastifyServerOptions } from 'fastify';
 
 export interface WorkbenchServerOptions {
@@ -164,6 +175,8 @@ async function createWorkbenchServerUncached(
   const svc = services.teamProvisioning;
   const cc = services.bridgeClient;
   const collaborationWorkspace = new CollaborationWorkspaceService(environment.hermitHome);
+  // agent 会话的 openspec 命令入口（~/.hermit/bin/openspec，幂等安装）
+  ensureOpenspecWrapperCommand(environment.hermitHome);
   const collaborationOrchestrator = new CollaborationOrchestrator({
     workspace: collaborationWorkspace,
     teams: svc,
@@ -379,6 +392,8 @@ async function createWorkbenchServerUncached(
     workspaceCleanup,
     workflowPrompt: services.workflowPrompt,
     assertTrustedBrowserOrigin: operations.assertTrustedBrowserOrigin,
+    getPiRuntimeStatus: () => getPiRuntimeStatus({ hermitHome: environment.hermitHome }),
+    refreshPiRuntimeStatus: () => refreshPiRuntimeStatus({ hermitHome: environment.hermitHome }),
   });
   registerTerminalRoutes(app, {
     assertTrustedBrowserOrigin: operations.assertTrustedBrowserOrigin,
@@ -438,8 +453,9 @@ async function createWorkbenchServerUncached(
       }
       const inputs = await materializeTaskInputs(task, workDir);
       const inputSummary = inputs.map((input) => `- ${input.filename}: ${input.path}`).join('\n');
-      const comments = (task.comments ?? [])
-        .map((comment) => `- ${comment.author}: ${comment.text}`)
+      const openFeedback = (task.feedbackItems ?? [])
+        .filter((item) => item.status === 'open')
+        .map((item) => `- ${item.text}`)
         .join('\n');
       const hermitHome = process.env.HERMIT_HOME ?? `${process.env.HOME ?? '~'}/.hermit`;
       const cliPath = `${hermitHome}/bin/agentcli`;
@@ -452,15 +468,14 @@ async function createWorkbenchServerUncached(
         inputSummary
           ? `用户提供的本地输入文件已经复制到当前项目的 input/${task.id}/ 目录：\n${inputSummary}\n请先读取这些文件，再开始处理任务。`
           : null,
-        comments ? `用户与执行记录：\n${comments}` : null,
+        openFeedback ? `待处理的修改意见：\n${openFeedback}` : null,
         '',
         '请使用内置 AgentCLI 更新任务状态，不要使用其他任务系统：',
         `${taskCommand} claim --team ${targetTeamName} --id ${task.id}`,
-        `${taskCommand} comment --team ${targetTeamName} --id ${task.id} --text "进度或问题"`,
         `${taskCommand} clarify --team ${targetTeamName} --id ${task.id} --target user`,
         `${taskCommand} complete --team ${targetTeamName} --id ${task.id} --result "交付结果"`,
         '',
-        '如果信息不足：先评论写清问题，再标记等待用户回复并停止执行。收到用户回复后继续。完成后必须提交交付结果。',
+        '如果信息不足：先标记等待用户回复（clarify --target user）并停止执行，说明还需要什么信息。收到用户回复后继续。完成后必须提交交付结果。',
       ]
         .filter((line): line is string => line !== null)
         .join('\n');
@@ -480,6 +495,11 @@ async function createWorkbenchServerUncached(
     readTeamManifest: (teamName: string) => svc.readTeamManifest(teamName),
     broadcastTaskChange: (teamName: string, taskId: string) =>
       operations.broadcastSse('team-change', { type: 'task', teamName, taskId }),
+    appendInboxMessage: (teamName: string, input: AppendGroupMessageInput) =>
+      svc.appendMessage(teamName, input),
+    readInboxMessages: async (teamName: string) => svc.readMessages(teamName, { limit: 5000 }),
+    broadcastInboxChange: (teamName: string) =>
+      operations.broadcastSse('team-change', { type: 'inbox', teamName }),
     requestCollaborationChanges: (
       runId: string,
       feedback: string,
@@ -488,6 +508,19 @@ async function createWorkbenchServerUncached(
     reply500: operations.reply500,
   };
   registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['core'] });
+
+  registerTeamAssetRoutes(app, {
+    readTeamManifest: (teamName: string) => svc.readTeamManifest(teamName),
+    ensureAssetsProject: async (workDir: string, harness?: string) => {
+      const command = ensureOpenspecWrapperCommand(environment.hermitHome);
+      if (command) {
+        await ensureOpenspecProject(workDir, command, {
+          pointerFile: harness ? pointerFileForHarness(harness) : undefined,
+        });
+      }
+    },
+    reply500: operations.reply500,
+  });
 
   const teamRuntimeRouteDependencies = {
     teamProvisioning: svc,
@@ -531,15 +564,23 @@ async function createWorkbenchServerUncached(
     listProjects: () => cc.listProjects(),
     readTasks: (teamName) => svc.readTasks(teamName),
   });
-  registerMcpRoutes(app, {
-    readTasks: (teamSlug) => svc.readTasks(teamSlug),
-    createTask: (teamSlug, payload) => svc.createTask(teamSlug, payload),
-    patchTask: (teamSlug, taskId, patch) => svc.patchTask(teamSlug, taskId, patch),
-    addDelivery: (teamSlug, taskId, input) => svc.addDelivery(teamSlug, taskId, input),
-    addFeedbackItem: (teamSlug, taskId, input) => svc.addFeedbackItem(teamSlug, taskId, input),
-    appendTaskHistoryEvent: (teamSlug, taskId, event) =>
-      svc.appendTaskHistoryEvent(teamSlug, taskId, event),
-  });
+  registerMcpRoutes(
+    app,
+    {
+      readTasks: (teamSlug) => svc.readTasks(teamSlug),
+      createTask: (teamSlug, payload) => svc.createTask(teamSlug, payload),
+      patchTask: (teamSlug, taskId, patch) => svc.patchTask(teamSlug, taskId, patch),
+      addDelivery: (teamSlug, taskId, input) => svc.addDelivery(teamSlug, taskId, input),
+      addFeedbackItem: (teamSlug, taskId, input) => svc.addFeedbackItem(teamSlug, taskId, input),
+      appendTaskHistoryEvent: (teamSlug, taskId, event) =>
+        svc.appendTaskHistoryEvent(teamSlug, taskId, event),
+    },
+    {
+      appendMessage: (teamSlug, input) => svc.appendMessage(teamSlug, input),
+      broadcastInboxChange: (teamName) =>
+        operations.broadcastSse('team-change', { type: 'inbox', teamName }),
+    }
+  );
   registerVersionUpdateRoutes(app, {
     version: environment.version,
     updateService: services.update,

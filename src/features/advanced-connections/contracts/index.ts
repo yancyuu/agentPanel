@@ -97,6 +97,8 @@ export interface AdvancedConnectionSummary {
   label: string;
   baseUrl: string;
   secure: boolean;
+  /** 用户已确认接受该 HTTP 连接的传输风险（仅对非加密连接有意义） */
+  insecureAllowed?: boolean;
   providerId: string;
   providerName: string;
   providerDescription?: string;

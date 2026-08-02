@@ -54,8 +54,8 @@ vi.mock('@renderer/hooks/useTheme', () => ({
   useTheme: () => ({ isLight: false }),
 }));
 
-vi.mock('@renderer/hooks/useUnreadCommentCount', () => ({
-  useUnreadCommentCount: () => 0,
+vi.mock('@renderer/hooks/useUnreadActivityCount', () => ({
+  useUnreadActivityCount: () => 0,
 }));
 
 import { KanbanTaskCard } from './KanbanTaskCard';

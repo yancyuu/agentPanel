@@ -14,7 +14,7 @@ export interface InboxTaskRowProps {
 
 const attentionLabels = {
   clarification: '等待说明',
-  unread: '新评论',
+  unread: '新动态',
   review: '需要关注',
   unassigned: '未分配',
   recent: '',
@@ -53,7 +53,7 @@ export function InboxTaskRow({
             task.status === 'completed'
               ? 'text-success'
               : task.status === 'in_progress'
-                ? 'text-info'
+                ? 'text-orange-500 dark:text-orange-400'
                 : 'text-[var(--color-text-muted)]'
           )}
         />
@@ -94,7 +94,7 @@ export function InboxTaskRow({
           {unreadCount > 0 ? (
             <div className="mt-1.5 flex items-center gap-1 text-xs text-info">
               <MessageSquare size={11} />
-              {unreadCount} 条未读评论
+              {unreadCount} 条未读动态
             </div>
           ) : null}
         </div>

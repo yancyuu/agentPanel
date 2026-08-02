@@ -11,7 +11,6 @@ import { createDefaultCliExtensionCapabilities } from '@shared/utils/providerExt
 import type { DashboardRecentProjectsPayload } from '@features/recent-projects/contracts';
 import type {
   AddMemberRequest,
-  AddTaskCommentRequest,
   AppConfig,
   AttachmentFileData,
   BoardTaskActivityDetailResult,
@@ -72,7 +71,7 @@ import type {
   SubagentDetail,
   SystemManagerSummary,
   TaskAttachmentMeta,
-  TaskComment,
+  TeamAssetsResponse,
   TeamAgentRuntimeSnapshot,
   TeamChangeEvent,
   TeamClaudeLogsQuery,
@@ -1441,16 +1440,6 @@ export class HttpAPIClient implements ElectronAPI {
       }
       return result;
     },
-    addTaskComment: async (
-      teamName: string,
-      taskId: string,
-      request: AddTaskCommentRequest
-    ): Promise<TaskComment> => {
-      return this.post(
-        `/api/teams/${encodeURIComponent(teamName)}/tasks/${encodeURIComponent(taskId)}/comments`,
-        request
-      );
-    },
     addMember: async (teamName: string, request: AddMemberRequest): Promise<void> => {
       await this.post(`/api/teams/${encodeURIComponent(teamName)}/members`, request);
     },
@@ -1601,6 +1590,9 @@ export class HttpAPIClient implements ElectronAPI {
         `/api/teams/${encodeURIComponent(teamName)}/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`
       );
       return typeof response.base64Data === 'string' ? response.base64Data : null;
+    },
+    getTeamAssets: async (teamName: string): Promise<TeamAssetsResponse> => {
+      return this.get<TeamAssetsResponse>(`/api/teams/${encodeURIComponent(teamName)}/assets`);
     },
     deleteTaskAttachment: async (
       teamName: string,
@@ -2343,6 +2335,9 @@ export class HttpAPIClient implements ElectronAPI {
   // ---------------------------------------------------------------------------
 
   systemManager: SystemManagerAPI = {
+    getDiagnosticsRuntime: async (refresh = false) => {
+      return this.get(`/api/system-manager/diagnostics/runtime${refresh ? '?refresh=1' : ''}`);
+    },
     getStatus: () => this.get('/api/system-manager/status'),
     getConfig: () => this.get('/api/system-manager/config'),
     updateConfig: (patch) => this.put('/api/system-manager/config', patch),

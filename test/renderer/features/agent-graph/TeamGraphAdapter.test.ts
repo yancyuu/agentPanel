@@ -274,7 +274,7 @@ describe('TeamGraphAdapter particles', () => {
     });
   });
 
-  it('creates a comment particle for the first new task comment with preview text', () => {
+  it('creates a delivery particle for the first new task delivery with preview text', () => {
     const adapter = TeamGraphAdapter.create();
     const baseline = createBaseTeamData({
       tasks: [
@@ -284,7 +284,7 @@ describe('TeamGraphAdapter particles', () => {
           subject: 'Investigate',
           owner: 'alice',
           status: 'in_progress',
-          comments: [],
+          deliveries: [],
           reviewState: 'none',
         } as TeamTaskWithKanban,
       ],
@@ -299,13 +299,11 @@ describe('TeamGraphAdapter particles', () => {
           subject: 'Investigate',
           owner: 'alice',
           status: 'in_progress',
-          comments: [
+          deliveries: [
             {
-              id: 'comment-1',
-              author: 'alice',
-              text: 'Need clarification on the acceptance criteria before I continue',
-              createdAt: '2026-03-28T19:00:02.000Z',
-              type: 'regular',
+              version: 1,
+              result: 'Need clarification on the acceptance criteria before I continue',
+              deliveredAt: '2026-03-28T19:00:02.000Z',
             },
           ],
           reviewState: 'none',
@@ -317,8 +315,8 @@ describe('TeamGraphAdapter particles', () => {
 
     expect(graph.particles).toHaveLength(1);
     expect(graph.particles[0]).toMatchObject({
-      kind: 'task_comment',
-      label: '💬 Need clarification on the acceptance criteria befor…',
+      kind: 'task_delivery',
+      label: '📦 Need clarification on the acceptance criteria befor…',
     });
   });
 
@@ -536,7 +534,7 @@ describe('TeamGraphAdapter particles', () => {
     ]);
   });
 
-  it('does not replay old task comments that appear after the graph already opened', () => {
+  it('does not replay old task deliveries that appear after the graph already opened', () => {
     vi.setSystemTime(new Date('2026-03-28T19:00:10.000Z'));
 
     const adapter = TeamGraphAdapter.create();
@@ -549,7 +547,7 @@ describe('TeamGraphAdapter particles', () => {
             subject: 'Review backlog',
             owner: 'alice',
             status: 'in_progress',
-            comments: [],
+            deliveries: [],
             reviewState: 'none',
           } as TeamTaskWithKanban,
         ],
@@ -566,13 +564,11 @@ describe('TeamGraphAdapter particles', () => {
             subject: 'Review backlog',
             owner: 'alice',
             status: 'in_progress',
-            comments: [
+            deliveries: [
               {
-                id: 'comment-old',
-                author: 'alice',
-                text: 'Old backlog comment',
-                createdAt: '2026-03-28T19:00:01.000Z',
-                type: 'regular',
+                version: 1,
+                result: 'Old backlog delivery',
+                deliveredAt: '2026-03-28T19:00:01.000Z',
               },
             ],
             reviewState: 'none',
@@ -585,7 +581,7 @@ describe('TeamGraphAdapter particles', () => {
     expect(graph.particles).toHaveLength(0);
   });
 
-  it('creates a synthetic message edge for comments from non-owner participants', () => {
+  it('creates a delivery particle authored by the task owner', () => {
     const adapter = TeamGraphAdapter.create();
     const baseline = createBaseTeamData({
       tasks: [
@@ -595,7 +591,7 @@ describe('TeamGraphAdapter particles', () => {
           subject: 'Fix regression',
           owner: 'bob',
           status: 'in_progress',
-          comments: [],
+          deliveries: [],
           reviewState: 'none',
         } as TeamTaskWithKanban,
       ],
@@ -610,13 +606,11 @@ describe('TeamGraphAdapter particles', () => {
           subject: 'Fix regression',
           owner: 'bob',
           status: 'in_progress',
-          comments: [
+          deliveries: [
             {
-              id: 'comment-2',
-              author: 'alice',
-              text: 'I found the root cause, handing notes over now',
-              createdAt: '2026-03-28T19:00:03.000Z',
-              type: 'regular',
+              version: 1,
+              result: 'I found the root cause, handing notes over now',
+              deliveredAt: '2026-03-28T19:00:03.000Z',
             },
           ],
           reviewState: 'none',
@@ -628,11 +622,16 @@ describe('TeamGraphAdapter particles', () => {
 
     expect(graph.particles).toHaveLength(1);
     expect(graph.particles[0]).toMatchObject({
-      kind: 'task_comment',
-      label: '💬 I found the root cause, handing notes over now',
+      kind: 'task_delivery',
+      label: '📦 I found the root cause, handing notes over now',
     });
     expect(
-      graph.edges.some((edge) => edge.id === 'edge:msg:member:my-team:alice:task:my-team:task-2')
+      graph.edges.some((edge) => edge.id === 'edge:msg:member:my-team:bob:task:my-team:task-2') ||
+        graph.edges.some(
+          (edge) =>
+            (edge.source === 'member:my-team:bob' || edge.target === 'member:my-team:bob') &&
+            (edge.source === 'task:my-team:task-2' || edge.target === 'task:my-team:task-2')
+        )
     ).toBe(true);
   });
 
@@ -695,17 +694,17 @@ describe('TeamGraphAdapter particles', () => {
     });
   });
 
-  it('creates particles for each newly appended task comment, not only the latest one', () => {
+  it('creates particles for each newly appended task delivery, not only the latest one', () => {
     const adapter = TeamGraphAdapter.create();
     const baseline = createBaseTeamData({
       tasks: [
         {
           id: 'task-4',
           displayId: '#4',
-          subject: 'Burst comments',
+          subject: 'Burst deliveries',
           owner: 'alice',
           status: 'in_progress',
-          comments: [],
+          deliveries: [],
           reviewState: 'none',
         } as TeamTaskWithKanban,
       ],
@@ -717,23 +716,19 @@ describe('TeamGraphAdapter particles', () => {
         {
           id: 'task-4',
           displayId: '#4',
-          subject: 'Burst comments',
+          subject: 'Burst deliveries',
           owner: 'alice',
           status: 'in_progress',
-          comments: [
+          deliveries: [
             {
-              id: 'comment-4a',
-              author: 'alice',
-              text: 'First burst comment',
-              createdAt: '2026-03-28T19:00:06.000Z',
-              type: 'regular',
+              version: 1,
+              result: 'First burst delivery',
+              deliveredAt: '2026-03-28T19:00:06.000Z',
             },
             {
-              id: 'comment-4b',
-              author: 'bob',
-              text: 'Second burst comment',
-              createdAt: '2026-03-28T19:00:07.000Z',
-              type: 'regular',
+              version: 2,
+              result: 'Second burst delivery',
+              deliveredAt: '2026-03-28T19:00:07.000Z',
             },
           ],
           reviewState: 'none',
@@ -744,10 +739,10 @@ describe('TeamGraphAdapter particles', () => {
     const graph = adapter.adapt(next, 'my-team');
 
     expect(graph.particles).toHaveLength(2);
-    expect(graph.particles.every((particle) => particle.kind === 'task_comment')).toBe(true);
+    expect(graph.particles.every((particle) => particle.kind === 'task_delivery')).toBe(true);
   });
 
-  it('maps the real lead name to the lead node for inbox messages and task comments', () => {
+  it('maps the real lead name to the lead node for inbox messages and task deliveries', () => {
     const adapter = TeamGraphAdapter.create();
     const baseline = createBaseTeamData({
       config: {
@@ -781,7 +776,7 @@ describe('TeamGraphAdapter particles', () => {
           subject: 'Review notes',
           owner: 'alice',
           status: 'in_progress',
-          comments: [],
+          deliveries: [],
           reviewState: 'none',
         } as TeamTaskWithKanban,
       ],
@@ -799,13 +794,11 @@ describe('TeamGraphAdapter particles', () => {
           subject: 'Review notes',
           owner: 'alice',
           status: 'in_progress',
-          comments: [
+          deliveries: [
             {
-              id: 'comment-3',
-              author: 'olivia',
-              text: 'Please tighten the acceptance criteria before merge',
-              createdAt: '2026-03-28T19:00:04.000Z',
-              type: 'regular',
+              version: 1,
+              result: 'Please tighten the acceptance criteria before merge',
+              deliveredAt: '2026-03-28T19:00:04.000Z',
             },
           ],
           reviewState: 'none',
@@ -828,7 +821,7 @@ describe('TeamGraphAdapter particles', () => {
     expect(graph.particles).toHaveLength(2);
     expect(
       graph.particles.map((particle) => particle.kind).toSorted((a, b) => a.localeCompare(b))
-    ).toEqual(['inbox_message', 'task_comment']);
+    ).toEqual(['inbox_message', 'task_delivery']);
   });
 
   it('maps lead-owned tasks onto the lead board without routing unknown owners to lead', () => {
@@ -867,7 +860,7 @@ describe('TeamGraphAdapter particles', () => {
             subject: 'Lead summary',
             owner: 'olivia',
             status: 'in_progress',
-            comments: [],
+            deliveries: [],
             reviewState: 'none',
           } as TeamTaskWithKanban,
           {
@@ -876,7 +869,7 @@ describe('TeamGraphAdapter particles', () => {
             subject: 'Unknown owner',
             owner: 'ghost',
             status: 'in_progress',
-            comments: [],
+            deliveries: [],
             reviewState: 'none',
           } as TeamTaskWithKanban,
         ],
@@ -929,7 +922,7 @@ describe('TeamGraphAdapter particles', () => {
     ]);
   });
 
-  it('routes task comment activity to the task owner and keeps task detail metadata', () => {
+  it('routes task delivery activity to the task owner and keeps task detail metadata', () => {
     const adapter = TeamGraphAdapter.create();
 
     const graph = adapter.adapt(
@@ -941,13 +934,11 @@ describe('TeamGraphAdapter particles', () => {
             subject: 'Review API notes',
             owner: 'bob',
             status: 'in_progress',
-            comments: [
+            deliveries: [
               {
-                id: 'comment-1',
-                author: 'alice',
-                text: 'Please check the final API notes before merge',
-                createdAt: '2026-03-28T19:00:02.000Z',
-                type: 'regular',
+                version: 1,
+                result: 'Please check the final API notes before merge',
+                deliveredAt: '2026-03-28T19:00:02.000Z',
               },
             ],
             reviewState: 'none',
@@ -959,13 +950,13 @@ describe('TeamGraphAdapter particles', () => {
 
     expect(findNode(graph, 'member:my-team:bob')?.activityItems).toEqual([
       expect.objectContaining({
-        id: 'activity:comment:my-team:task-comments:comment-1',
-        kind: 'task_comment',
+        id: 'activity:delivery:my-team:task-comments:1',
+        kind: 'task_delivery',
         title: '#8 Review API notes',
         preview: 'Please check the final API notes before merge',
         taskId: 'task-comments',
         taskDisplayId: '#8',
-        authorLabel: 'alice',
+        authorLabel: 'bob',
       }),
     ]);
   });
@@ -1011,7 +1002,7 @@ describe('TeamGraphAdapter particles', () => {
             subject: 'Stable owner task',
             owner: 'agent-alice',
             status: 'completed',
-            comments: [],
+            deliveries: [],
             reviewState: 'none',
           } as TeamTaskWithKanban,
         ],
@@ -1502,7 +1493,7 @@ describe('TeamGraphAdapter particles', () => {
     });
   });
 
-  it('refreshes unread comment badges when comment read state changes without task changes', () => {
+  it('refreshes unread delivery badges when activity read state changes without task changes', () => {
     const adapter = TeamGraphAdapter.create();
     const teamData = createBaseTeamData({
       tasks: [
@@ -1512,13 +1503,11 @@ describe('TeamGraphAdapter particles', () => {
           subject: 'Review unread badge',
           owner: 'alice',
           status: 'in_progress',
-          comments: [
+          deliveries: [
             {
-              id: 'comment-1',
-              author: 'alice',
-              text: 'Need a quick read receipt here',
-              createdAt: '2026-03-28T19:00:02.000Z',
-              type: 'regular',
+              version: 1,
+              result: 'Need a quick read receipt here',
+              deliveredAt: '2026-03-28T19:00:02.000Z',
             },
           ],
           reviewState: 'none',
@@ -1550,14 +1539,14 @@ describe('TeamGraphAdapter particles', () => {
       undefined,
       {
         'my-team/task-comments': {
-          readIds: ['comment-1'],
+          readIds: ['delivery:1'],
           lastUpdated: Date.now(),
         },
       }
     );
 
-    expect(findNode(unreadGraph, 'task:my-team:task-comments')?.unreadCommentCount).toBe(1);
-    expect(findNode(readGraph, 'task:my-team:task-comments')?.unreadCommentCount).toBeUndefined();
+    expect(findNode(unreadGraph, 'task:my-team:task-comments')?.unreadDeliveryCount).toBe(1);
+    expect(findNode(readGraph, 'task:my-team:task-comments')?.unreadDeliveryCount).toBeUndefined();
   });
 
   it('dedupes symmetric blocking links and ignores completed blockers for blocked state', () => {

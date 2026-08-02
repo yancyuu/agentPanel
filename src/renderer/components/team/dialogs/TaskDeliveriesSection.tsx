@@ -25,6 +25,8 @@ interface TaskDeliveriesSectionProps {
   feedbackItems?: FeedbackItem[];
   /** 点击 hunk 锚点时打开变更审查（无则静态展示）。 */
   onOpenHunk?: (changeKey: string) => void;
+  /** 只读展示时的评审入口引导（如「评审请在收件箱进行」） */
+  reviewLocationHint?: string;
 }
 
 function formatRelativeTime(timestamp: string): string | null {
@@ -40,15 +42,17 @@ function formatFullTime(timestamp: string): string | null {
 }
 
 /**
- * 交付成果 + 反馈待办点：
+ * 交付成果 + 反馈待办点（只读）：
  * - deliveries 追加式版本化，默认展示最新一版，可前后切换；
  * - 每版突出显示本版变更摘要（summary），并列出本版处理的反馈条目；
- * - feedbackItems 条目化展示，open 项计数醒目提示，resolved 项弱化。
+ * - feedbackItems 条目化展示，open 项计数醒目提示，resolved 项弱化；
+ * - 评审交互（通过/退回/选中提意见）在收件箱进行，此处仅展示。
  */
 export const TaskDeliveriesSection = ({
   deliveries,
   feedbackItems,
   onOpenHunk,
+  reviewLocationHint,
 }: TaskDeliveriesSectionProps): React.JSX.Element | null => {
   // null = 跟随最新一版；用户手动切换后固定在所选版本
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
@@ -94,9 +98,15 @@ export const TaskDeliveriesSection = ({
 
   return (
     <div className="space-y-3">
+      {reviewLocationHint ? (
+        <div className="text-[11px] text-[var(--color-text-muted)] opacity-70">
+          {reviewLocationHint}
+        </div>
+      ) : null}
+
       {currentDelivery ? (
         <div className="space-y-2" data-testid="delivery-version">
-          {/* 版本切换 + 交付时间 + 结果操作 */}
+          {/* 版本切换 + 交付时间 + 次要操作（复制/保存 PDF 仅图标） */}
           <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
             {sortedDeliveries.length > 1 ? (
               <span className="flex items-center gap-1">
@@ -126,9 +136,7 @@ export const TaskDeliveriesSection = ({
                   <ChevronRight size={12} />
                 </button>
               </span>
-            ) : (
-              <span className="tabular-nums">第 {currentDelivery.version} 版</span>
-            )}
+            ) : null}
             {formatRelativeTime(currentDelivery.deliveredAt) ? (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -142,23 +150,33 @@ export const TaskDeliveriesSection = ({
                 </TooltipContent>
               </Tooltip>
             ) : null}
-            <span className="ml-auto flex shrink-0 items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => void copyResult(currentDelivery.result)}
-                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)]"
-              >
-                {resultCopied ? <Check size={11} /> : <Copy size={11} />}
-                {resultCopied ? '已复制' : '复制'}
-              </button>
-              <button
-                type="button"
-                onClick={printResult}
-                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)]"
-              >
-                <Printer size={11} />
-                保存 PDF
-              </button>
+            <span className="ml-auto flex shrink-0 items-center gap-0.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="复制成果"
+                    onClick={() => void copyResult(currentDelivery.result)}
+                    className="inline-flex items-center rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-secondary)]"
+                  >
+                    {resultCopied ? <Check size={12} /> : <Copy size={12} />}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">{resultCopied ? '已复制' : '复制'}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="保存 PDF"
+                    onClick={printResult}
+                    className="inline-flex items-center rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-secondary)]"
+                  >
+                    <Printer size={12} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">保存 PDF</TooltipContent>
+              </Tooltip>
             </span>
           </div>
 

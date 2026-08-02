@@ -256,6 +256,7 @@ describe('CollaborationOrchestrator', () => {
       ['agent-b', createManifest('agent-b', '研究员', root, 'pi')],
     ]);
     const tasks: Task[] = [];
+    const appendedMessages: Record<string, unknown>[] = [];
     const teams = {
       readTeamManifest(teamSlug: string) {
         const manifest = manifests.get(teamSlug);
@@ -304,9 +305,32 @@ describe('CollaborationOrchestrator', () => {
       readTasks() {
         return Promise.resolve(tasks);
       },
+      appendMessage(_teamSlug: string, input: Record<string, unknown>) {
+        appendedMessages.push(input);
+        return Promise.resolve({ id: (input.id as string) ?? 'm_test' });
+      },
+      readMessages() {
+        return Promise.resolve(
+          appendedMessages.map((input) => ({
+            id: (input.id as string) ?? 'm_test',
+            ts: new Date().toISOString(),
+            from: input.from,
+            to: input.to,
+            role: 'agent',
+            content: input.content,
+            meta: input.meta ?? null,
+          }))
+        );
+      },
     } as unknown as Pick<
       TeamProvisioningService,
-      'readTeamManifest' | 'createTask' | 'patchTask' | 'addDelivery' | 'readTasks'
+      | 'readTeamManifest'
+      | 'createTask'
+      | 'patchTask'
+      | 'addDelivery'
+      | 'readTasks'
+      | 'appendMessage'
+      | 'readMessages'
     >;
     const directCli = new FakeDirectCli();
     const orchestrator = new CollaborationOrchestrator({
@@ -356,16 +380,20 @@ describe('CollaborationOrchestrator', () => {
       parentTaskId: completed.rootTaskId,
       status: 'done',
     });
-    expect(tasks.find((task) => task.taskKind === 'root')).toMatchObject({
+    const rootTask = tasks.find((task) => task.taskKind === 'root');
+    expect(rootTask).toMatchObject({
       status: 'done',
       reviewState: 'review',
-      comments: [
-        expect.objectContaining({
-          author: '产品经理',
-          text: '小队已完成协作并提交最终成果，请检查结果。',
-        }),
-      ],
     });
+    // 交付通知走消息线程（task:<taskId>），不再写任务评论
+    const deliveryMessage = appendedMessages.find(
+      (message) =>
+        (message.meta as { conversationId?: string } | undefined)?.conversationId ===
+        `task:${rootTask?.id ?? ''}`
+    );
+    expect(deliveryMessage).toBeDefined();
+    expect((deliveryMessage?.meta as { source?: string }).source).toBe('runtime_delivery');
+    expect(String(deliveryMessage?.content)).toContain('交付 第 1 版');
 
     const promptsBeforeFailedPersistence = directCli.prompts.length;
     await expect(

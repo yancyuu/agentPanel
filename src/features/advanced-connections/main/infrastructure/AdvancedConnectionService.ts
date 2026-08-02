@@ -52,6 +52,8 @@ interface StoredConnectionRecord {
   label: string;
   baseUrl: string;
   secure: boolean;
+  /** 用户已确认接受 HTTP 传输风险后放行（per-connection 持久化） */
+  insecureAllowed?: boolean;
   compatibilityMode: boolean;
   /** 由桌面工作台托管的默认 AgentBus；仅该连接在登录后自动开启聚合用量同步。 */
   managedDefault?: boolean;
@@ -229,7 +231,7 @@ function normalizeBaseUrl(value: string): { baseUrl: string; secure: boolean } {
   return { baseUrl: url.origin, secure: url.protocol === 'https:' };
 }
 
-function validateAuthorizationUrl(value: string): string {
+function validateAuthorizationUrl(value: string, allowInsecureHttp = false): string {
   let url: URL;
   try {
     url = new URL(value);
@@ -245,7 +247,7 @@ function validateAuthorizationUrl(value: string): string {
     throw new Error('授权页面地址无效');
   }
   const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
-  if (url.protocol === 'http:' && !isLoopback) {
+  if (url.protocol === 'http:' && !isLoopback && !allowInsecureHttp) {
     throw new Error('远程授权页面必须使用 HTTPS');
   }
   return url.toString();
@@ -651,7 +653,7 @@ export class AdvancedConnectionService {
     }
     const payload = asRecord(await response.json().catch(() => null));
     if (!response.ok) throw new Error(`启动授权失败（HTTP ${response.status}）`);
-    const start = this.normalizeAuthStart(payload);
+    const start = this.normalizeAuthStart(payload, record.insecureAllowed === true);
     const attemptId = `auth_${randomUUID().replace(/-/gu, '').slice(0, 16)}`;
     const expiresAtMs = Date.now() + start.expiresIn * 1000;
     const attempt: AuthAttempt = {
@@ -1117,7 +1119,10 @@ export class AdvancedConnectionService {
     return { ok: true, tasks, pulledAt: new Date(this.now()).toISOString() };
   }
 
-  private normalizeAuthStart(payload: Record<string, unknown>): AuthStartPayload {
+  private normalizeAuthStart(
+    payload: Record<string, unknown>,
+    allowInsecureHttp = false
+  ): AuthStartPayload {
     const flowId = stringValue(payload.flow_id) ?? stringValue(payload.deviceCode);
     const pollSecret =
       stringValue(payload.poll_secret) ?? stringValue(payload.pollSecret) ?? flowId;
@@ -1135,7 +1140,7 @@ export class AdvancedConnectionService {
     return {
       flowId,
       pollSecret,
-      authorizationUrl: validateAuthorizationUrl(rawAuthorizationUrl),
+      authorizationUrl: validateAuthorizationUrl(rawAuthorizationUrl, allowInsecureHttp),
       userCode: stringValue(payload.user_code) ?? stringValue(payload.userCode),
       expiresIn,
       interval,
@@ -1279,9 +1284,18 @@ export class AdvancedConnectionService {
   }
 
   private assertAuthorizedTransport(record: StoredConnectionRecord): void {
-    if (!record.secure && !isLoopbackUrl(record.baseUrl)) {
+    if (!record.secure && !isLoopbackUrl(record.baseUrl) && !record.insecureAllowed) {
       throw new Error('远程连接必须使用 HTTPS；HTTP 仅允许 localhost 或 127.0.0.1');
     }
+  }
+
+  /** 用户确认 HTTP 传输风险后，持久化放行该连接（secret 下发/Token 池随之可用） */
+  async allowInsecureTransport(connectionId: string): Promise<AdvancedConnectionSummary> {
+    const updated = await this.updateRecord(connectionId, (current) => ({
+      ...current,
+      insecureAllowed: true,
+    }));
+    return this.toSummary(updated);
   }
 
   private async requireRecord(connectionId: string): Promise<StoredConnectionRecord> {
@@ -1313,6 +1327,7 @@ export class AdvancedConnectionService {
       label: record.label,
       baseUrl: record.baseUrl,
       secure: record.secure,
+      ...(record.insecureAllowed ? { insecureAllowed: true } : {}),
       providerId: record.manifest.provider.id,
       providerName: record.manifest.provider.displayName,
       providerDescription: record.manifest.provider.description,

@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 import {
-  getSnapshot as getCommentReadSnapshot,
+  getSnapshot as getActivityReadSnapshot,
   getUnreadCount,
-  markCommentsRead,
-  subscribe as subscribeCommentRead,
-} from '@renderer/services/commentReadStorage';
+  markActivityRead,
+  subscribe as subscribeActivityRead,
+} from '@renderer/services/taskActivityReadStorage';
 import { useStore } from '@renderer/store';
 import { getTaskInputMimeType, taskInputFileToBase64 } from '@renderer/utils/taskInputFiles';
 import { useShallow } from 'zustand/react/shallow';
 
 import {
   findReferencedTask,
+  getAgentActivityItems,
   getGlobalTaskKey,
   getInboxTaskView,
-  getTaskFeedbackComments,
+  getTaskInboxActivityItems,
   type InboxTaskMessageProjection,
   type InboxTaskProjection,
   type InboxTaskView,
@@ -23,7 +24,7 @@ import {
 } from '../utils/inboxProjection';
 
 import type { ParsedTaskLinkHref } from '@renderer/utils/taskReferenceUtils';
-import type { CreateTaskRequest, TaskRef, TeamTask } from '@shared/types';
+import type { CreateTaskRequest, FeedbackAnchor, TaskRef, TeamTask } from '@shared/types';
 
 async function uploadTaskInputFiles(
   files: File[],
@@ -69,12 +70,13 @@ export interface CollaborativeInboxState {
     inputFiles?: File[]
   ) => Promise<TeamTask>;
   updateOwner: (teamName: string, taskId: string, owner: string | null) => Promise<void>;
-  approveTask: (teamName: string, taskId: string) => Promise<void>;
+  approveTask: (teamName: string, taskId: string, force?: boolean) => Promise<void>;
   requestChanges: (
     teamName: string,
     taskId: string,
     comment?: string,
-    taskRefs?: TaskRef[]
+    taskRefs?: TaskRef[],
+    anchor?: FeedbackAnchor
   ) => Promise<void>;
 }
 
@@ -107,9 +109,9 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
     }))
   );
   const readState = useSyncExternalStore(
-    subscribeCommentRead,
-    getCommentReadSnapshot,
-    getCommentReadSnapshot
+    subscribeActivityRead,
+    getActivityReadSnapshot,
+    getActivityReadSnapshot
   );
   const [view, setView] = useState<InboxTaskView>('in_progress');
   const [query, setQuery] = useState('');
@@ -137,7 +139,7 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
         readState,
         task.teamName,
         task.id,
-        getTaskFeedbackComments(task.comments ?? [])
+        getAgentActivityItems(task)
       );
     }
     return result;
@@ -215,10 +217,10 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
     (key: string) => {
       const task = visibleBaseTasks.find((candidate) => getGlobalTaskKey(candidate) === key);
       if (!task) return;
-      const commentIds = getTaskFeedbackComments(task.comments ?? [])
-        .map((comment) => comment.id)
+      const activityIds = getTaskInboxActivityItems(task)
+        .map((item) => item.id)
         .filter((id): id is string => Boolean(id));
-      markCommentsRead(task.teamName, task.id, commentIds);
+      markActivityRead(task.teamName, task.id, activityIds);
     },
     [visibleBaseTasks]
   );
@@ -279,16 +281,31 @@ export function useCollaborativeInbox(): CollaborativeInboxState {
   );
 
   const approveTask = useCallback(
-    async (teamName: string, taskId: string) => {
-      await updateKanban(teamName, taskId, { op: 'set_column', column: 'approved' });
+    async (teamName: string, taskId: string, force = false) => {
+      await updateKanban(teamName, taskId, {
+        op: 'set_column',
+        column: 'approved',
+        ...(force ? { force: true } : {}),
+      });
       await fetchAllTasks();
     },
     [fetchAllTasks, updateKanban]
   );
 
   const requestChanges = useCallback(
-    async (teamName: string, taskId: string, comment?: string, taskRefs?: TaskRef[]) => {
-      await updateKanban(teamName, taskId, { op: 'request_changes', comment, taskRefs });
+    async (
+      teamName: string,
+      taskId: string,
+      comment?: string,
+      taskRefs?: TaskRef[],
+      anchor?: FeedbackAnchor
+    ) => {
+      await updateKanban(teamName, taskId, {
+        op: 'request_changes',
+        comment,
+        taskRefs,
+        ...(anchor ? { anchor } : {}),
+      });
       await fetchAllTasks();
     },
     [fetchAllTasks, updateKanban]

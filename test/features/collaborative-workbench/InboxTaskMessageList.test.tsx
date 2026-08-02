@@ -18,11 +18,10 @@ const message: InboxTaskMessageProjection = {
     owner: 'alice',
   },
   latestMessage: {
-    id: 'comment-1',
+    id: 'delivery:1',
     author: 'alice',
-    text: '需要补充目标站点。',
+    text: '交付 第 1 版：需要补充目标站点。',
     createdAt: '2026-01-01T00:00:00.000Z',
-    type: 'regular',
   },
   unreadCount: 1,
   updatedAtMs: Date.parse('2026-01-01T00:00:00.000Z'),
@@ -101,6 +100,81 @@ describe('InboxTaskMessageList', () => {
     });
 
     expect(host.querySelector('[aria-label="未读"]')).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('按任务状态映射行内状态标签，仅 review 态显示「待你评审」', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const make = (
+      id: string,
+      status: 'pending' | 'in_progress' | 'completed',
+      reviewState?: 'review' | 'needsFix' | 'approved'
+    ): InboxTaskMessageProjection => ({
+      key: `team-a:${id}`,
+      task: {
+        id,
+        displayId: id,
+        subject: id,
+        status,
+        reviewState,
+        teamName: 'team-a',
+        teamDisplayName: '测试',
+        owner: 'alice',
+      },
+      latestMessage: {
+        id: `delivery:${id}`,
+        author: 'alice',
+        text: '交付',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      unreadCount: 0,
+      updatedAtMs: Date.parse('2026-01-01T00:00:00.000Z'),
+    });
+
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(
+        <InboxTaskMessageList
+          messages={[
+            make('rework', 'in_progress', 'needsFix'),
+            make('awaiting-review', 'completed', 'review'),
+            make('done-task', 'completed', 'approved'),
+            make('todo-task', 'pending'),
+          ]}
+          selectedKey={null}
+          query=""
+          onQueryChange={vi.fn()}
+          teamFilter="all"
+          onTeamFilterChange={vi.fn()}
+          teamOptions={[]}
+          onSelect={vi.fn()}
+          onRefresh={vi.fn()}
+          loading={false}
+        />
+      );
+      await Promise.resolve();
+    });
+
+    // needsFix（返工中）归入「进行中」，不再显示「需纠正」
+    expect(host.textContent).toContain('进行中');
+    expect(host.textContent).not.toContain('需纠正');
+    // 等用户评审是行动项，优先于任务状态
+    expect(host.textContent).toContain('待你评审');
+    expect(host.textContent).toContain('已完成');
+    expect(host.textContent).toContain('待处理');
+
+    // 进行中为橙橘色系
+    const reworkRow = [...host.querySelectorAll('[role="option"]')].find((el) =>
+      el.textContent?.includes('rework')
+    );
+    const chip = [...(reworkRow?.querySelectorAll('span') ?? [])].find(
+      (el) => el.textContent?.trim() === '进行中'
+    );
+    expect(chip?.className).toContain('orange');
+
     act(() => root.unmount());
   });
 });

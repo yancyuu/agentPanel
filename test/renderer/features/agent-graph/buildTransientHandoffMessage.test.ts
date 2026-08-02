@@ -6,7 +6,7 @@ import type { TransientHandoffCard } from '@claude-teams/agent-graph';
 
 function buildCard(overrides: Partial<TransientHandoffCard> = {}): TransientHandoffCard {
   return {
-    key: 'edge-1:fwd:task_comment',
+    key: 'edge-1:fwd:task_delivery',
     edgeId: 'edge-1',
     sourceNodeId: 'member:bob',
     destinationNodeId: 'task:abc',
@@ -15,7 +15,7 @@ function buildCard(overrides: Partial<TransientHandoffCard> = {}): TransientHand
     sourceLabel: 'bob',
     destinationLabel: 'abc12345',
     destinationKind: 'task',
-    kind: 'task_comment',
+    kind: 'task_delivery',
     color: '#22c55e',
     preview: 'Dependency resolved',
     relatedTaskId: 'abc12345def67890',
@@ -29,10 +29,10 @@ function buildCard(overrides: Partial<TransientHandoffCard> = {}): TransientHand
 }
 
 describe('buildTransientHandoffMessage', () => {
-  it('builds task comment notifications with task refs', () => {
+  it('builds task delivery notifications with task refs', () => {
     const message = buildTransientHandoffMessage('signal-ops-2', buildCard());
 
-    expect(message.messageKind).toBe('task_comment_notification');
+    expect(message.messageKind).toBe('task_activity_notification');
     expect(message.from).toBe('bob');
     expect(message.taskRefs).toEqual([
       {

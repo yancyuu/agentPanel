@@ -5,7 +5,7 @@ import { UnreadCommentsBadge } from '@renderer/components/team/UnreadCommentsBad
 import { Button } from '@renderer/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
 import { useTheme } from '@renderer/hooks/useTheme';
-import { useUnreadCommentCount } from '@renderer/hooks/useUnreadCommentCount';
+import { useUnreadActivityCount } from '@renderer/hooks/useUnreadActivityCount';
 import { REVIEW_STATE_DISPLAY } from '@renderer/utils/memberHelpers';
 import {
   buildTaskChangeRequestOptions,
@@ -174,7 +174,7 @@ export const KanbanTaskCard = memo(
     onDeleteTask,
   }: KanbanTaskCardProps): React.JSX.Element {
     const { isLight } = useTheme();
-    const unreadCount = useUnreadCommentCount(teamName, task.id, task.comments);
+    const unreadCount = useUnreadActivityCount(teamName, task.id, task);
     const blockedByIds = task.blockedBy?.filter((id) => id.length > 0) ?? [];
     const blocksIds = task.blocks?.filter((id) => id.length > 0) ?? [];
     const hasBlockedBy = blockedByIds.length > 0;
@@ -210,7 +210,7 @@ export const KanbanTaskCard = memo(
             无文件变更
           </span>
         ) : null}
-        <UnreadCommentsBadge unreadCount={unreadCount} totalCount={task.comments?.length ?? 0} />
+        <UnreadCommentsBadge unreadCount={unreadCount} totalCount={task.deliveries?.length ?? 0} />
         {onDeleteTask && task.status !== 'in_progress' ? (
           <TaskActionIconButton
             label="删除任务"

@@ -29,7 +29,7 @@ export function filterTeamMessages(
     searchQuery,
   } = options;
 
-  let list = messages.filter((m) => m.messageKind !== 'task_comment_notification');
+  let list = messages.filter((m) => m.messageKind !== 'task_activity_notification');
   if (timeWindow) {
     list = list.filter((m) => {
       const ts = new Date(m.timestamp).getTime();

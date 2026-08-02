@@ -52,6 +52,16 @@ function createHarness() {
     read: vi.fn(async (folder: string, id: string) => ({ folder, id, content: '# workflow' })),
   };
   const assertTrustedBrowserOrigin = vi.fn();
+  const piReady: import('../../../src/main/services/system-manager/PiRuntimeStatus').PiRuntimeStatus =
+    {
+      available: true,
+      binaryReady: true,
+      authReady: true,
+      missing: [],
+      checkedAt: '2026-01-01T00:00:00.000Z',
+    };
+  const getPiRuntimeStatus = vi.fn(async () => piReady);
+  const refreshPiRuntimeStatus = vi.fn(async () => piReady);
 
   registerSystemManagerRoutes(app, {
     ensureSystemManager,
@@ -61,6 +71,8 @@ function createHarness() {
     workspaceCleanup,
     workflowPrompt,
     assertTrustedBrowserOrigin,
+    getPiRuntimeStatus,
+    refreshPiRuntimeStatus,
   });
 
   return {
@@ -72,6 +84,8 @@ function createHarness() {
     diagnosticRuns,
     workspaceCleanup,
     workflowPrompt,
+    getPiRuntimeStatus,
+    refreshPiRuntimeStatus,
   };
 }
 
@@ -148,6 +162,48 @@ describe('system manager routes', () => {
       prompt: '只读检查任务积压',
       workDir: '/code/project',
     });
+  });
+
+  it('exposes the pi runtime probe and blocks diagnostics when pi is unavailable', async () => {
+    const harness = createHarness();
+
+    const runtime = await harness.app.inject({
+      method: 'GET',
+      url: '/api/system-manager/diagnostics/runtime',
+    });
+    expect(runtime.statusCode).toBe(200);
+    expect(runtime.json()).toMatchObject({ available: true, binaryReady: true, authReady: true });
+
+    const refreshed = await harness.app.inject({
+      method: 'GET',
+      url: '/api/system-manager/diagnostics/runtime?refresh=1',
+    });
+    expect(refreshed.statusCode).toBe(200);
+    expect(harness.refreshPiRuntimeStatus).toHaveBeenCalled();
+
+    harness.getPiRuntimeStatus.mockResolvedValue({
+      available: false,
+      binaryReady: false,
+      authReady: false,
+      missing: ['未找到 Pi 命令行'],
+      checkedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const blocked = await harness.app.inject({
+      method: 'POST',
+      url: '/api/system-manager/diagnostics/run',
+      payload: {
+        actionId: 'task-health',
+        title: '任务积压检查',
+        prompt: '只读检查任务积压',
+      },
+    });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json()).toMatchObject({
+      code: 'pi_runtime_missing',
+    });
+    expect(blocked.json().error).toContain('需先配置 Pi 运行时');
+    expect(blocked.json().error).toContain('未找到 Pi 命令行');
+    expect(harness.diagnosticRuns.start).not.toHaveBeenCalled();
   });
 
   it('scans and cleans only through the dedicated cleanup service', async () => {

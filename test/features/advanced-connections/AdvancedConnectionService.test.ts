@@ -90,17 +90,52 @@ describe('AdvancedConnectionService', () => {
     });
   });
 
-  it('refuses bearer-token authorization over remote cleartext HTTP', async () => {
+  it('refuses bearer-token authorization over remote cleartext HTTP until the user allows it', async () => {
+    const fetchImpl = vi.fn((input: string | URL | Request) => {
+      const url = requestUrl(input);
+      if (url.endsWith('/api/v1/auth/me')) return Promise.resolve(jsonResponse({}, 401));
+      if (url.endsWith('/api/v1/auth/start')) {
+        return Promise.resolve(
+          jsonResponse({
+            flow_id: 'flow-1',
+            poll_secret: 'poll-secret',
+            authorization_url: 'http://47.112.24.153/authorize',
+            user_code: '1234',
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse({}, 404));
+    }) as unknown as typeof fetch;
     const service = new AdvancedConnectionService({
       hermitHome,
-      fetchImpl: compatibilityFetch(),
+      fetchImpl,
       secretStore: new MemorySecretStore(),
     });
     const connection = await service.create({ baseUrl: 'http://47.112.24.153/' });
 
+    // 未确认前：HTTP 非回环拒绝下发凭据
     await expect(service.startAuthentication(connection.id, 'company-login')).rejects.toThrow(
       '必须使用 HTTPS'
     );
+
+    // 用户确认风险后持久化放行，summary 携带 insecureAllowed
+    const allowed = await service.allowInsecureTransport(connection.id);
+    expect(allowed.insecureAllowed).toBe(true);
+
+    const auth = await service.startAuthentication(connection.id, 'company-login');
+    expect(auth.authorizationUrl).toContain('47.112.24.153');
+
+    // 重启后（新 service 实例读同一存储）选择仍然生效，不重复询问
+    const reloaded = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl,
+      secretStore: new MemorySecretStore(),
+    });
+    const list = await reloaded.list();
+    expect(list[0]?.insecureAllowed).toBe(true);
+    // attempts 为实例内存，重载实例可再次发起；关键是传输放行已持久化，不再因 HTTPS 被拒
+    const reloadedAuth = await reloaded.startAuthentication(connection.id, 'company-login');
+    expect(reloadedAuth.authorizationUrl).toContain('47.112.24.153');
   });
 
   it('rejects remote cleartext authorization pages returned by an HTTPS provider', async () => {
@@ -177,7 +212,7 @@ describe('AdvancedConnectionService', () => {
     ]);
   });
 
-  it('creates an AgentBus compatibility connection with every permission denied', async () => {
+  it('creates an AgentBus compatibility connection with read/aggregate permissions granted by default', async () => {
     const secretStore = new MemorySecretStore();
     const service = new AdvancedConnectionService({
       hermitHome,
@@ -190,9 +225,13 @@ describe('AdvancedConnectionService', () => {
     expect(connection.providerId).toBe('openhermit-agentbus');
     expect(connection.state).toBe('auth_required');
     expect(connection.secretPresent).toBe(false);
-    expect(Object.values(connection.permissions).every((decision) => decision === 'denied')).toBe(
-      true
-    );
+    // 默认授予只读/聚合类；写方向与敏感粒度默认关闭
+    expect(connection.permissions['team.tasks.read']).toBe('granted');
+    expect(connection.permissions['usage.aggregates']).toBe('granted');
+    expect(connection.permissions['team.tasks.write']).toBe('denied');
+    expect(connection.permissions['usage.project-metadata']).toBe('denied');
+    expect(connection.permissions['usage.message-content']).toBe('denied');
+    expect(connection.permissions['credentials.lark.export']).toBe('denied');
     expect(JSON.stringify(connection)).not.toContain('access_token');
     expect(JSON.stringify(connection)).not.toContain('refresh_token');
   });
@@ -436,8 +475,9 @@ describe('AdvancedConnectionService', () => {
     }
 
     expect(onAuthenticated).toHaveBeenCalledWith(connection.id);
-    expect(loggedIn?.permissions['usage.aggregates']).toBe('denied');
-    expect(reportUsage).not.toHaveBeenCalled();
+    // 聚合用量默认开启：登录后立即上报一次
+    expect(loggedIn?.permissions['usage.aggregates']).toBe('granted');
+    expect(reportUsage).toHaveBeenCalled();
   });
 
   it('sends only locally authorized provider channels and previews remote tasks without executing them', async () => {

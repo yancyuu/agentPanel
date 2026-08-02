@@ -91,11 +91,11 @@ export const MemberMessagesTab = ({
     switch (activityFilter) {
       case 'messages':
         return visibleActivityEntries.filter(
-          (entry) => entry.message.messageKind !== 'task_comment_notification'
+          (entry) => entry.message.messageKind !== 'task_activity_notification'
         );
       case 'comments':
         return visibleActivityEntries.filter(
-          (entry) => entry.message.messageKind === 'task_comment_notification'
+          (entry) => entry.message.messageKind === 'task_activity_notification'
         );
       default:
         return visibleActivityEntries;

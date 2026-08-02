@@ -26,6 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui
 import { getTeamColorSet } from '@renderer/constants/teamColors';
 import { useTabIdOptional } from '@renderer/contexts/useTabUIContext';
 import { useBranchSync } from '@renderer/hooks/useBranchSync';
+import { TeamAssetsSection } from '@renderer/components/team/assets/TeamAssetsSection';
 import { cn } from '@renderer/lib/utils';
 import { useStore } from '@renderer/store';
 import {
@@ -61,6 +62,7 @@ import {
   MoreHorizontal,
   Pencil,
   Play,
+  LibraryBig,
   Sparkles,
   Trash2,
   Users,
@@ -1870,6 +1872,15 @@ export const TeamDetailView = ({
                   <MemberCapabilitiesSummary open member={capabilityMember} teamName={teamName} />
                 </CollapsibleTeamSection>
               ) : null}
+
+              <CollapsibleTeamSection
+                sectionId="assets"
+                title="产物库"
+                icon={<LibraryBig size={14} />}
+                defaultOpen={false}
+              >
+                <TeamAssetsSection teamName={teamName} />
+              </CollapsibleTeamSection>
 
               <ReviewDialog
                 open={requestChangesTaskId !== null}

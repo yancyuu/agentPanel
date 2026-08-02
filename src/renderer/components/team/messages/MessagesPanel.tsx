@@ -623,7 +623,7 @@ export const MessagesPanel = memo(function MessagesPanel({
     () =>
       effectiveMessages.filter(
         (m) =>
-          m.messageKind !== 'task_comment_notification' &&
+          m.messageKind !== 'task_activity_notification' &&
           !shouldExcludeInboxTextFromReplyCandidates(typeof m.text === 'string' ? m.text : '')
       ),
     [effectiveMessages]

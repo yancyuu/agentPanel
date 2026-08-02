@@ -406,8 +406,6 @@ ${BRAND.stylizedName} - 本地 AI runtime 工作区控制面
                      在 AgentCLI 看板创建任务
   tasks claim --team <team> --id <task-id> [--json]
                      认领并开始执行任务
-  tasks comment --team <team> --id <task-id> --text <text> [--json]
-                     向任务追加协作评论
   tasks clarify --team <team> --id <task-id> --target lead|user|none [--json]
                      请求或清除任务澄清状态
   tasks complete --team <team> --id <task-id> --result <text> [--json]
@@ -771,7 +769,7 @@ if (commandArgs.length > 0 && !daemonRequested && !daemonChild) {
   if (jsonRequested) printJson(result, 1);
   console.error(`${brandLogPrefix()} 未知命令：${command}`);
   console.error(
-    `${brandLogPrefix()} 可用命令：init | web | status | doctor | update | restart | services | services start/stop | teams list/create | tasks list/create/claim/comment/clarify/complete | usage status/today/report/start/stop/autostart | auth status/login/logout | stop`
+    `${brandLogPrefix()} 可用命令：init | web | status | doctor | update | restart | services | services start/stop | teams list/create | tasks list/create/claim/clarify/complete | usage status/today/report/start/stop/autostart | auth status/login/logout | stop`
   );
   process.exit(1);
 }

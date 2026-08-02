@@ -51,15 +51,18 @@ describe('advanced connection provider manifest', () => {
     );
   });
 
-  it('defaults every local data permission to denied and only applies explicit decisions', () => {
+  it('默认授予数据范围（高风险两项除外），仅应用显式决策', () => {
     const defaults = defaultPermissionDecisions();
-    expect(Object.values(defaults).every((decision) => decision === 'denied')).toBe(true);
+    // 「按默认即可」：除凭证委托与消息正文外默认授予
+    expect(defaults['usage.aggregates']).toBe('granted');
+    expect(defaults['team.tasks.read']).toBe('granted');
+    expect(defaults['credentials.lark.export']).toBe('denied');
+    expect(defaults['usage.message-content']).toBe('denied');
 
     const updated = mergePermissionDecisions(defaults, {
-      'usage.aggregates': 'granted',
-      'usage.message-content': 'denied',
+      'usage.aggregates': 'denied',
     });
-    expect(updated['usage.aggregates']).toBe('granted');
+    expect(updated['usage.aggregates']).toBe('denied');
     expect(updated['usage.message-content']).toBe('denied');
     expect(updated['credentials.lark.export']).toBe('denied');
   });

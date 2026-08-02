@@ -67,6 +67,8 @@ export const advancedConnectionsApi = {
     }),
   logout: (connectionId: string): Promise<AdvancedConnectionSummary> =>
     request(`/${encodeURIComponent(connectionId)}/logout`, { method: 'POST' }),
+  allowInsecure: (connectionId: string): Promise<AdvancedConnectionSummary> =>
+    request(`/${encodeURIComponent(connectionId)}/insecure-allow`, { method: 'POST' }),
   sync: (connectionId: string): Promise<AdvancedConnectionSyncResult> =>
     request(`/${encodeURIComponent(connectionId)}/sync`, { method: 'POST' }),
   pullTasks: (connectionId: string): Promise<AdvancedConnectionPullTasksResult> =>

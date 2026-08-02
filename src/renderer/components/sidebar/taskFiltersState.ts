@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-import { getSnapshot, getUnreadCount, subscribe } from '@renderer/services/commentReadStorage';
+import { getSnapshot, getUnreadCount, subscribe } from '@renderer/services/taskActivityReadStorage';
 import { getTaskKanbanColumn } from '@shared/utils/reviewState';
 
 export type TaskStatusFilterId =
@@ -76,7 +76,7 @@ export function getTaskUnreadCount(
   readState: ReturnType<typeof getSnapshot>,
   teamName: string,
   taskId: string,
-  comments: { id?: string; createdAt: string }[] | undefined
+  activityItems: { id?: string; createdAt: string }[] | undefined
 ): number {
-  return getUnreadCount(readState, teamName, taskId, comments ?? []);
+  return getUnreadCount(readState, teamName, taskId, activityItems ?? []);
 }

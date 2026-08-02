@@ -37,6 +37,7 @@ export type GraphEdgeType = 'parent-child' | 'ownership' | 'blocking' | 'related
 export type GraphParticleKind =
   | 'inbox_message'
   | 'task_comment'
+  | 'task_delivery'
   | 'task_assign'
   | 'review_request'
   | 'review_response'
@@ -160,9 +161,9 @@ export interface GraphNode {
   /** Display IDs of tasks this one blocks */
   blocksDisplayIds?: string[];
   /** Total comment count on this task */
-  totalCommentCount?: number;
+  totalDeliveryCount?: number;
   /** Unread comment count on this task */
-  unreadCommentCount?: number;
+  unreadDeliveryCount?: number;
   /** Synthetic overflow stack node instead of hidden task tails */
   isOverflowStack?: boolean;
   /** Number of hidden tasks behind this overflow stack */

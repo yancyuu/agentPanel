@@ -106,7 +106,6 @@ function printSuccessfulTaskResult(result) {
   }
   if (result.command === 'tasks create') console.log(`任务已创建：${taskLine(result.task)}`);
   if (result.command === 'tasks claim') console.log(`任务已认领：${taskLine(result.task)}`);
-  if (result.command === 'tasks comment') console.log(`任务评论已提交：${result.taskId}`);
   if (result.command === 'tasks clarify') {
     console.log(`任务澄清状态已更新：${result.taskId} → ${result.target}`);
   }
@@ -201,18 +200,6 @@ export async function runTasksCommand() {
       body: { team },
     });
     return { ok: true, command: 'tasks claim', team, task: response.task };
-  }
-
-  if (action === 'comment') {
-    const text = requireValue(
-      option('--text') || option('--message'),
-      '缺少评论内容：--text <text>'
-    );
-    await requestTaskBus(`${taskPath}/comments`, {
-      method: 'POST',
-      body: { team, text },
-    });
-    return { ok: true, command: 'tasks comment', team, taskId, text };
   }
 
   if (action === 'clarify') {

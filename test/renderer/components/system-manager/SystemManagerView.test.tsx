@@ -14,6 +14,8 @@ const {
   createLoopSessionMock,
   refreshTeamMessagesHeadMock,
   diagnosticFetchMock,
+  getDiagnosticsRuntimeMock,
+  openSettingsTabMock,
 } = vi.hoisted(() => ({
   getStatusMock: vi.fn(),
   getConfigMock: vi.fn(),
@@ -26,11 +28,14 @@ const {
   createLoopSessionMock: vi.fn(),
   refreshTeamMessagesHeadMock: vi.fn(),
   diagnosticFetchMock: vi.fn(),
+  getDiagnosticsRuntimeMock: vi.fn(),
+  openSettingsTabMock: vi.fn(),
 }));
 
 const storeState = {
   fetchTeams: fetchTeamsMock,
   refreshTeamMessagesHead: refreshTeamMessagesHeadMock,
+  openSettingsTab: openSettingsTabMock,
   teamMessagesByName: {},
   capabilityPacks: [
     {
@@ -84,6 +89,7 @@ vi.mock('@renderer/api', () => ({
       getStatus: getStatusMock,
       getConfig: getConfigMock,
       updateConfig: updateConfigMock,
+      getDiagnosticsRuntime: getDiagnosticsRuntimeMock,
     },
     teams: {
       ensureSystemManager: ensureSystemManagerMock,
@@ -179,6 +185,13 @@ function mockAdminLoopRuntime(workDir = '/repo') {
     messageSent: true,
   });
   refreshTeamMessagesHeadMock.mockResolvedValue({ changed: false });
+  getDiagnosticsRuntimeMock.mockResolvedValue({
+    available: true,
+    binaryReady: true,
+    authReady: true,
+    missing: [],
+    checkedAt: '2026-06-05T00:00:00.000Z',
+  });
 }
 
 describe('SystemManagerView', () => {
@@ -514,5 +527,44 @@ describe('SystemManagerView', () => {
       root.unmount();
       await Promise.resolve();
     });
+  });
+
+  it('Pi 运行时不可用时给出配置引导并禁用扫描', async () => {
+    getDiagnosticsRuntimeMock.mockResolvedValue({
+      available: false,
+      binaryReady: false,
+      authReady: false,
+      missing: ['未找到 Pi 命令行', 'Pi 未登录配置（缺少 ~/.pi/agent/auth.json）'],
+      checkedAt: '2026-06-05T00:00:00.000Z',
+    });
+    const { host, root } = renderSystemManager();
+
+    await act(async () => {
+      root.render(<SystemManagerView />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const banner = host.querySelector('[data-testid="pi-runtime-missing"]');
+    expect(banner).not.toBeNull();
+    expect(banner?.textContent).toContain('需先配置 Pi 运行时');
+    expect(banner?.textContent).toContain('未找到 Pi 命令行');
+
+    const fullScanButton = [...host.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('开始全盘扫描')
+    );
+    expect(fullScanButton?.disabled).toBe(true);
+
+    const configureButton = [...host.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === '去配置'
+    );
+    expect(configureButton).toBeDefined();
+    await act(async () => {
+      configureButton!.click();
+      await Promise.resolve();
+    });
+    expect(openSettingsTabMock).toHaveBeenCalledWith('harness');
+
+    act(() => root.unmount());
   });
 });

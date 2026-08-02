@@ -54,6 +54,8 @@ describe('SystemDiagnosticRunService', () => {
         teamName: 'system-manager',
         sessionKey: run.sessionKey,
         messageId: run.messageId,
+        // 诊断固定走 pi 运行时
+        harness: 'pi',
       })
     );
 

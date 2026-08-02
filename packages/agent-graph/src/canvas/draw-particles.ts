@@ -48,7 +48,7 @@ export function drawParticles(
     const baseSize = (p.size ?? 1) * 3;
     // Differentiate visual by particle kind
     const size = p.kind === 'spawn' ? baseSize * 1.5
-      : p.kind === 'task_comment' ? baseSize * 1.15
+      : p.kind === 'task_comment' || p.kind === 'task_delivery' ? baseSize * 1.15
       : p.kind === 'review_request' || p.kind === 'review_response' ? baseSize * 1.2
       : baseSize;
 
@@ -113,7 +113,7 @@ function drawParticleTrail(
   time: number,
   kind: GraphParticle['kind'],
 ): void {
-  const trailSegments = kind === 'task_comment' ? 4 : 6;
+  const trailSegments = kind === 'task_comment' || kind === 'task_delivery' ? 4 : 6;
   const trailStep = BEAM.wobble.trailOffset / trailSegments;
 
   for (let i = trailSegments; i >= 1; i--) {
@@ -122,7 +122,7 @@ function drawParticleTrail(
     const alpha = (1 - i / trailSegments) * 0.3;
     const trailSize = size * (1 - i / trailSegments) * 0.5;
 
-    if (kind === 'task_comment') {
+    if (kind === 'task_comment' || kind === 'task_delivery') {
       ctx.strokeStyle = hexWithAlpha(color, alpha);
       ctx.lineWidth = Math.max(0.8, trailSize * 0.45);
       ctx.beginPath();

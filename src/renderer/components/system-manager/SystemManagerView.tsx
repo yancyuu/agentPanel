@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 
 import { WorkbenchPageHeader } from '@features/collaborative-workbench/renderer';
 import { api } from '@renderer/api';
+import { useStore } from '@renderer/store';
 import { markdownComponents } from '@renderer/components/chat/markdownComponents';
 import { Button } from '@renderer/components/ui/button';
 import { cn } from '@renderer/lib/utils';
@@ -19,6 +20,7 @@ import remarkGfm from 'remark-gfm';
 import type {
   CleanupExecutionResult,
   CleanupScanResult,
+  PiRuntimeStatus,
   SystemDiagnosticRun,
   SystemManagerStatus,
 } from '@shared/types/systemManager';
@@ -173,6 +175,8 @@ export const SystemManagerView = ({
   const [cleanupScan, setCleanupScan] = useState<CleanupScanResult | null>(null);
   const [selectedCleanupIds, setSelectedCleanupIds] = useState<Set<string>>(new Set());
   const [cleanupNotice, setCleanupNotice] = useState<string | null>(null);
+  const [piRuntime, setPiRuntime] = useState<PiRuntimeStatus | null>(null);
+  const openSettingsTab = useStore((state) => state.openSettingsTab);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -185,6 +189,10 @@ export const SystemManagerView = ({
       ]);
       setStatus(nextStatus);
       setScanRun(currentRun);
+      void api.systemManager
+        .getDiagnosticsRuntime()
+        .then(setPiRuntime)
+        .catch(() => setPiRuntime(null));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -197,6 +205,7 @@ export const SystemManagerView = ({
   }, [load]);
 
   const scanPending = scanRun?.status === 'running';
+  const piUnavailable = piRuntime !== null && !piRuntime.available;
   const currentAction = diagnosticActionById(scanRun?.actionId);
   const latestResultText = scanRun?.result?.trim() ?? '';
 
@@ -215,6 +224,7 @@ export const SystemManagerView = ({
   const runDiagnostic = useCallback(
     async (action: DiagnosticAction): Promise<void> => {
       if (loading || runningActionId || scanPending || status?.localStatus !== 'ready') return;
+      if (piRuntime && !piRuntime.available) return;
       setRunningActionId(action.id);
       setRunError(null);
       try {
@@ -229,6 +239,11 @@ export const SystemManagerView = ({
         setScanRun(run);
       } catch (err) {
         setRunError(err instanceof Error ? err.message : '扫描启动失败，请稍后重试。');
+        // 启动失败时强制重测一次 Pi 运行时（可能是配置刚被移除）
+        void api.systemManager
+          .getDiagnosticsRuntime(true)
+          .then(setPiRuntime)
+          .catch(() => undefined);
       } finally {
         setRunningActionId(null);
       }
@@ -375,7 +390,13 @@ export const SystemManagerView = ({
                 <div className="mt-5 flex flex-wrap items-center justify-center gap-3 md:justify-start">
                   <Button
                     className="h-10 rounded-full bg-emerald-600 px-5 text-white hover:bg-emerald-500"
-                    disabled={!localReady || loading || Boolean(runningActionId) || scanPending}
+                    disabled={
+                      !localReady ||
+                      loading ||
+                      Boolean(runningActionId) ||
+                      scanPending ||
+                      piUnavailable
+                    }
                     onClick={() => void runDiagnostic(FULL_SCAN_ACTION)}
                   >
                     <ScanLine size={16} className={scanPending ? 'animate-pulse' : undefined} />
@@ -388,6 +409,26 @@ export const SystemManagerView = ({
               </div>
             </div>
           </section>
+
+          {piRuntime && !piRuntime.available ? (
+            <div
+              role="alert"
+              data-testid="pi-runtime-missing"
+              className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs text-amber-700 dark:text-amber-300"
+            >
+              <span className="min-w-0 flex-1">
+                需先配置 Pi 运行时：{piRuntime.missing.join('；') || '运行时不可用'}
+                。诊断由 Pi 执行，配置完成后即可开始扫描。
+              </span>
+              <button
+                type="button"
+                onClick={() => openSettingsTab('harness')}
+                className="shrink-0 rounded-md border border-amber-500/30 px-2.5 py-1.5 font-medium transition-colors hover:bg-amber-500/10"
+              >
+                去配置
+              </button>
+            </div>
+          ) : null}
 
           {(error || runError || scanRun?.error) && (
             <div
@@ -418,7 +459,13 @@ export const SystemManagerView = ({
                   <button
                     key={action.id}
                     type="button"
-                    disabled={!localReady || loading || Boolean(runningActionId) || scanPending}
+                    disabled={
+                      !localReady ||
+                      loading ||
+                      Boolean(runningActionId) ||
+                      scanPending ||
+                      piUnavailable
+                    }
                     onClick={() =>
                       void (action.id === 'folder-hygiene'
                         ? scanCleanupCandidates()

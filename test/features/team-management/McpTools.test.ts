@@ -173,6 +173,71 @@ describe('MCP tool: deliver_task', () => {
     expect(payload.skippedFeedbackIds).toBeUndefined();
   });
 
+  it('交付写入 runtime_delivery 线程消息并广播 inbox SSE', async () => {
+    const appendMessage = vi.fn().mockResolvedValue({});
+    const broadcastInboxChange = vi.fn();
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    await executeMcpTool(
+      svc,
+      'deliver_task',
+      { team_slug: teamSlug, dispatch_id: task.id, result: '# 第一版报告' },
+      { appendMessage, broadcastInboxChange }
+    );
+
+    expect(appendMessage).toHaveBeenCalledTimes(1);
+    const [slugArg, input] = appendMessage.mock.calls[0];
+    expect(slugArg).toBe(teamSlug);
+    expect(input.to).toBe('user');
+    expect(input.content).toContain('交付 第 1 版');
+    expect(input.content).toContain('# 第一版报告');
+    expect(input.meta).toMatchObject({
+      source: 'runtime_delivery',
+      conversationId: `task:${task.id}`,
+    });
+    expect(input.meta.taskRefs).toEqual([
+      expect.objectContaining({ taskId: task.id, teamName: teamSlug }),
+    ]);
+    expect(broadcastInboxChange).toHaveBeenCalledWith(teamSlug);
+  });
+
+  it('再次交付聚合为同一线程并带本版变更摘要', async () => {
+    const appendMessage = vi.fn().mockResolvedValue({});
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    await executeMcpTool(
+      svc,
+      'deliver_task',
+      { team_slug: teamSlug, dispatch_id: task.id, result: 'v1' },
+      { appendMessage }
+    );
+    await executeMcpTool(
+      svc,
+      'deliver_task',
+      { team_slug: teamSlug, dispatch_id: task.id, result: 'v2', summary: '补充风险分析' },
+      { appendMessage }
+    );
+
+    expect(appendMessage).toHaveBeenCalledTimes(2);
+    const [, second] = appendMessage.mock.calls[1];
+    expect(second.meta.conversationId).toBe(`task:${task.id}`);
+    expect(second.meta.summary).toBe('补充风险分析');
+    expect(second.content).toContain('交付 第 2 版');
+    expect(second.content).toContain('【本版变更摘要】补充风险分析');
+  });
+
+  it('消息写入失败不阻塞交付本身', async () => {
+    const appendMessage = vi.fn().mockRejectedValue(new Error('disk full'));
+    const task = await svc.createTask(teamSlug, { title: 'deliverable' });
+    const [result] = await executeMcpTool(
+      svc,
+      'deliver_task',
+      { team_slug: teamSlug, dispatch_id: task.id, result: '# 第一版报告' },
+      { appendMessage }
+    );
+    const payload = JSON.parse(result.text);
+    expect(payload.delivery).toMatchObject({ version: 1 });
+    expect(payload.reviewState).toBe('review');
+  });
+
   it('requires a summary when the task already has deliveries', async () => {
     const task = await svc.createTask(teamSlug, { title: 'deliverable' });
     await exec('deliver_task', { team_slug: teamSlug, dispatch_id: task.id, result: 'v1' });

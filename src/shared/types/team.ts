@@ -279,10 +279,8 @@ export type TaskHistoryEvent =
   | TaskReviewApprovedEvent
   | TaskReviewStartedEvent;
 
-export type TaskCommentType = 'regular';
-
 /**
- * 反馈/评论的定位锚点：
+ * 反馈的定位锚点：
  * - quote：引用一段文本
  * - hunk：代码评审 hunk，changeKey/hunkIndex 对齐 reviewKey 体系，contextHash 用于防漂移
  */
@@ -523,19 +521,6 @@ export interface BoardTaskLogStreamSummary {
   segmentCount: number;
 }
 
-export interface TaskComment {
-  id: string;
-  author: string;
-  text: string;
-  createdAt: string;
-  type: TaskCommentType;
-  /** 可选定位锚点（引用文本或代码 hunk） */
-  anchor?: FeedbackAnchor;
-  taskRefs?: TaskRef[];
-  /** Attachments on this comment. Metadata only — files stored on disk. */
-  attachments?: TaskAttachmentMeta[];
-}
-
 /**
  * Snapshot of a user message captured at task-creation time.
  * Stored as provenance — the original message identity is `sourceMessageId`.
@@ -563,7 +548,7 @@ export type InboxMessageKind =
   | 'default'
   | 'slash_command'
   | 'slash_command_result'
-  | 'task_comment_notification';
+  | 'task_activity_notification';
 
 export interface SlashCommandMeta {
   name: string;
@@ -621,7 +606,6 @@ export interface TeamTask {
   /** File modification time (mtime). Used for sorting by last activity. */
   updatedAt?: string;
   projectPath?: string;
-  comments?: TaskComment[];
   /** 交付成果版本（追加式，version 从 1 递增；取代旧的 result 字段） */
   deliveries?: Delivery[];
   /** 条目化评审反馈（open/resolved 闭环） */
@@ -670,14 +654,6 @@ export interface TaskAttachmentMeta {
   addedAt: string;
   /** Absolute path to the file on disk. Null/absent for metadata-only references. */
   filePath?: string | null;
-}
-
-/** Payload for uploading an attachment with base64 data (renderer → main). */
-export interface CommentAttachmentPayload {
-  id: string;
-  filename: string;
-  mimeType: AttachmentMediaType;
-  base64Data: string;
 }
 
 /**
@@ -780,7 +756,8 @@ export interface InboxMessage {
     | 'user_sent'
     | 'system_notification'
     | 'cross_team'
-    | 'cross_team_sent';
+    | 'cross_team_sent'
+    | 'precipitation_suggestion';
   attachments?: AttachmentMeta[];
   /** Lead session ID that produced this message (for session boundary detection). */
   leadSessionId?: string;
@@ -900,13 +877,6 @@ export interface SendMessageResult {
   };
 }
 
-export interface AddTaskCommentRequest {
-  text: string;
-  attachments?: CommentAttachmentPayload[];
-  taskRefs?: TaskRef[];
-  anchor?: FeedbackAnchor;
-}
-
 export type MemberStatus = 'active' | 'idle' | 'terminated' | 'unknown';
 
 export type MemberSpawnStatus = 'offline' | 'waiting' | 'spawning' | 'online' | 'error' | 'skipped';
@@ -950,9 +920,14 @@ export interface KanbanState {
 }
 
 export type UpdateKanbanPatch =
-  | { op: 'set_column'; column: Extract<KanbanColumnId, 'review' | 'approved'> }
+  | {
+      op: 'set_column';
+      column: Extract<KanbanColumnId, 'review' | 'approved'>;
+      /** 通过时仍强制归档：open 反馈将被标记为已解决 */
+      force?: boolean;
+    }
   | { op: 'remove' }
-  | { op: 'request_changes'; comment?: string; taskRefs?: TaskRef[] };
+  | { op: 'request_changes'; comment?: string; taskRefs?: TaskRef[]; anchor?: FeedbackAnchor };
 
 export interface ResolvedTeamMember {
   name: string;
@@ -1765,7 +1740,7 @@ export interface TeamMessageNotificationData {
   teamEventType?:
     | 'task_clarification'
     | 'task_status_change'
-    | 'task_comment'
+    | 'task_delivery'
     | 'task_created'
     | 'all_tasks_completed';
   /** Stable key for storage deduplication. Required — no fallback to Date.now(). */
@@ -1878,4 +1853,27 @@ export interface ToolApprovalFileContent {
   truncated: boolean;
   isBinary: boolean;
   error?: string;
+}
+
+// ---------------------------------------------------------------------------
+// 员工产物库（openspec living specs + 沉淀记录，只读）
+// ---------------------------------------------------------------------------
+
+export interface AssetSpecEntry {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
+export interface AssetArchiveEntry {
+  id: string;
+  archivedAt: string;
+  /** delta 中出现的操作类型（ADDED/MODIFIED/REMOVED/RENAMED） */
+  operations: string[];
+}
+
+export interface TeamAssetsResponse {
+  ok: true;
+  specs: AssetSpecEntry[];
+  archives: AssetArchiveEntry[];
 }

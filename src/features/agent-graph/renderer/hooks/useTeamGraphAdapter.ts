@@ -5,7 +5,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 
-import { getSnapshot, subscribe } from '@renderer/services/commentReadStorage';
+import { getSnapshot, subscribe } from '@renderer/services/taskActivityReadStorage';
 import { useStore } from '@renderer/store';
 import {
   getCurrentProvisioningProgressForTeam,
@@ -86,7 +86,7 @@ export function useTeamGraphAdapter(teamName: string): GraphDataPort {
     };
   }, [members, messages, teamSnapshot]);
 
-  const commentReadState = useSyncExternalStore(subscribe, getSnapshot);
+  const activityReadState = useSyncExternalStore(subscribe, getSnapshot);
 
   const effectiveSlotAssignments = useMemo(() => {
     if (!teamData) {
@@ -145,7 +145,7 @@ export function useTeamGraphAdapter(teamName: string): GraphDataPort {
         activeTools,
         finishedVisible,
         toolHistory,
-        commentReadState,
+        activityReadState,
         provisioningProgress,
         memberSpawnSnapshot,
         effectiveSlotAssignments,
@@ -162,7 +162,7 @@ export function useTeamGraphAdapter(teamName: string): GraphDataPort {
       activeTools,
       finishedVisible,
       toolHistory,
-      commentReadState,
+      activityReadState,
       provisioningProgress,
       memberSpawnSnapshot,
       effectiveSlotAssignments,

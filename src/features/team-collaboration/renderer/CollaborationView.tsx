@@ -15,7 +15,9 @@ import {
   Plus,
   RefreshCcw,
   Sparkles,
+  UserCheck,
   UsersRound,
+  Wrench,
 } from 'lucide-react';
 
 import type {
@@ -63,14 +65,23 @@ const phaseLabels: Record<CollaborationRunPhase, string> = {
   failed: '协作遇到问题',
 };
 
-const phaseOrder: CollaborationRunPhase[] = [
+const phaseOrder = [
   'roundtable',
   'electing',
   'planning',
   'executing',
   'integrating',
   'review',
-];
+] as const satisfies readonly CollaborationRunPhase[];
+
+const phaseStepLabels: Record<(typeof phaseOrder)[number], string> = {
+  roundtable: '圆桌讨论',
+  electing: '推选队长',
+  planning: '制定分工',
+  executing: '团队执行',
+  integrating: '整理结果',
+  review: '检查结果',
+};
 
 function phaseIndex(phase: CollaborationRunPhase): number {
   if (phase === 'completed') return phaseOrder.length;
@@ -78,40 +89,71 @@ function phaseIndex(phase: CollaborationRunPhase): number {
   return phaseOrder.indexOf(phase);
 }
 
+/** 横向步骤条：圆点 + 连接线 + 下方标签（完成=实心 emerald，当前=indigo 脉动，未到=空心灰） */
 function RunProgress({ run }: Readonly<{ run: CollaborationRun }>): React.JSX.Element {
   const currentIndex = phaseIndex(run.phase);
   return (
-    <div className="grid grid-cols-3 gap-2 lg:grid-cols-6">
-      {phaseOrder.map((phase, index) => {
-        const completed = currentIndex > index || run.phase === 'completed';
-        const active = currentIndex === index;
-        return (
-          <div
-            key={phase}
-            className={cn(
-              'rounded-lg border px-3 py-2 text-xs',
-              completed
-                ? 'border-emerald-500/20 bg-emerald-500/[0.05] text-emerald-700 dark:text-emerald-300'
-                : active
-                  ? 'border-indigo-500/25 bg-indigo-500/[0.06] text-indigo-700 dark:text-indigo-300'
-                  : 'border-[var(--surface-border-subtle)] text-[var(--color-text-muted)]'
-            )}
-          >
-            <span className="mb-1 flex items-center gap-1.5">
-              {completed ? (
-                <CheckCircle2 size={13} />
-              ) : active ? (
-                <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <Circle size={12} />
-              )}
-              {index + 1}
-            </span>
-            <span>{phaseLabels[phase]}</span>
-          </div>
-        );
-      })}
+    <div className="overflow-x-auto pb-1" data-testid="run-stepper">
+      <div className="flex min-w-max items-start">
+        {phaseOrder.map((phase, index) => {
+          const completed = currentIndex > index || run.phase === 'completed';
+          const active = currentIndex === index;
+          return (
+            <div key={phase} className="flex items-start" data-testid="run-step">
+              <div className="flex w-24 flex-col items-center gap-1.5">
+                <span
+                  className={cn(
+                    'flex size-5 items-center justify-center rounded-full',
+                    completed
+                      ? 'bg-emerald-500 text-white'
+                      : active
+                        ? 'bg-indigo-500 text-white'
+                        : 'border border-[var(--color-border-emphasis)] text-transparent'
+                  )}
+                >
+                  {completed ? (
+                    <Check size={11} strokeWidth={3} />
+                  ) : active ? (
+                    <span className="size-1.5 animate-pulse rounded-full bg-white" />
+                  ) : null}
+                </span>
+                <span
+                  className={cn(
+                    'text-center text-[11px] leading-4',
+                    completed
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : active
+                        ? 'font-medium text-indigo-600 dark:text-indigo-300'
+                        : 'text-[var(--color-text-muted)]'
+                  )}
+                >
+                  {phaseStepLabels[phase]}
+                </span>
+              </div>
+              {index < phaseOrder.length - 1 ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    'mt-2.5 h-px w-8 shrink-0',
+                    currentIndex > index || run.phase === 'completed'
+                      ? 'bg-emerald-500/50'
+                      : 'bg-[var(--color-border)]'
+                  )}
+                />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
+  );
+}
+
+function SectionTitle({ children }: Readonly<{ children: React.ReactNode }>): React.JSX.Element {
+  return (
+    <h3 className="text-[13px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+      {children}
+    </h3>
   );
 }
 
@@ -126,7 +168,7 @@ function RunDetail({
 }>): React.JSX.Element {
   const captain = run.members.find((member) => member.teamSlug === run.captainTeamSlug);
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
       <div>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -175,7 +217,7 @@ function RunDetail({
       ) : null}
 
       {run.inputFiles && run.inputFiles.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--surface-border-subtle)] bg-[var(--color-surface)] px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-[var(--color-text-muted)]">任务输入：</span>
           {run.inputFiles.map((file) => (
             <span
@@ -188,41 +230,45 @@ function RunDetail({
         </div>
       ) : null}
 
-      <section className="rounded-xl border border-[var(--surface-border-subtle)] bg-[var(--color-surface)]">
-        <div className="border-b border-[var(--surface-border-subtle)] px-4 py-3">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-            <UsersRound size={16} className="text-indigo-500" />
-            圆桌讨论
-          </h3>
-          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-            成员按时间顺序发言并提名本任务队长。
-          </p>
-        </div>
-        <div className="divide-y divide-[var(--surface-border-subtle)]">
-          {run.ballots.map((ballot) => {
+      {/* 圆桌讨论：竖向时间线，头像落在节点上 */}
+      <section className="border-t border-[var(--surface-border-subtle)] pt-6">
+        <SectionTitle>圆桌讨论</SectionTitle>
+        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+          成员按时间顺序发言并提名本任务队长。
+        </p>
+        <div className="mt-4">
+          {run.ballots.map((ballot, index) => {
             const nominee = run.members.find(
               (member) => member.teamSlug === ballot.nomineeTeamSlug
             );
+            const isLast = index === run.ballots.length - 1;
             return (
-              <div key={ballot.memberTeamSlug} className="flex gap-3 px-4 py-3">
-                <img
-                  src={agentAvatarUrl(ballot.memberDisplayName, 36)}
-                  alt=""
-                  className="size-9 shrink-0 rounded-full bg-[var(--color-surface-raised)]"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
+              <div key={ballot.memberTeamSlug} className="relative flex gap-3">
+                <div className="flex w-9 shrink-0 flex-col items-center">
+                  <img
+                    src={agentAvatarUrl(ballot.memberDisplayName, 36)}
+                    alt=""
+                    className="z-10 size-9 shrink-0 rounded-full bg-[var(--color-surface-raised)] ring-4 ring-[var(--color-page-canvas,var(--color-surface))]"
+                  />
+                  {!isLast ? (
+                    <span aria-hidden className="w-px flex-1 bg-[var(--color-border)]" />
+                  ) : null}
+                </div>
+                <div className="min-w-0 flex-1 pb-5">
+                  <div className="flex flex-wrap items-baseline gap-2">
                     <span className="text-sm font-medium text-[var(--color-text)]">
                       {ballot.memberDisplayName}
                     </span>
-                    <span className="text-[11px] text-[var(--color-text-muted)]">
+                    <span className="inline-flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
+                      <UserCheck size={11} />
                       提名 {nominee?.displayName ?? ballot.nomineeTeamSlug}
                     </span>
                   </div>
                   <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">
                     {ballot.statement}
                   </p>
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
+                    <Wrench size={11} />
                     建议承担：{ballot.suggestedContribution}
                   </p>
                 </div>
@@ -230,7 +276,7 @@ function RunDetail({
             );
           })}
           {run.ballots.length === 0 ? (
-            <div className="flex items-center gap-2 px-4 py-5 text-sm text-[var(--color-text-muted)]">
+            <div className="flex items-center gap-2 py-4 text-sm text-[var(--color-text-muted)]">
               <Loader2 size={15} className="animate-spin" />
               等待成员依次提交圆桌意见……
             </div>
@@ -239,7 +285,7 @@ function RunDetail({
       </section>
 
       {captain ? (
-        <section className="flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] px-4 py-3">
+        <section className="flex items-center gap-3 rounded-xl bg-amber-500/[0.08] px-4 py-3">
           <span className="flex size-10 items-center justify-center rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-300">
             <Crown size={19} />
           </span>
@@ -252,50 +298,43 @@ function RunDetail({
       ) : null}
 
       {run.workItems.length > 0 ? (
-        <section className="rounded-xl border border-[var(--surface-border-subtle)] bg-[var(--color-surface)]">
-          <div className="border-b border-[var(--surface-border-subtle)] px-4 py-3">
-            <h3 className="text-sm font-semibold text-[var(--color-text)]">团队分工</h3>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              成员成果完成后，由队长统一整理交付。
-            </p>
-          </div>
-          <div className="divide-y divide-[var(--surface-border-subtle)]">
+        <section className="border-t border-[var(--surface-border-subtle)] pt-6">
+          <SectionTitle>团队分工</SectionTitle>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+            成员成果完成后，由队长统一整理交付。
+          </p>
+          <div className="mt-4 space-y-3">
             {run.workItems.map((item) => (
-              <div key={item.id} className="px-4 py-3">
-                <div className="flex items-start gap-3">
-                  <span
-                    className={cn(
-                      'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full',
-                      item.status === 'completed'
-                        ? 'bg-emerald-500/12 text-emerald-600'
-                        : item.status === 'failed'
-                          ? 'bg-rose-500/12 text-rose-600'
-                          : 'bg-indigo-500/10 text-indigo-600'
-                    )}
-                  >
-                    {item.status === 'completed' ? (
-                      <Check size={13} />
-                    ) : item.status === 'running' || item.status === 'dispatching' ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Circle size={12} />
-                    )}
+              <div
+                key={item.id}
+                className={cn(
+                  'border-l-2 py-0.5 pl-3',
+                  item.status === 'completed'
+                    ? 'border-emerald-500'
+                    : item.status === 'failed'
+                      ? 'border-rose-500'
+                      : 'border-indigo-500'
+                )}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  {item.status === 'completed' ? (
+                    <CheckCircle2 size={14} className="shrink-0 text-emerald-500" />
+                  ) : item.status === 'running' || item.status === 'dispatching' ? (
+                    <Loader2 size={14} className="shrink-0 animate-spin text-indigo-500" />
+                  ) : item.status === 'failed' ? (
+                    <Circle size={14} className="shrink-0 text-rose-500" />
+                  ) : (
+                    <Circle size={14} className="shrink-0 text-[var(--color-text-muted)]" />
+                  )}
+                  <span className="text-sm font-medium text-[var(--color-text)]">{item.title}</span>
+                  <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 text-[11px] text-[var(--color-text-muted)]">
+                    {item.assigneeDisplayName}
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-[var(--color-text)]">
-                        {item.title}
-                      </span>
-                      <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 text-[11px] text-[var(--color-text-muted)]">
-                        {item.assigneeDisplayName}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
-                      {item.description}
-                    </p>
-                    {item.error ? <p className="mt-1 text-xs text-rose-500">{item.error}</p> : null}
-                  </div>
                 </div>
+                <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
+                  {item.description}
+                </p>
+                {item.error ? <p className="mt-1 text-xs text-rose-500">{item.error}</p> : null}
               </div>
             ))}
           </div>
@@ -303,8 +342,8 @@ function RunDetail({
       ) : null}
 
       {run.finalResult ? (
-        <section className="overflow-hidden rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03]">
-          <div className="flex items-center justify-between border-b border-emerald-500/15 px-4 py-3">
+        <section className="overflow-hidden rounded-xl bg-emerald-500/[0.06]">
+          <div className="flex items-center justify-between px-4 pt-3">
             <div>
               <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
                 <Sparkles size={16} className="text-emerald-500" />
@@ -480,58 +519,57 @@ export function CollaborationView(): React.JSX.Element {
 
   return (
     <div className="flex size-full min-h-0 flex-col bg-page-canvas">
-      <aside className="flex shrink-0 items-stretch border-b border-[var(--surface-border-subtle)] bg-[var(--color-surface)]">
-        <div className="flex items-center justify-between border-b border-[var(--surface-border-subtle)] px-4 py-3">
-          <div>
-            <h1 className="text-sm font-semibold text-[var(--color-text)]">小队</h1>
-            <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">
-              选成员，团队自己选队长并完成交付。
-            </p>
+      {/* 顶部：标题 + 文字 tab 条 + 创建入口 */}
+      <div className="shrink-0 border-b border-[var(--surface-border-subtle)]">
+        <div className="flex items-end justify-between gap-4 px-5 pt-3">
+          <div className="flex min-w-0 items-end gap-4">
+            <div className="pb-1.5">
+              <h1 className="text-sm font-semibold text-[var(--color-text)]">小队</h1>
+            </div>
+            <nav aria-label="小队切换" className="flex min-w-0 items-end gap-1 overflow-x-auto">
+              {teams.map((team) => {
+                const selected = selectedTeamSlug === team.slug && !creatingTeam;
+                return (
+                  <button
+                    key={team.slug}
+                    type="button"
+                    onClick={() => {
+                      setSelectedTeamSlug(team.slug);
+                      setCreatingTeam(false);
+                      setError(null);
+                    }}
+                    aria-current={selected ? 'true' : undefined}
+                    className={cn(
+                      'shrink-0 border-b-2 px-3 pb-1.5 pt-1 text-sm transition-colors',
+                      selected
+                        ? 'border-indigo-500 font-medium text-[var(--color-text)]'
+                        : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'
+                    )}
+                  >
+                    <span className="whitespace-nowrap">{team.displayName}</span>
+                    <span className="ml-1.5 text-[11px] text-[var(--color-text-muted)]">
+                      {team.memberTeamSlugs.length}
+                    </span>
+                  </button>
+                );
+              })}
+              {teams.length === 0 && !creatingTeam ? (
+                <span className="px-3 pb-1.5 text-sm text-[var(--color-text-muted)]">
+                  还没有小队
+                </span>
+              ) : null}
+            </nav>
           </div>
           <button
             type="button"
             onClick={() => setCreatingTeam(true)}
-            className="rounded-md p-2 text-indigo-600 hover:bg-indigo-500/10"
-            aria-label="创建小队"
+            className="mb-1 inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
           >
-            <Plus size={16} />
+            <Plus size={13} />
+            创建小队
           </button>
         </div>
-        <div className="flex min-w-0 flex-1 overflow-x-auto">
-          {teams.map((team) => (
-            <button
-              key={team.slug}
-              type="button"
-              onClick={() => {
-                setSelectedTeamSlug(team.slug);
-                setCreatingTeam(false);
-                setError(null);
-              }}
-              className={cn(
-                'min-w-52 shrink-0 border-l border-[var(--surface-border-subtle)] px-4 py-3 text-left',
-                selectedTeamSlug === team.slug && !creatingTeam
-                  ? 'bg-[var(--color-surface-selected)]'
-                  : 'hover:bg-[var(--color-surface-hover)]'
-              )}
-            >
-              <span className="flex items-center gap-2">
-                <UsersRound size={16} className="text-indigo-500" />
-                <span className="truncate text-sm font-medium text-[var(--color-text)]">
-                  {team.displayName}
-                </span>
-              </span>
-              <span className="mt-1 block text-[11px] text-[var(--color-text-muted)]">
-                {team.memberTeamSlugs.length} 名智能体
-              </span>
-            </button>
-          ))}
-          {teams.length === 0 && !creatingTeam ? (
-            <div className="flex items-center px-5 text-center text-sm text-[var(--color-text-muted)]">
-              还没有小队
-            </div>
-          ) : null}
-        </div>
-      </aside>
+      </div>
 
       <main className="min-h-0 overflow-y-auto">
         {error ? (
@@ -548,7 +586,7 @@ export function CollaborationView(): React.JSX.Element {
                 选择至少两名智能体。收到任务后，他们会先开圆桌并自己选出本任务队长。
               </p>
             </div>
-            <div className="space-y-5 rounded-xl border border-[var(--surface-border-subtle)] bg-[var(--color-surface)] p-5">
+            <div className="space-y-5">
               <label className="block">
                 <span className="text-xs text-[var(--color-text-muted)]">小队名称</span>
                 <input
@@ -578,10 +616,10 @@ export function CollaborationView(): React.JSX.Element {
                         type="button"
                         onClick={() => toggleSelectedMember(team.teamName)}
                         className={cn(
-                          'flex items-center gap-3 rounded-lg border px-3 py-3 text-left',
+                          'flex items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors',
                           selected
-                            ? 'border-indigo-500/40 bg-indigo-500/[0.06]'
-                            : 'border-[var(--surface-border-subtle)] hover:bg-[var(--color-surface-hover)]'
+                            ? 'bg-indigo-500/[0.08]'
+                            : 'hover:bg-[var(--color-surface-hover)]'
                         )}
                       >
                         <img
@@ -599,10 +637,10 @@ export function CollaborationView(): React.JSX.Element {
                         </span>
                         <span
                           className={cn(
-                            'flex size-5 items-center justify-center rounded-full border',
+                            'flex size-5 items-center justify-center rounded-full',
                             selected
-                              ? 'border-indigo-500 bg-indigo-600 text-white'
-                              : 'border-[var(--color-border)]'
+                              ? 'bg-indigo-600 text-white'
+                              : 'border border-[var(--color-border)]'
                           )}
                         >
                           {selected ? <Check size={12} /> : null}
@@ -633,7 +671,7 @@ export function CollaborationView(): React.JSX.Element {
           </div>
         ) : detail ? (
           <div className="w-full px-5 py-5 lg:px-6">
-            <header className="mb-5 flex flex-wrap items-start justify-between gap-4">
+            <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-semibold text-[var(--color-text)]">
                   {detail.team.displayName}
@@ -641,11 +679,11 @@ export function CollaborationView(): React.JSX.Element {
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                   {detail.team.description || '成员会在每次任务开始前通过圆桌选出本任务队长。'}
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-3 flex flex-wrap gap-1.5">
                   {detail.members.map((member) => (
                     <span
                       key={member.teamSlug}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--surface-border-subtle)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text-secondary)]"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-raised)] px-2.5 py-1 text-xs text-[var(--color-text-secondary)]"
                     >
                       <img
                         src={agentAvatarUrl(member.displayName, 20)}
@@ -676,11 +714,13 @@ export function CollaborationView(): React.JSX.Element {
               </div>
             </header>
 
-            <div className="grid items-start gap-4 lg:grid-cols-[232px_minmax(0,1fr)]">
-              <aside className="rounded-xl border border-[var(--surface-border-subtle)] bg-[var(--color-surface)] p-3 lg:sticky lg:top-5">
+            <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <aside className="lg:sticky lg:top-5 lg:border-r lg:border-[var(--surface-border-subtle)] lg:pr-5">
                 <div className="flex items-center justify-between px-1 pb-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-[var(--color-text)]">小队任务</h3>
+                    <h3 className="text-[13px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                      小队任务
+                    </h3>
                     <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">
                       {detail.runs.length} 项任务
                     </p>
@@ -695,7 +735,7 @@ export function CollaborationView(): React.JSX.Element {
                   </button>
                 </div>
                 {detail.runs.length > 0 ? (
-                  <div className="space-y-1.5">
+                  <div className="space-y-0.5">
                     {detail.runs.map((run) => (
                       <button
                         key={run.id}
@@ -705,16 +745,16 @@ export function CollaborationView(): React.JSX.Element {
                           setTaskComposerOpen(false);
                         }}
                         className={cn(
-                          'w-full rounded-lg border px-3 py-3 text-left transition-colors',
+                          'w-full rounded-md px-3 py-2.5 text-left transition-colors',
                           selectedRunId === run.id && !taskComposerOpen
-                            ? 'border-indigo-500/30 bg-indigo-500/[0.06]'
-                            : 'border-transparent hover:bg-[var(--color-surface-hover)]'
+                            ? 'bg-indigo-500/[0.08]'
+                            : 'hover:bg-[var(--color-surface-hover)]'
                         )}
                       >
                         <span className="line-clamp-2 block text-sm font-medium text-[var(--color-text)]">
                           {run.title}
                         </span>
-                        <span className="mt-1.5 block text-[11px] text-[var(--color-text-muted)]">
+                        <span className="mt-1 block text-[11px] text-[var(--color-text-muted)]">
                           {phaseLabels[run.phase]}
                         </span>
                       </button>
@@ -729,7 +769,7 @@ export function CollaborationView(): React.JSX.Element {
 
               <div className="min-w-0">
                 {taskComposerOpen ? (
-                  <section className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.035] p-4">
+                  <section>
                     <div className="mb-3 flex items-start justify-between gap-3">
                       <div>
                         <h3 className="text-sm font-semibold text-[var(--color-text)]">
@@ -751,13 +791,13 @@ export function CollaborationView(): React.JSX.Element {
                       value={taskTitle}
                       onChange={(event) => setTaskTitle(event.target.value)}
                       placeholder="例如：调研亚马逊日本站开店流程、费用和风险"
-                      className="h-10 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm outline-none focus:border-indigo-500"
+                      className="h-10 w-full rounded-md border border-[var(--color-border)] bg-transparent px-3 text-sm outline-none focus:border-indigo-500"
                     />
                     <textarea
                       value={taskDescription}
                       onChange={(event) => setTaskDescription(event.target.value)}
                       placeholder="补充范围、目标、截止时间或希望收到的交付形式（可选）"
-                      className="mt-2 min-h-24 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm outline-none focus:border-indigo-500"
+                      className="mt-2 min-h-24 w-full rounded-md border border-[var(--color-border)] bg-transparent p-3 text-sm outline-none focus:border-indigo-500"
                     />
                     <div className="mt-3">
                       <TaskInputPicker files={taskInputFiles} onChange={setTaskInputFiles} />
@@ -767,7 +807,7 @@ export function CollaborationView(): React.JSX.Element {
                         type="button"
                         disabled={!taskTitle.trim() || submitting}
                         onClick={() => void createRun()}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+                        className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
                       >
                         <Sparkles size={14} />
                         {submitting ? '小队正在准备…' : '开始小队协作'}

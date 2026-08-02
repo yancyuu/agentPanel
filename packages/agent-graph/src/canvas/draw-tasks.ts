@@ -185,7 +185,7 @@ function drawTaskPill(
   }
 
   // Comment count badge — on the bottom-right border edge, 1.5x bigger
-  if (node.totalCommentCount && node.totalCommentCount > 0) {
+  if (node.totalDeliveryCount && node.totalDeliveryCount > 0) {
     const badgeX = halfW - 6;
     const badgeY = halfH;
 
@@ -209,10 +209,10 @@ function drawTaskPill(
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#0a0f1e';
-    ctx.fillText(String(node.totalCommentCount), badgeX, badgeY + 0.5);
+    ctx.fillText(String(node.totalDeliveryCount), badgeX, badgeY + 0.5);
 
     // Unread count badge (blue circle, top-right of bubble)
-    if (node.unreadCommentCount && node.unreadCommentCount > 0) {
+    if (node.unreadDeliveryCount && node.unreadDeliveryCount > 0) {
       const dotX = badgeX + bw / 2 + 1;
       const dotY = badgeY - bh / 2 - 1;
       ctx.fillStyle = '#3b82f6';
@@ -223,7 +223,7 @@ function drawTaskPill(
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(String(node.unreadCommentCount), dotX, dotY + 0.5);
+      ctx.fillText(String(node.unreadDeliveryCount), dotX, dotY + 0.5);
     }
   }
 

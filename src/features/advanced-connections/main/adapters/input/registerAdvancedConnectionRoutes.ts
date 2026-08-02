@@ -96,6 +96,17 @@ export function registerAdvancedConnectionRoutes(
   });
 
   app.post<{ Params: { connectionId: string } }>(
+    '/api/advanced-connections/:connectionId/insecure-allow',
+    async (request, reply) => {
+      try {
+        return await dependencies.service.allowInsecureTransport(request.params.connectionId);
+      } catch (error) {
+        return reply.code(400).send({ ok: false, error: errorMessage(error, '记录连接偏好失败') });
+      }
+    }
+  );
+
+  app.post<{ Params: { connectionId: string } }>(
     '/api/advanced-connections/:connectionId/logout',
     async (request, reply) => {
       try {

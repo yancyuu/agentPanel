@@ -138,12 +138,12 @@ describe('filterTeamMessages', () => {
     expect(result.map((message) => message.messageId)).toEqual(['peer-summary-visible']);
   });
 
-  it('hides task comment notifications by semantic kind instead of text matching', () => {
+  it('hides task activity notifications by semantic kind instead of text matching', () => {
     const messages = [
       makeMessage({
         messageId: 'task-comment-1',
         source: 'system_notification',
-        messageKind: 'task_comment_notification',
+        messageKind: 'task_activity_notification',
         summary: 'Comment on #abcd1234',
         text: 'Some future wording that may change completely.',
       }),

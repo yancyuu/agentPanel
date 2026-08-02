@@ -198,7 +198,6 @@ function makeTask(id: string): TeamTaskWithKanban {
     reviewer: '',
     status: 'in_progress',
     changePresence: 'unknown',
-    comments: [],
     attachments: [],
     blockedBy: [],
     blocks: [],
@@ -287,7 +286,8 @@ describe('TaskDetailPanel presentations', () => {
       await Promise.resolve();
     });
     expect(host.textContent).toContain('Task task-shared');
-    expect(host.textContent).toContain('任务协作');
+    // 评论区已移除：详情页指向消息线程
+    expect(host.textContent).toContain('沟通已统一到消息线程');
     expect(
       [...host.querySelectorAll('button')].some((button) => button.textContent === '评论')
     ).toBe(false);
@@ -320,15 +320,6 @@ describe('TaskDetailPanel presentations', () => {
     ];
     task.reviewState = 'review';
     task.needsClarification = 'user';
-    task.comments = [
-      {
-        id: 'clarification-comment',
-        author: '产品经理',
-        text: '请补充希望重点分析的业务范围。',
-        createdAt: '2026-01-02T00:00:00.000Z',
-        type: 'regular',
-      },
-    ];
     const host = document.createElement('div');
     document.body.appendChild(host);
     const root = createRoot(host);
@@ -352,10 +343,9 @@ describe('TaskDetailPanel presentations', () => {
 
     expect(host.textContent).toContain('交付成果');
     expect(host.textContent).toContain('调研报告');
-    expect(host.textContent).toContain('请检查结果');
-    expect(host.textContent).toContain('复制');
-    expect(host.textContent).toContain('保存 PDF');
-    expect(host.textContent).toContain('任务协作');
+    expect(host.textContent).toContain('评审请在收件箱进行');
+    expect(host.textContent).not.toContain('通过交付');
+    expect(host.textContent).not.toContain('请求修改');
     expect(host.textContent).not.toContain('标记为已解决');
     expect(host.textContent).not.toContain('相关文件');
     expect(host.textContent).not.toContain('文件变更');

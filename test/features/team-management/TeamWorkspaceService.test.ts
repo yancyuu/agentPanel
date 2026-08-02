@@ -485,21 +485,6 @@ describe('deliveries / feedbackItems / historyEvents', () => {
     expect(stored?.historyEvents).toEqual([first, second]);
   });
 
-  it('addTaskComment passes anchor through and rejects empty text', async () => {
-    const t = await svc.createTask(teamSlug, { title: 'commentable' });
-    const comment = await svc.addTaskComment(teamSlug, t.id, {
-      text: '这里的数据口径再确认下',
-      anchor: { kind: 'hunk', changeKey: 'src/a.ts', hunkIndex: 2 },
-    });
-    expect(comment.type).toBe('regular');
-    expect(comment.anchor).toEqual({ kind: 'hunk', changeKey: 'src/a.ts', hunkIndex: 2 });
-    const stored = (await svc.readTasks(teamSlug)).find((task) => task.id === t.id);
-    expect(stored?.comments).toEqual([comment]);
-
-    await expect(svc.addTaskComment(teamSlug, t.id, { text: '' })).rejects.toThrow(
-      '评论内容不能为空'
-    );
-  });
 });
 
 // ---------------------------------------------------------------------------

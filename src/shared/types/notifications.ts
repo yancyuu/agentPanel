@@ -25,7 +25,7 @@ export type TeamEventType =
   | 'user_inbox'
   | 'task_clarification'
   | 'task_status_change'
-  | 'task_comment'
+  | 'task_delivery'
   | 'task_created'
   | 'all_tasks_completed'
   | 'cross_team_message'
@@ -279,8 +279,8 @@ export interface AppConfig {
     notifyOnClarifications: boolean;
     /** Whether to show native OS notifications when a task status changes */
     notifyOnStatusChange: boolean;
-    /** Whether to show native OS notifications when a new comment is added to a task */
-    notifyOnTaskComments: boolean;
+    /** Whether to show native OS notifications when a task delivers a new version */
+    notifyOnTaskDeliveries: boolean;
     /** Whether to show native OS notifications when a new task is created */
     notifyOnTaskCreated: boolean;
     /** Whether to show native OS notifications when all tasks in a team are completed */

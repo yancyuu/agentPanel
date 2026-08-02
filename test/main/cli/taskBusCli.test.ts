@@ -78,7 +78,7 @@ describe('AgentCLI task bus', () => {
     });
   });
 
-  it('lists, claims, comments, clarifies, and completes tasks through the Workbench API', async () => {
+  it('lists, claims, clarifies, and completes tasks through the Workbench API', async () => {
     const { port, requests, task } = await startTaskBusServer();
 
     const listed = JSON.parse((await runCli(port, ['tasks', 'list', '--team', 'team-b'])).stdout);
@@ -92,7 +92,6 @@ describe('AgentCLI task bus', () => {
 
     for (const args of [
       ['tasks', 'claim', '--team', 'team-b', '--id', task.id],
-      ['tasks', 'comment', '--team', 'team-b', '--id', task.id, '--text', '处理中'],
       ['tasks', 'clarify', '--team', 'team-b', '--id', task.id, '--target', 'user'],
       ['tasks', 'complete', '--team', 'team-b', '--id', task.id, '--result', '已完成'],
     ]) {
@@ -104,10 +103,6 @@ describe('AgentCLI task bus', () => {
         expect.objectContaining({
           pathname: `/api/task-bus/tasks/${task.id}/claim`,
           body: { team: 'team-b' },
-        }),
-        expect.objectContaining({
-          pathname: `/api/task-bus/tasks/${task.id}/comments`,
-          body: { team: 'team-b', text: '处理中' },
         }),
         expect.objectContaining({
           pathname: `/api/task-bus/tasks/${task.id}/clarification`,

@@ -47,11 +47,10 @@ vi.mock('@features/collaborative-workbench/renderer/hooks/useCollaborativeInbox'
           teamDisplayName: 'Team A',
         },
         latestMessage: {
-          id: 'comment-1',
+          id: 'delivery:1',
           author: 'alice',
           text: '需要你补充目标市场',
           createdAt: '2026-01-01T00:00:00.000Z',
-          type: 'regular',
         },
         unreadCount: 1,
         updatedAtMs: Date.parse('2026-01-01T00:00:00.000Z'),
@@ -85,11 +84,10 @@ vi.mock('@features/collaborative-workbench/renderer/hooks/useCollaborativeInbox'
         teamDisplayName: 'Team A',
       },
       latestMessage: {
-        id: 'comment-1',
+        id: 'delivery:1',
         author: 'alice',
         text: '需要你补充目标市场',
         createdAt: '2026-01-01T00:00:00.000Z',
-        type: 'regular',
       },
       unreadCount: 1,
       updatedAtMs: Date.parse('2026-01-01T00:00:00.000Z'),
@@ -153,8 +151,8 @@ vi.mock('@features/collaborative-workbench/renderer/ui/InboxTaskList', () => ({
   ),
 }));
 
-vi.mock('@renderer/components/team/dialogs/ReviewDialog', () => ({
-  ReviewDialog: ({ open }: { open: boolean }) => (open ? <div>REVIEW DIALOG</div> : null),
+vi.mock('@features/collaborative-workbench/renderer/ui/TaskReviewThread', () => ({
+  TaskReviewThread: () => <div>REVIEW THREAD</div>,
 }));
 
 vi.mock('@renderer/components/team/members/AgentTuningDialog', () => ({
@@ -166,19 +164,16 @@ vi.mock('@renderer/components/team/dialogs/TaskDetailPanel', () => ({
   TaskDetailPanel: ({
     headerExtra,
     onScrollToTask,
-    commentSendLabel,
-    commentContextHint,
+    deliveriesContent,
   }: {
     headerExtra: React.ReactNode;
     onScrollToTask?(taskId: string): void;
-    commentSendLabel?: string;
-    commentContextHint?: string;
+    deliveriesContent?: React.ReactNode;
   }) => (
     <div>
       DETAIL
       {headerExtra}
-      {commentSendLabel}
-      {commentContextHint}
+      {deliveriesContent}
       <button type="button" onClick={() => onScrollToTask?.('task-2')}>
         REF
       </button>
@@ -234,8 +229,9 @@ describe('CollaborativeInboxView compact navigation', () => {
     expect(host.textContent).toContain('DETAIL');
     expect(host.textContent).toContain('调教员工');
     expect(host.textContent).toContain('新建后续任务');
-    expect(host.textContent).toContain('回复当前任务');
-    expect(host.textContent).toContain('不会创建新任务');
+    // 评审区改为邮件线程（deliveriesContent），不再有评论回复框
+    expect(host.textContent).toContain('REVIEW THREAD');
+    expect(host.textContent).not.toContain('回复当前任务');
     expect(host.textContent).not.toContain('私信');
     expect(host.textContent).not.toContain('写私信');
 
@@ -282,20 +278,16 @@ describe('CollaborativeInboxView compact navigation', () => {
     });
 
     expect(host.textContent).toContain('满意并归档');
-    expect(host.textContent).toContain('需要修改');
+    // 「需要修改」入口已删除：退回意见在线程回复框里提交
+    expect(host.textContent).not.toContain('需要修改');
+    expect(host.textContent).toContain('REVIEW THREAD');
     expect(host.textContent).not.toContain('新建后续任务');
 
     await act(async () => {
       buttonByText(host, '满意并归档').click();
       await Promise.resolve();
     });
-    expect(approveTask).toHaveBeenCalledWith('team-a', 'task-1');
-
-    await act(async () => {
-      buttonByText(host, '需要修改').click();
-      await Promise.resolve();
-    });
-    expect(host.textContent).toContain('REVIEW DIALOG');
+    expect(approveTask).toHaveBeenCalledWith('team-a', 'task-1', false);
 
     act(() => root.unmount());
   });

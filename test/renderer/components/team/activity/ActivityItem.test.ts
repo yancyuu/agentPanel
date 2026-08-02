@@ -578,7 +578,7 @@ describe('ActivityItem legacy system message fallback', () => {
       timestamp: new Date('2026-04-13T13:35:00.000Z').toISOString(),
       read: true,
       source: 'inbox',
-      messageKind: 'task_comment_notification',
+      messageKind: 'task_activity_notification',
       taskRefs: [{ taskId: 'task-1', displayId: '#8fdd6803', teamName: 'my-team' }],
     };
 

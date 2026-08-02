@@ -1,5 +1,6 @@
 import path from 'node:path';
 
+import type { PiRuntimeStatus } from '../services/system-manager/PiRuntimeStatus';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 interface SystemManagerConfigServiceLike {
@@ -36,6 +37,9 @@ interface SystemManagerRouteDependencies {
   workspaceCleanup: WorkspaceCleanupServiceLike;
   workflowPrompt: WorkflowPromptServiceLike;
   assertTrustedBrowserOrigin(request: FastifyRequest): void;
+  /** Pi 运行时探测（诊断执行前置；可注入缓存实现） */
+  getPiRuntimeStatus(): Promise<PiRuntimeStatus>;
+  refreshPiRuntimeStatus(): Promise<PiRuntimeStatus>;
 }
 
 function errorMessage(error: unknown): string {
@@ -52,6 +56,8 @@ export function registerSystemManagerRoutes(
     workspaceCleanup,
     workflowPrompt,
     assertTrustedBrowserOrigin,
+    getPiRuntimeStatus,
+    refreshPiRuntimeStatus,
   }: SystemManagerRouteDependencies
 ): void {
   app.post('/api/system-manager/ensure', async (_request, reply) => {
@@ -82,6 +88,18 @@ export function registerSystemManagerRoutes(
     }
   });
 
+  app.get<{ Querystring: { refresh?: string } }>(
+    '/api/system-manager/diagnostics/runtime',
+    async (_request, reply) => {
+      try {
+        const refresh = _request.query.refresh === '1';
+        return refresh ? await refreshPiRuntimeStatus() : await getPiRuntimeStatus();
+      } catch (error) {
+        return reply.code(500).send({ error: errorMessage(error) });
+      }
+    }
+  );
+
   app.post<{ Body: { actionId?: string; title?: string; prompt?: string } }>(
     '/api/system-manager/diagnostics/run',
     async (request, reply) => {
@@ -91,6 +109,15 @@ export function registerSystemManagerRoutes(
         const prompt = request.body?.prompt?.trim() ?? '';
         if (!actionId || !title || !prompt) {
           return reply.code(400).send({ error: '诊断类型、标题和检查要求不能为空' });
+        }
+        // 诊断固定走 pi 运行时：不可用时前置拦截并给出配置引导
+        const piStatus = await getPiRuntimeStatus();
+        if (!piStatus.available) {
+          return reply.code(409).send({
+            error: `需先配置 Pi 运行时：${piStatus.missing.join('；') || '运行时不可用'}`,
+            code: 'pi_runtime_missing',
+            piRuntime: piStatus,
+          });
         }
         const config = await systemManagerConfig.getConfig();
         return reply.code(202).send(

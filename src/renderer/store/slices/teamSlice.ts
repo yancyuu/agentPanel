@@ -29,7 +29,6 @@ import type { OpenCodeRuntimeDeliveryDebugDetails } from '@renderer/utils/openCo
 import type {
   ActiveToolCall,
   AddMemberRequest,
-  AddTaskCommentRequest,
   CreateTaskRequest,
   EffortLevel,
   GlobalTask,
@@ -45,7 +44,6 @@ import type {
   SendMessageRequest,
   SendMessageResult,
   TaskChangePresenceState,
-  TaskComment,
   TeamAgentRuntimeEntry,
   TeamAgentRuntimeSnapshot,
   TeamCreateRequest,
@@ -1107,7 +1105,7 @@ async function pollProvisioningStatus(
 // handles clarification-specific logic (e.g., marking tasks as needing user input).
 const notifiedClarificationTaskKeys = new Set<string>();
 const notifiedStatusChangeKeys = new Set<string>();
-const notifiedCommentKeys = new Set<string>();
+const notifiedDeliveryKeys = new Set<string>();
 const notifiedCreatedTaskKeys = new Set<string>();
 const notifiedAllCompletedTeams = new Set<string>();
 
@@ -1137,16 +1135,21 @@ function detectClarificationNotifications(
 
 function fireClarificationNotification(task: GlobalTask, suppressToast: boolean): void {
   // Delegate to main process for native OS notification (cross-platform, no permission needed)
-  const latestComment = task.comments?.length ? task.comments[task.comments.length - 1] : undefined;
+  const latestDelivery = task.deliveries?.length
+    ? task.deliveries[task.deliveries.length - 1]
+    : undefined;
   const rawBody =
-    latestComment?.text || task.description || `${formatTaskDisplayLabel(task)}: ${task.subject}`;
+    latestDelivery?.summary?.trim() ||
+    latestDelivery?.result ||
+    task.description ||
+    `${formatTaskDisplayLabel(task)}: ${task.subject}`;
   const body = stripAgentBlocks(rawBody).trim();
 
   void api.teams
     ?.showMessageNotification({
       teamName: task.teamName,
       teamDisplayName: task.teamDisplayName,
-      from: latestComment?.author || 'lead',
+      from: task.owner || 'lead',
       to: 'user',
       summary: `Clarification needed — Task ${formatTaskDisplayLabel(task)}`,
       body,
@@ -1254,7 +1257,7 @@ function fireStatusChangeNotification(
     .catch(() => undefined);
 }
 
-function detectTaskCommentNotifications(
+function detectTaskDeliveryNotifications(
   oldTasks: GlobalTask[],
   newTasks: GlobalTask[],
   notifyEnabled: boolean
@@ -1264,46 +1267,40 @@ function detectTaskCommentNotifications(
   for (const task of newTasks) {
     const mapKey = `${task.teamName}:${task.id}`;
     const oldTask = oldTaskMap.get(mapKey);
-    const oldCommentCount = oldTask?.comments?.length ?? 0;
-    const newCommentCount = task.comments?.length ?? 0;
+    const oldDeliveryCount = oldTask?.deliveries?.length ?? 0;
+    const newDeliveryCount = task.deliveries?.length ?? 0;
 
-    if (newCommentCount <= oldCommentCount) continue;
+    if (newDeliveryCount <= oldDeliveryCount) continue;
 
-    const newComments = (task.comments ?? []).slice(oldCommentCount);
-    for (const comment of newComments) {
-      // Don't notify about user's own comments
-      if (comment.author === 'user') continue;
+    const newDeliveries = (task.deliveries ?? []).slice(oldDeliveryCount);
+    for (const delivery of newDeliveries) {
+      const key = `${task.teamName}:${task.id}:delivery:${delivery.version}`;
+      if (notifiedDeliveryKeys.has(key)) continue;
+      notifiedDeliveryKeys.add(key);
 
-      const key = `${task.teamName}:${task.id}:${comment.id}`;
-      if (notifiedCommentKeys.has(key)) continue;
-      notifiedCommentKeys.add(key);
-
-      fireTaskCommentNotification(task, comment, !notifyEnabled);
+      fireTaskDeliveryNotification(task, delivery, !notifyEnabled);
     }
   }
 }
 
-function fireTaskCommentNotification(
+function fireTaskDeliveryNotification(
   task: GlobalTask,
-  comment: { author: string; text: string; id: string },
+  delivery: { version: number; summary?: string; result: string },
   suppressToast: boolean
 ): void {
-  // Double-check: never notify about user's own comments
-  if (comment.author === 'user') return;
-
-  const stripped = stripAgentBlocks(comment.text).trim();
+  const stripped = stripAgentBlocks(delivery.summary?.trim() || delivery.result).trim();
   const preview = stripped.length > 100 ? stripped.slice(0, 100) + '...' : stripped;
 
   void api.teams
     ?.showMessageNotification({
       teamName: task.teamName,
       teamDisplayName: task.teamDisplayName,
-      from: comment.author,
+      from: task.owner ?? 'agent',
       to: 'user',
-      summary: `Comment on ${formatTaskDisplayLabel(task)}: ${task.subject}`,
+      summary: `交付 第 ${delivery.version} 版 · ${formatTaskDisplayLabel(task)}: ${task.subject}`,
       body: preview,
-      teamEventType: 'task_comment',
-      dedupeKey: `comment:${task.teamName}:${task.id}:${comment.id}`,
+      teamEventType: 'task_delivery',
+      dedupeKey: `delivery:${task.teamName}:${task.id}:${delivery.version}`,
       suppressToast,
     })
     .catch(() => undefined);
@@ -1668,6 +1665,32 @@ function migrateStableSlotAssignmentsForMembers(
   return { assignments: nextAssignments, changed };
 }
 
+/**
+ * v2「团队即 agent」团队（team.json 无 members 字段）在分配语境下
+ * 合成团队自身为唯一成员：owner=displayName 的任务能匹配显示为已分配，
+ * MemberSelect 里有且只有这一个可选项。v1 多成员团队不受影响。
+ */
+function buildSelfMemberSnapshot(snapshot: TeamViewSnapshot, teamName: string): TeamMemberSnapshot {
+  return {
+    name: snapshot.config.name?.trim() || teamName,
+    agentId: snapshot.config.agentType,
+    agentType: snapshot.config.agentType,
+    role: 'lead',
+    color: snapshot.config.color,
+    currentTaskId: null,
+    taskCount: snapshot.tasks.length,
+  };
+}
+
+function resolveRosterMembers(
+  snapshot: TeamViewSnapshot,
+  teamName: string
+): readonly TeamMemberSnapshot[] {
+  return snapshot.members.length > 0
+    ? snapshot.members
+    : [buildSelfMemberSnapshot(snapshot, teamName)];
+}
+
 export function selectResolvedMembersForTeamName(
   state: Pick<
     TeamSlice,
@@ -1687,7 +1710,7 @@ export function selectResolvedMembersForTeamName(
     return cached.result;
   }
 
-  const result = buildResolvedMembers(snapshot.members, meta);
+  const result = buildResolvedMembers(resolveRosterMembers(snapshot, teamName), meta);
   resolvedMembersSelectorCache.set(teamName, {
     snapshotRef: snapshot.members,
     metaMembersRef: metaMembers,
@@ -1709,7 +1732,9 @@ export function selectResolvedMemberForTeamName(
     return null;
   }
 
-  const snapshotMember = snapshot.members.find((member) => member.name === memberName);
+  const snapshotMember = resolveRosterMembers(snapshot, teamName).find(
+    (member) => member.name === memberName
+  );
   if (!snapshotMember) {
     return null;
   }
@@ -2165,13 +2190,6 @@ export interface TeamSlice {
     taskId: string,
     fields: { subject?: string; description?: string }
   ) => Promise<void>;
-  addingComment: boolean;
-  addCommentError: string | null;
-  addTaskComment: (
-    teamName: string,
-    taskId: string,
-    request: AddTaskCommentRequest
-  ) => Promise<TaskComment>;
   addMember: (teamName: string, request: AddMemberRequest) => Promise<void>;
   restartMember: (teamName: string, memberName: string) => Promise<void>;
   skipMemberForLaunch: (teamName: string, memberName: string) => Promise<void>;
@@ -2571,8 +2589,6 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
     set({ globalTaskDetail: { teamName, taskId } });
   },
   closeGlobalTaskDetail: () => set({ globalTaskDetail: null }),
-  addingComment: false,
-  addCommentError: null,
   provisioningProgressUnsubscribe: null,
   deletedTasks: [],
   deletedTasksLoading: false,
@@ -2710,9 +2726,9 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
               get().appConfig?.notifications?.notifyOnClarifications ?? true;
             detectClarificationNotifications(oldTasks, tasks, notifyOnClarifications);
             detectStatusChangeNotifications(oldTasks, tasks, get().appConfig, get().teamByName);
-            const notifyOnTaskComments =
-              get().appConfig?.notifications?.notifyOnTaskComments ?? true;
-            detectTaskCommentNotifications(oldTasks, tasks, notifyOnTaskComments);
+            const notifyOnTaskDeliveries =
+              get().appConfig?.notifications?.notifyOnTaskDeliveries ?? true;
+            detectTaskDeliveryNotifications(oldTasks, tasks, notifyOnTaskDeliveries);
             const notifyOnTaskCreated = get().appConfig?.notifications?.notifyOnTaskCreated ?? true;
             detectTaskCreatedNotifications(oldTasks, tasks, notifyOnTaskCreated);
             const notifyOnAllCompleted =
@@ -2734,9 +2750,11 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
               if (getTaskKanbanColumn(task) === 'review') {
                 notifiedStatusChangeKeys.add(`${task.teamName}:${task.id}:review`);
               }
-              // Seed comment keys to prevent false notifications
-              for (const comment of task.comments ?? []) {
-                notifiedCommentKeys.add(`${task.teamName}:${task.id}:${comment.id}`);
+              // Seed delivery keys to prevent false notifications
+              for (const delivery of task.deliveries ?? []) {
+                notifiedDeliveryKeys.add(
+                  `${task.teamName}:${task.id}:delivery:${delivery.version}`
+                );
               }
               // Seed created task keys to prevent false notifications
               notifiedCreatedTaskKeys.add(`${task.teamName}:${task.id}`);
@@ -4360,23 +4378,6 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
     return unwrapIpc('team:getTaskAttachment', () =>
       api.teams.getTaskAttachment(teamName, taskId, attachmentId, mimeType)
     );
-  },
-
-  addTaskComment: async (teamName, taskId, request) => {
-    set({ addingComment: true, addCommentError: null });
-    try {
-      const comment = await unwrapIpc('team:addTaskComment', () =>
-        api.teams.addTaskComment(teamName, taskId, request)
-      );
-      set({ addingComment: false });
-      await get().refreshTeamData(teamName);
-      await get().fetchAllTasks();
-      return comment;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Failed to add comment';
-      set({ addingComment: false, addCommentError: msg });
-      throw error;
-    }
   },
 
   addMember: async (teamName: string, request: AddMemberRequest) => {

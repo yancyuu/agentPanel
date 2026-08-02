@@ -43,6 +43,7 @@ function renderSection(props: {
   deliveries?: Delivery[];
   feedbackItems?: FeedbackItem[];
   onOpenHunk?: (changeKey: string) => void;
+  reviewLocationHint?: string;
 }): { host: HTMLElement; root: ReturnType<typeof createRoot> } {
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -109,10 +110,13 @@ describe('TaskDeliveriesSection', () => {
     expect(host.textContent).toContain('第二版成果');
   });
 
-  it('offers copy and save-as-PDF actions for the current delivery', () => {
+  it('offers icon-only copy and save-as-PDF actions for the current delivery', () => {
     const { host } = renderSection({ deliveries: [makeDelivery({})] });
-    expect(host.textContent).toContain('复制');
-    expect(host.textContent).toContain('保存 PDF');
+    expect(host.querySelector('button[aria-label="复制成果"]')).not.toBeNull();
+    expect(host.querySelector('button[aria-label="保存 PDF"]')).not.toBeNull();
+    // 单版本：无切换箭头，也不显示「第 1 版」
+    expect(host.querySelector('button[aria-label="上一版"]')).toBeNull();
+    expect(host.textContent).not.toContain('第 1 版');
   });
 
   it('resolves addressedFeedbackIds to feedback text instead of raw ids', () => {
@@ -208,5 +212,21 @@ describe('TaskDeliveriesSection', () => {
     });
     expect(host.textContent).toContain('src/bar.ts · 第 1 个 hunk');
     expect(host.querySelector('button')).toBeNull();
+  });
+
+  it('任务详情只读：无评审交互入口，展示评审引导文案', () => {
+    const { host } = renderSection({
+      deliveries: [makeDelivery({})],
+      feedbackItems: [makeFeedback({})],
+      reviewLocationHint: '评审请在收件箱进行',
+    });
+
+    expect(host.textContent).toContain('评审请在收件箱进行');
+    expect(host.textContent).not.toContain('通过交付');
+    expect(host.textContent).not.toContain('请求修改');
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(host.querySelector('[data-testid="quote-feedback-button"]')).toBeNull();
+    expect(host.querySelector('[data-testid="review-actions"]')).toBeNull();
+    expect(host.querySelector('[data-testid="feedback-editor"]')).toBeNull();
   });
 });

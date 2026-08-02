@@ -3,8 +3,6 @@ import { agentAvatarUrl } from '@renderer/utils/memberHelpers';
 import { stripAgentBlocks } from '@shared/constants/agentBlocks';
 import { RefreshCw, Search } from 'lucide-react';
 
-import { getInboxTaskView } from '../utils/inboxProjection';
-
 import type { InboxTaskMessageProjection } from '../utils/inboxProjection';
 
 interface InboxTaskMessageListProps {
@@ -40,28 +38,29 @@ function getTaskFeedbackState(entry: InboxTaskMessageProjection): {
       className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
     };
   }
-  if (entry.task.reviewState === 'needsFix') {
+  // 只有「等用户评审」是用户的行动项，优先级高于任务状态；
+  // needsFix（返工中）按任务状态归入「进行中」，approved 归入「已完成」。
+  if (entry.task.reviewState === 'review') {
     return {
-      label: '需纠正',
-      className: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-    };
-  }
-  const view = getInboxTaskView(entry.task);
-  if (entry.task.reviewState === 'review' || view === 'review') {
-    return {
-      label: '待审核',
+      label: '待你评审',
       className: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
     };
   }
-  if (view === 'completed') {
+  if (entry.task.status === 'completed') {
     return {
       label: '已完成',
       className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
     };
   }
+  if (entry.task.status === 'pending') {
+    return {
+      label: '待处理',
+      className: 'bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]',
+    };
+  }
   return {
     label: '进行中',
-    className: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+    className: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
   };
 }
 

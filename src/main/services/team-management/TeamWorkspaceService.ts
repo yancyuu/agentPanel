@@ -27,8 +27,6 @@ import type {
   FeedbackItem,
   SourceMessageSnapshot,
   TaskAttachmentMeta,
-  TaskComment,
-  TaskCommentType,
   TaskHistoryEvent,
   TaskRef,
   TaskWorkInterval,
@@ -158,7 +156,6 @@ export interface Task {
   blocks?: string[];
   blockedBy?: string[];
   related?: string[];
-  comments?: TaskComment[];
   needsClarification?: 'lead' | 'user';
   /** ISO 时间戳 — 任务被软删除时写入（取代旧的 result='__deleted__' 约定） */
   deletedAt?: string | null;
@@ -177,15 +174,6 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   order: number;
-}
-
-export interface AddTaskCommentInput {
-  text: string;
-  author?: string;
-  type?: TaskCommentType;
-  anchor?: FeedbackAnchor;
-  taskRefs?: TaskRef[];
-  attachments?: TaskAttachmentMeta[];
 }
 
 export interface AddDeliveryInput {
@@ -796,40 +784,6 @@ export class TeamWorkspaceService {
       if (board.tasks.length === before) return false;
       await this.writeBoard(teamSlug, board);
       return true;
-    });
-  }
-
-  // ---- 任务评论 ----
-
-  async addTaskComment(
-    teamSlug: string,
-    taskId: string,
-    input: AddTaskCommentInput
-  ): Promise<TaskComment> {
-    const text = (input?.text ?? '').trim();
-    if (!text) throw new Error('评论内容不能为空');
-    return this.serializeBoardMutation(teamSlug, async () => {
-      const board = await this.readBoard(teamSlug);
-      const index = (board.tasks || []).findIndex((task) => task.id === taskId);
-      if (index < 0) throw new Error(`task not found: ${taskId}`);
-      const comment: TaskComment = {
-        id: randomUUID(),
-        author: input.author || 'user',
-        text,
-        createdAt: new Date().toISOString(),
-        type: input.type || 'regular',
-        ...(input.anchor ? { anchor: input.anchor } : {}),
-        ...(input.taskRefs ? { taskRefs: input.taskRefs } : {}),
-        ...(input.attachments ? { attachments: input.attachments } : {}),
-      };
-      const task = board.tasks[index];
-      board.tasks[index] = {
-        ...task,
-        comments: [...(task.comments ?? []), comment],
-        updatedAt: nextIsoTimestamp(task.updatedAt),
-      };
-      await this.writeBoard(teamSlug, board);
-      return comment;
     });
   }
 

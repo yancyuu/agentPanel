@@ -70,7 +70,7 @@ describe('InboxTaskList', () => {
     });
 
     expect(host.textContent).toContain('修复登录页面');
-    expect(host.textContent).toContain('2 条未读评论');
+    expect(host.textContent).toContain('2 条未读动态');
     expect(host.querySelector('[aria-label="筛选团队"]')).not.toBeNull();
     expect(host.querySelector('[aria-label="筛选负责人"]')).not.toBeNull();
     expect(host.querySelector('[role="tablist"]')).not.toBeNull();

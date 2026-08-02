@@ -13,6 +13,7 @@ import type {
 import type { CollaborationWorkspaceService } from './CollaborationWorkspaceService';
 import type { DirectCliEvent } from '@main/services/direct-cli';
 import type { TeamProvisioningService } from '@main/services/team-management';
+import { buildDeliveryThreadMessage } from '@main/services/team-management/reviewThreadMessages';
 import type { Task } from '@main/services/team-management/TeamWorkspaceService';
 
 interface DirectCliGateway {
@@ -42,7 +43,13 @@ export interface CollaborationOrchestratorDependencies {
   workspace: CollaborationWorkspaceService;
   teams: Pick<
     TeamProvisioningService,
-    'readTeamManifest' | 'createTask' | 'patchTask' | 'readTasks' | 'addDelivery'
+    | 'readTeamManifest'
+    | 'createTask'
+    | 'patchTask'
+    | 'readTasks'
+    | 'addDelivery'
+    | 'appendMessage'
+    | 'readMessages'
   >;
   directCli: DirectCliGateway;
   workbenchUrl: string;
@@ -389,7 +396,8 @@ export class CollaborationOrchestrator {
     const runs = (
       await Promise.all(teams.map((team) => this.dependencies.workspace.listRuns(team.slug)))
     ).flat();
-    const reviewDeliveryText = '小队已完成协作并提交最终成果，请检查结果。';
+    const reviewDeliveryMessageId = (teamSlug: string, taskId: string, version: number): string =>
+      `m_deliver_${teamSlug}_${taskId}_${version}`;
     await Promise.allSettled(
       runs
         .filter(
@@ -397,7 +405,8 @@ export class CollaborationOrchestrator {
             run.phase === 'review' && Boolean(run.rootTaskId) && Boolean(run.rootTaskTeamSlug)
         )
         .map(async (run) => {
-          const tasks = await this.dependencies.teams.readTasks(run.rootTaskTeamSlug ?? '');
+          const teamSlug = run.rootTaskTeamSlug ?? '';
+          const tasks = await this.dependencies.teams.readTasks(teamSlug);
           const rootTask = tasks.find((task) => task.id === run.rootTaskId);
           if (rootTask?.reviewState === 'approved') {
             await this.updateRun(run.id, (current) => ({
@@ -407,28 +416,16 @@ export class CollaborationOrchestrator {
             }));
             return;
           }
-          if (
-            !rootTask ||
-            rootTask.comments?.some((comment) => comment.text === reviewDeliveryText)
-          ) {
-            return;
-          }
-          await this.dependencies.teams.patchTask(
-            run.rootTaskTeamSlug ?? '',
-            run.rootTaskId ?? '',
-            {
-              comments: [
-                ...(rootTask.comments ?? []),
-                {
-                  id: randomUUID(),
-                  author: run.captainDisplayName ?? run.collaborationTeamDisplayName,
-                  text: reviewDeliveryText,
-                  createdAt: run.updatedAt,
-                  type: 'regular',
-                },
-              ],
-            }
-          );
+          // 评审沟通统一走消息线程：交付消息缺失时按确定性 id 幂等补写
+          const latestDelivery = rootTask?.deliveries?.at(-1);
+          if (!rootTask || !latestDelivery) return;
+          const messageId = reviewDeliveryMessageId(teamSlug, rootTask.id, latestDelivery.version);
+          const messages = await this.dependencies.teams.readMessages(teamSlug, { limit: 5000 });
+          if (messages.some((message) => message.id === messageId)) return;
+          await this.dependencies.teams.appendMessage(teamSlug, {
+            ...buildDeliveryThreadMessage(teamSlug, rootTask, latestDelivery),
+            id: messageId,
+          });
         })
     );
     const interrupted = runs.filter(
@@ -821,22 +818,25 @@ export class CollaborationOrchestrator {
       (task) => task.id === run.rootTaskId
     );
     // 最终成果记录为一条交付成果（delivery），不再写单一的 result 字段
-    await this.dependencies.teams.addDelivery(run.rootTaskTeamSlug, run.rootTaskId, {
-      result: finalResult,
-    });
+    const { delivery } = await this.dependencies.teams.addDelivery(
+      run.rootTaskTeamSlug,
+      run.rootTaskId,
+      {
+        result: finalResult,
+      }
+    );
     await this.dependencies.teams.patchTask(run.rootTaskTeamSlug, run.rootTaskId, {
       status: 'done',
       reviewState: 'review',
-      comments: [
-        ...(existingRootTask?.comments ?? []),
-        {
-          id: randomUUID(),
-          author: captain.displayName,
-          text: '小队已完成协作并提交最终成果，请检查结果。',
-          createdAt: new Date().toISOString(),
-          type: 'regular',
-        },
-      ],
+    });
+    // 评审沟通统一走消息线程：交付邮件写入 task:<taskId> 线程（确定性 id 幂等）
+    await this.dependencies.teams.appendMessage(run.rootTaskTeamSlug, {
+      ...buildDeliveryThreadMessage(
+        run.rootTaskTeamSlug,
+        existingRootTask ?? { id: run.rootTaskId, assignee: captain.displayName },
+        delivery
+      ),
+      id: `m_deliver_${run.rootTaskTeamSlug}_${run.rootTaskId}_${delivery.version}`,
     });
     await this.updateRun(runId, (current) => ({
       ...current,

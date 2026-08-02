@@ -113,8 +113,19 @@ export interface WorkflowPromptContentResponse {
   content: string;
 }
 
+/** Pi 运行时探测结果（诊断执行前置） */
+export interface PiRuntimeStatus {
+  available: boolean;
+  binaryReady: boolean;
+  authReady: boolean;
+  binaryPath?: string;
+  missing: string[];
+  checkedAt: string;
+}
+
 export interface SystemManagerAPI {
   getStatus: () => Promise<SystemManagerStatus>;
+  getDiagnosticsRuntime: (refresh?: boolean) => Promise<PiRuntimeStatus>;
   getConfig: () => Promise<SystemManagerConfig>;
   updateConfig: (patch: SystemManagerConfigPatch) => Promise<SystemManagerConfig>;
   listWorkflowPrompts: (folder: string) => Promise<WorkflowPromptListResponse>;

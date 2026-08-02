@@ -24,6 +24,7 @@ interface SystemDiagnosticRunServiceDependencies {
     text: string;
     messageId: string;
     conversationId: string;
+    harness?: 'claudecode' | 'codex' | 'pi';
   }): Promise<void>;
   broadcast(run: SystemDiagnosticRun): void;
   timeoutMs?: number;
@@ -131,6 +132,8 @@ export class SystemDiagnosticRunService {
         text: input.prompt,
         messageId,
         conversationId: `diagnostic:${id}`,
+        // 诊断固定走 pi 运行时（one-shot 进程），与 system-manager 团队的默认 harness 无关
+        harness: 'pi',
       });
       return run;
     } catch (error) {

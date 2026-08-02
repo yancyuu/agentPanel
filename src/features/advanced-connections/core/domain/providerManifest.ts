@@ -120,11 +120,28 @@ export function parseProviderManifest(value: unknown): ProviderManifestV1 {
   };
 }
 
+/**
+ * 数据范围默认授予（数据范围 UI 已移除，用户语义是「按默认即可」）：
+ * 默认开启只读/聚合类（团队结构、任务读取、聚合用量、能力清单）；
+ * 默认关闭写方向与敏感粒度——飞书凭证委托（服务端本就禁开）、消息正文/成员粒度/
+ * 项目路径元数据（隐私）、任务写回（写方向）、成员在线状态。
+ */
+const DEFAULT_DENIED_PERMISSIONS: ReadonlySet<DataPermissionId> = new Set([
+  'credentials.lark.export',
+  'usage.message-content',
+  'usage.project-metadata',
+  'usage.message-metadata',
+  'team.tasks.write',
+  'team.presence',
+]);
+
 export function defaultPermissionDecisions(): Record<DataPermissionId, PermissionDecision> {
-  return Object.fromEntries(ALL_DATA_PERMISSION_IDS.map((id) => [id, 'denied'])) as Record<
-    DataPermissionId,
-    PermissionDecision
-  >;
+  return Object.fromEntries(
+    ALL_DATA_PERMISSION_IDS.map((id) => [
+      id,
+      DEFAULT_DENIED_PERMISSIONS.has(id) ? 'denied' : 'granted',
+    ])
+  ) as Record<DataPermissionId, PermissionDecision>;
 }
 
 export function mergePermissionDecisions(

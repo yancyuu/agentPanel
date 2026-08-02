@@ -177,14 +177,14 @@ describe('filterTeamMessages', () => {
     expect(result).toHaveLength(1);
   });
 
-  // ── task_comment_notification exclusion ───────────────────────
+  // ── task_activity_notification exclusion ───────────────────────
 
-  it('excludes task_comment_notification messages', () => {
+  it('excludes task_activity_notification messages', () => {
     const msgs = [
       makeMessage({ messageId: 'a' }),
       makeMessage({
         messageId: 'b',
-        messageKind: 'task_comment_notification' as InboxMessage['messageKind'],
+        messageKind: 'task_activity_notification' as InboxMessage['messageKind'],
       }),
     ];
     const result = filterTeamMessages(msgs, { filter: defaultFilter, searchQuery: '' });

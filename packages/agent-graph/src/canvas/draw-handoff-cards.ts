@@ -248,6 +248,8 @@ function getKindLabel(kind: TransientHandoffCard['kind']): string {
   switch (kind) {
     case 'task_comment':
       return 'COMMENT';
+    case 'task_delivery':
+      return 'DELIVERY';
     case 'task_assign':
       return 'TASK';
     case 'review_request':

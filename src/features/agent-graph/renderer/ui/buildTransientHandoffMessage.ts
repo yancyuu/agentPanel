@@ -25,6 +25,9 @@ function buildSummary(card: TransientHandoffCard): string {
   if (card.kind === 'task_comment' && card.relatedTaskDisplayId) {
     return `${card.relatedTaskDisplayId} updated`;
   }
+  if (card.kind === 'task_delivery' && card.relatedTaskDisplayId) {
+    return `${card.relatedTaskDisplayId} delivered`;
+  }
   return `${card.sourceLabel} -> ${card.destinationLabel}`;
 }
 
@@ -37,6 +40,8 @@ function buildText(card: TransientHandoffCard): string {
     }
     case 'task_comment':
       return preview ?? `${card.sourceLabel} added a comment`;
+    case 'task_delivery':
+      return preview ?? `${card.sourceLabel} delivered a new version`;
     case 'review_request':
       return preview ?? `Review requested by ${card.sourceLabel}`;
     case 'review_response':
@@ -51,7 +56,10 @@ export function buildTransientHandoffMessage(
   teamName: string,
   card: TransientHandoffCard
 ): InboxMessage {
-  const messageKind = card.kind === 'task_comment' ? 'task_comment_notification' : 'default';
+  const messageKind =
+    card.kind === 'task_comment' || card.kind === 'task_delivery'
+      ? 'task_activity_notification'
+      : 'default';
   const taskRefs = buildTaskRefs(teamName, card);
 
   return {

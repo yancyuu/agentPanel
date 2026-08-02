@@ -45,6 +45,7 @@ import {
 import { SidebarTaskItem } from './SidebarTaskItem';
 import { TaskContextMenu } from './TaskContextMenu';
 import { TaskFiltersPopover } from './TaskFiltersPopover';
+import { getTaskDeliveryActivityItems } from '@renderer/utils/taskActivityItems';
 import {
   defaultTaskFiltersState,
   getTaskUnreadCount,
@@ -117,8 +118,12 @@ function applySortMode(
       return sortTasksByFreshness(sorted);
     case 'unread':
       return sorted.sort((a, b) => {
-        const ua = readState ? getTaskUnreadCount(readState, a.teamName, a.id, a.comments) : 0;
-        const ub = readState ? getTaskUnreadCount(readState, b.teamName, b.id, b.comments) : 0;
+        const ua = readState
+          ? getTaskUnreadCount(readState, a.teamName, a.id, getTaskDeliveryActivityItems(a))
+          : 0;
+        const ub = readState
+          ? getTaskUnreadCount(readState, b.teamName, b.id, getTaskDeliveryActivityItems(b))
+          : 0;
         if (ub !== ua) return ub - ua;
         return (b.updatedAt ?? b.createdAt ?? '').localeCompare(a.updatedAt ?? a.createdAt ?? '');
       });
@@ -355,11 +360,12 @@ export const GlobalTaskList = ({
     }
     if (filters.readFilter === 'unread') {
       result = result.filter(
-        (t) => getTaskUnreadCount(readState, t.teamName, t.id, t.comments) > 0
+        (t) => getTaskUnreadCount(readState, t.teamName, t.id, getTaskDeliveryActivityItems(t)) > 0
       );
     } else if (filters.readFilter === 'read') {
       result = result.filter(
-        (t) => getTaskUnreadCount(readState, t.teamName, t.id, t.comments) === 0
+        (t) =>
+          getTaskUnreadCount(readState, t.teamName, t.id, getTaskDeliveryActivityItems(t)) === 0
       );
     }
     result = applySearch(result, searchQuery);

@@ -220,6 +220,7 @@ function drawOverflowPill(
 function getActivityAccentColor(kind: GraphActivityItem['kind']): string {
   switch (kind) {
     case 'task_comment':
+    case 'task_delivery':
       return COLORS.particleTaskComment;
     case 'task_assign':
       return COLORS.particleTaskAssign;
@@ -237,6 +238,8 @@ function getActivityBadgeText(kind: GraphActivityItem['kind']): string {
   switch (kind) {
     case 'task_comment':
       return 'COMMENT';
+    case 'task_delivery':
+      return 'DELIV';
     case 'task_assign':
       return 'TASK';
     case 'review_request':

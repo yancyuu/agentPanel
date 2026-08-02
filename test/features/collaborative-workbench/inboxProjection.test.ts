@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   findReferencedTask,
+  getAgentActivityItems,
   getGlobalTaskKey,
-  getTaskFeedbackComments,
+  getTaskInboxActivityItems,
   projectInboxTaskMessages,
   projectInboxTasks,
 } from '../../../src/features/collaborative-workbench/renderer/utils/inboxProjection';
@@ -23,62 +24,59 @@ function task(overrides: Partial<GlobalTask> & Pick<GlobalTask, 'id'>): GlobalTa
 }
 
 describe('projectInboxTaskMessages', () => {
-  it('keeps user replies out of the task-feedback unread source', () => {
-    const comments = [
-      {
-        id: 'agent-comment',
-        author: 'alice',
-        text: '请确认目标市场',
-        createdAt: '2026-01-01T00:00:00Z',
-        type: 'regular' as const,
-      },
-      {
-        id: 'user-comment',
-        author: 'USER',
-        text: '目标市场是欧洲',
-        createdAt: '2026-01-02T00:00:00Z',
-        type: 'regular' as const,
-      },
-    ];
+  it('builds inbox activity from deliveries and feedback items (comments are gone)', () => {
+    const t = task({
+      id: 'with-delivery',
+      owner: 'alice',
+      deliveries: [
+        {
+          version: 1,
+          result: '成果全文',
+          summary: '初版调研',
+          deliveredAt: '2026-01-01T00:00:00Z',
+        },
+      ],
+      feedbackItems: [
+        {
+          id: 'fb-1',
+          text: '请补充数据来源',
+          status: 'open',
+          createdAt: '2026-01-02T00:00:00Z',
+        },
+      ],
+    });
 
-    expect(getTaskFeedbackComments(comments).map((comment) => comment.id)).toEqual([
-      'agent-comment',
-    ]);
+    expect(getTaskInboxActivityItems(t).map((item) => item.id)).toEqual(['delivery:1', 'fb-1']);
+    expect(getTaskInboxActivityItems(t)[0]).toEqual(
+      expect.objectContaining({ author: 'alice', text: '交付 第 1 版：初版调研' })
+    );
+    // 未读只算 agent 侧动态（交付），用户自己的反馈不算
+    expect(getAgentActivityItems(t).map((item) => item.id)).toEqual(['delivery:1']);
   });
 
-  it('projects Agent task comments as inbox messages and ignores user-only tasks', () => {
+  it('projects deliveries as inbox messages and ignores tasks without activity', () => {
     const tasks = [
       task({
         id: 'agent-message',
-        comments: [
+        owner: 'alice',
+        feedbackItems: [
           {
-            id: 'user-comment',
-            author: 'user',
+            id: 'fb-1',
             text: '补充说明',
+            status: 'open',
             createdAt: '2026-01-01T00:00:00Z',
-            type: 'regular',
           },
+        ],
+        deliveries: [
           {
-            id: 'agent-comment',
-            author: 'alice',
-            text: '请确认目标市场',
-            createdAt: '2026-01-02T00:00:00Z',
-            type: 'regular',
+            version: 1,
+            result: '成果全文',
+            summary: '请确认目标市场',
+            deliveredAt: '2026-01-02T00:00:00Z',
           },
         ],
       }),
-      task({
-        id: 'user-only',
-        comments: [
-          {
-            id: 'only-user-comment',
-            author: 'user',
-            text: '只有用户回复',
-            createdAt: '2026-01-03T00:00:00Z',
-            type: 'regular',
-          },
-        ],
-      }),
+      task({ id: 'no-activity' }),
     ];
 
     expect(
@@ -90,7 +88,10 @@ describe('projectInboxTaskMessages', () => {
       expect.objectContaining({
         key: 'team-a:agent-message',
         unreadCount: 1,
-        latestMessage: expect.objectContaining({ author: 'alice', text: '请确认目标市场' }),
+        latestMessage: expect.objectContaining({
+          author: 'alice',
+          text: '交付 第 1 版：请确认目标市场',
+        }),
       }),
     ]);
   });

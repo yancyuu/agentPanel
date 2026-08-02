@@ -1,21 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { ReviewDialog } from '@renderer/components/team/dialogs/ReviewDialog';
 import { TaskDetailPanel } from '@renderer/components/team/dialogs/TaskDetailPanel';
 import { useGlobalTaskDetailModel } from '@renderer/components/team/dialogs/useGlobalTaskDetailModel';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@renderer/components/ui/dialog';
 import { AgentTuningDialog } from '@renderer/components/team/members/AgentTuningDialog';
 import { cn } from '@renderer/lib/utils';
+import { useStore } from '@renderer/store';
 import { agentAvatarUrl } from '@renderer/utils/memberHelpers';
 import { getTaskInputMimeType, taskInputFileToBase64 } from '@renderer/utils/taskInputFiles';
 import {
   ArrowLeft,
   Bot,
   CheckCircle2,
+  CircleDot,
   ClipboardList,
   ListPlus,
   MessageSquare,
   Plus,
-  RotateCcw,
   SlidersHorizontal,
   UsersRound,
 } from 'lucide-react';
@@ -27,9 +34,11 @@ import { useTaskWorkspaceNavigation } from '../hooks/useTaskWorkspaceNavigation'
 import { InboxTaskList } from './InboxTaskList';
 import { InboxTaskMessageList } from './InboxTaskMessageList';
 import { TaskInputPicker } from './TaskInputPicker';
+import { TaskReviewThread } from './TaskReviewThread';
+
+import { extractFilePathFromChangeKey } from '@renderer/utils/reviewKey';
 
 import type { InboxTaskRecipientOption } from '../hooks/useInboxTaskRecipients';
-import type { TaskRef } from '@shared/types';
 
 type InboxMode = 'messages' | 'create' | 'tasks';
 type CollaborativeInboxSurface = 'inbox' | 'tasks';
@@ -97,7 +106,7 @@ export function CollaborativeInboxView({
   const [createError, setCreateError] = useState<string | null>(null);
   const [followUpSource, setFollowUpSource] = useState<FollowUpSource | null>(null);
   const [tuningOpen, setTuningOpen] = useState(false);
-  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [approveConfirmOpen, setApproveConfirmOpen] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
 
@@ -137,7 +146,7 @@ export function CollaborativeInboxView({
     setMobileDetailOpen(false);
     setFollowUpSource(null);
     setTuningOpen(false);
-    setReviewDialogOpen(false);
+    setApproveConfirmOpen(false);
     setReviewError(null);
   }, [surface]);
 
@@ -219,12 +228,34 @@ export function CollaborativeInboxView({
     }
   };
 
-  const approveCurrentTask = async (): Promise<void> => {
+  const detailTask = taskModel.task ?? selectedTask?.task ?? null;
+  const openFeedbackItems = (detailTask?.feedbackItems ?? []).filter(
+    (item) => item.status === 'open'
+  );
+
+  // 归档后的沉淀建议消息（task:<taskId> 线程中 source=precipitation_suggestion 的最新一条）
+  const teamMessages = useStore(
+    (s) => s.teamMessagesByName[selectedTask?.task.teamName ?? '']?.canonicalMessages
+  );
+  const precipitationSuggestion = useMemo(() => {
+    if (!detailTask) return null;
+    const conversationId = `task:${detailTask.id}`;
+    const message = [...(teamMessages ?? [])]
+      .reverse()
+      .find(
+        (candidate) =>
+          candidate.conversationId === conversationId &&
+          candidate.source === 'precipitation_suggestion'
+      );
+    return message ? { text: message.text, at: message.timestamp } : null;
+  }, [detailTask, teamMessages]);
+
+  const runApprove = async (force: boolean): Promise<void> => {
     if (!selectedTask || reviewSubmitting) return;
     setReviewSubmitting(true);
     setReviewError(null);
     try {
-      await taskInbox.approveTask(selectedTask.task.teamName, selectedTask.task.id);
+      await taskInbox.approveTask(selectedTask.task.teamName, selectedTask.task.id, force);
     } catch (error) {
       setReviewError(error instanceof Error ? error.message : '确认结果失败，请稍后重试。');
     } finally {
@@ -232,23 +263,14 @@ export function CollaborativeInboxView({
     }
   };
 
-  const submitRequestedChanges = async (comment?: string, taskRefs?: TaskRef[]): Promise<void> => {
-    if (!selectedTask || reviewSubmitting) return;
-    setReviewSubmitting(true);
+  // 有 open 反馈时先弹拦截确认（逐条列出），否则直接归档
+  const approveCurrentTask = (): void => {
     setReviewError(null);
-    try {
-      await taskInbox.requestChanges(
-        selectedTask.task.teamName,
-        selectedTask.task.id,
-        comment,
-        taskRefs
-      );
-      setReviewDialogOpen(false);
-    } catch (error) {
-      setReviewError(error instanceof Error ? error.message : '提交修改要求失败，请稍后重试。');
-    } finally {
-      setReviewSubmitting(false);
+    if (openFeedbackItems.length > 0) {
+      setApproveConfirmOpen(true);
+      return;
     }
+    void runApprove(false);
   };
 
   const startFollowUpTask = (): void => {
@@ -555,16 +577,36 @@ export function CollaborativeInboxView({
               }
               members={taskModel.members}
               compactForInbox
-              commentPlaceholder={
-                mode === 'messages'
-                  ? '补充说明、回答问题，或指出当前任务需要纠正的地方…'
-                  : undefined
-              }
-              commentSendLabel={mode === 'messages' ? '回复当前任务' : undefined}
-              commentContextHint={
-                mode === 'messages'
-                  ? '回复会添加到当前任务并继续推进，不会创建新任务。要改变智能体长期的做事方式，请使用“调教员工”。'
-                  : undefined
+              deliveriesContent={
+                detailTask ? (
+                  <TaskReviewThread
+                    deliveries={detailTask.deliveries}
+                    feedbackItems={detailTask.feedbackItems}
+                    historyEvents={detailTask.historyEvents}
+                    reviewState={detailTask.reviewState}
+                    owner={detailTask.owner}
+                    members={taskModel.members}
+                    onOpenHunk={
+                      taskModel.isFullTeamLoaded
+                        ? (changeKey) =>
+                            taskModel.viewChanges(
+                              detailTask.id,
+                              extractFilePathFromChangeKey(changeKey)
+                            )
+                        : undefined
+                    }
+                    onRequestChanges={(text, anchor) =>
+                      taskInbox.requestChanges(
+                        selectedTask.task.teamName,
+                        detailTask.id,
+                        text,
+                        undefined,
+                        anchor
+                      )
+                    }
+                    precipitationSuggestion={precipitationSuggestion}
+                  />
+                ) : undefined
               }
               onScrollToTask={(taskRef) => {
                 if (surface === 'inbox') {
@@ -604,20 +646,11 @@ export function CollaborativeInboxView({
                           <button
                             type="button"
                             disabled={reviewSubmitting}
-                            onClick={() => void approveCurrentTask()}
+                            onClick={approveCurrentTask}
                             className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
                           >
                             <CheckCircle2 size={12} />
                             满意并归档
-                          </button>
-                          <button
-                            type="button"
-                            disabled={reviewSubmitting}
-                            onClick={() => setReviewDialogOpen(true)}
-                            className="inline-flex items-center gap-1 rounded-md border border-rose-500/25 bg-rose-500/[0.04] px-2.5 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-500/10 disabled:opacity-50 dark:text-rose-300"
-                          >
-                            <RotateCcw size={12} />
-                            需要修改
                           </button>
                         </>
                       ) : null}
@@ -701,14 +734,55 @@ export function CollaborativeInboxView({
         member={selectedTaskOwnerMember}
         onClose={() => setTuningOpen(false)}
       />
-      <ReviewDialog
-        open={reviewDialogOpen}
-        teamName={selectedTask?.task.teamName ?? ''}
-        taskId={selectedTask?.task.id ?? null}
-        members={taskModel.members}
-        onCancel={() => setReviewDialogOpen(false)}
-        onSubmit={(comment, taskRefs) => void submitRequestedChanges(comment, taskRefs)}
-      />
+      <Dialog
+        open={approveConfirmOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setApproveConfirmOpen(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="approve-confirm-dialog">
+          <DialogHeader>
+            <DialogTitle>满意并归档</DialogTitle>
+            <DialogDescription>
+              还有 {openFeedbackItems.length} 条待处理反馈，仍要归档吗？
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="max-h-48 space-y-1 overflow-y-auto py-1">
+            {openFeedbackItems.map((item) => (
+              <li
+                key={item.id}
+                className="flex items-start gap-1.5 text-xs text-[var(--color-text-secondary)]"
+              >
+                <CircleDot size={12} className="mt-0.5 shrink-0 text-amber-400" />
+                <span className="min-w-0 break-words">{item.text}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-[var(--color-text-muted)]">
+            归档后这些反馈将一并标记为已解决。
+          </p>
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setApproveConfirmOpen(false)}
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)]"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={reviewSubmitting}
+              onClick={() => {
+                setApproveConfirmOpen(false);
+                void runApprove(true);
+              }}
+              className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              仍要归档
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

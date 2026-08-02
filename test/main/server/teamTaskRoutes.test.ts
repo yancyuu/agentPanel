@@ -379,6 +379,59 @@ describe('team task routes', () => {
     expect(openFeedbackHarness.dependencies.patchTask).not.toHaveBeenCalled();
   });
 
+  it('归档后追加沉淀建议消息，同一任务只建议一次', async () => {
+    const hermitHome = await mkdtemp(path.join(os.tmpdir(), 'agentcli-suggestion-'));
+    tempDirs.push(hermitHome);
+    process.env.HERMIT_HOME = hermitHome;
+    let currentTask = task({
+      status: 'done',
+      assignee: 'research-assistant',
+      reviewState: 'review',
+      deliveries: [
+        { version: 1, result: '# 正式交付\n\n已完成。', deliveredAt: '2026-01-01T00:00:01.000Z' },
+      ],
+    });
+    const appended: Array<{ meta?: Record<string, unknown> | null }> = [];
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [currentTask]),
+      patchTask: vi.fn(async (_teamName, _taskId, patch) => {
+        currentTask = { ...currentTask, ...patch };
+        return currentTask;
+      }),
+      appendInboxMessage: vi.fn(async (_teamName, input) => {
+        appended.push(input as { meta?: Record<string, unknown> | null });
+        return {};
+      }),
+      readInboxMessages: vi.fn(async () => appended),
+    });
+
+    const approve = () =>
+      harness.app.inject({
+        method: 'PATCH',
+        url: '/api/teams/team-a/kanban/task-12345678',
+        payload: { op: 'set_column', column: 'approved' },
+      });
+
+    const first = await approve();
+    expect(first.statusCode).toBe(200);
+    const suggestions = appended.filter(
+      (message) => message.meta?.source === 'precipitation_suggestion'
+    );
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0]?.meta).toMatchObject({
+      conversationId: 'task:task-12345678',
+      taskRefs: [expect.objectContaining({ taskId: 'task-12345678', teamName: 'team-a' })],
+    });
+    expect(String((suggestions[0] as { content?: string }).content)).toContain('沉淀一下');
+
+    // 二次归档：线程已有建议消息 → 不再追加
+    const second = await approve();
+    expect(second.statusCode).toBe(200);
+    expect(
+      appended.filter((message) => message.meta?.source === 'precipitation_suggestion')
+    ).toHaveLength(1);
+  });
+
   it('sends requested changes back to the same task instead of creating another task', async () => {
     let currentTask = task({
       status: 'done',
@@ -412,7 +465,6 @@ describe('team task routes', () => {
     expect(harness.dependencies.addFeedbackItem).toHaveBeenCalledWith('team-a', 'task-12345678', {
       text: '请补充英国站费用。',
     });
-    expect(currentTask.comments).toBeUndefined();
     expect(harness.dependencies.appendTaskHistoryEvent).toHaveBeenCalledWith(
       'team-a',
       'task-12345678',
@@ -469,6 +521,170 @@ describe('team task routes', () => {
       actor: 'reviewer',
     });
     expect(event).not.toHaveProperty('note');
+  });
+
+  it('resolves leftover open feedback when approval is forced', async () => {
+    const hermitHome = await mkdtemp(path.join(os.tmpdir(), 'agentcli-approval-force-'));
+    tempDirs.push(hermitHome);
+    process.env.HERMIT_HOME = hermitHome;
+    let currentTask = task({
+      status: 'done',
+      assignee: 'research-assistant',
+      reviewState: 'review',
+      deliveries: [
+        {
+          version: 1,
+          result: '# 正式交付\n\n已完成。',
+          deliveredAt: '2026-01-01T00:00:01.000Z',
+        },
+      ],
+      feedbackItems: [
+        { id: 'f_open', text: '遗留问题', status: 'open', createdAt: '2026-01-01T00:00:02.000Z' },
+        {
+          id: 'f_done',
+          text: '已改问题',
+          status: 'resolved',
+          createdAt: '2026-01-01T00:00:02.000Z',
+          resolvedAt: '2026-01-01T00:00:03.000Z',
+        },
+      ],
+    });
+    const readTasks = vi.fn(async () => [currentTask]);
+    const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
+      currentTask = { ...currentTask, ...patch };
+      return currentTask;
+    });
+    const appendInboxMessage = vi.fn(async () => ({}));
+    const broadcastInboxChange = vi.fn();
+    const harness = createHarness({
+      readTasks,
+      patchTask,
+      appendInboxMessage,
+      broadcastInboxChange,
+    });
+
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: { op: 'set_column', column: 'approved', force: true },
+    });
+
+    expect(response.statusCode).toBe(200);
+    // 归档收尾消息写入同一线程
+    expect(appendInboxMessage).toHaveBeenCalledWith(
+      'team-a',
+      expect.objectContaining({
+        from: 'user',
+        content: '已通过并归档（第 1 版交付）',
+        meta: expect.objectContaining({ conversationId: 'task:task-12345678' }),
+      })
+    );
+    expect(broadcastInboxChange).toHaveBeenCalledWith('team-a');
+    const patchPayload = patchTask.mock.calls[0][2];
+    expect(patchPayload).toMatchObject({ status: 'done', reviewState: 'approved' });
+    const feedbackItems = patchPayload.feedbackItems ?? [];
+    expect(feedbackItems).toHaveLength(2);
+    expect(feedbackItems[0]).toMatchObject({ id: 'f_open', status: 'resolved' });
+    expect(typeof feedbackItems[0]?.resolvedAt).toBe('string');
+    expect(feedbackItems[1]).toMatchObject({
+      id: 'f_done',
+      status: 'resolved',
+      resolvedAt: '2026-01-01T00:00:03.000Z',
+    });
+  });
+
+  it('passes the anchor through to the feedback item on request_changes', async () => {
+    let currentTask = task({
+      status: 'done',
+      assignee: 'research-assistant',
+      reviewState: 'review',
+    });
+    const appendInboxMessage = vi.fn(async () => ({}));
+    const broadcastInboxChange = vi.fn();
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [currentTask]),
+      patchTask: vi.fn(async (_teamName, _taskId, patch) => {
+        currentTask = { ...currentTask, ...patch };
+        return currentTask;
+      }),
+      appendInboxMessage,
+      broadcastInboxChange,
+    });
+
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: {
+        op: 'request_changes',
+        comment: '这句话需要改写。',
+        anchor: { kind: 'quote', quote: '原文片段' },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(harness.dependencies.addFeedbackItem).toHaveBeenCalledWith('team-a', 'task-12345678', {
+      text: '这句话需要改写。',
+      anchor: { kind: 'quote', quote: '原文片段' },
+    });
+    // 退回意见写入 from=user 的线程回复消息（quote 进引用块）并广播 inbox
+    expect(appendInboxMessage).toHaveBeenCalledWith(
+      'team-a',
+      expect.objectContaining({
+        from: 'user',
+        content: '> 原文片段\n\n这句话需要改写。',
+        meta: expect.objectContaining({
+          source: 'user_sent',
+          conversationId: 'task:task-12345678',
+        }),
+      })
+    );
+    expect(broadcastInboxChange).toHaveBeenCalledWith('team-a');
+
+    const invalid = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: {
+        op: 'request_changes',
+        comment: '这句话需要改写。',
+        anchor: { kind: 'quote' },
+      },
+    });
+    expect(invalid.statusCode).toBe(400);
+  });
+
+  it('only appends a feedback item when requesting changes on an already-rejected task', async () => {
+    const currentTask = task({
+      status: 'doing',
+      assignee: 'research-assistant',
+      reviewState: 'needsFix',
+      revisionCount: 1,
+    });
+    const patchTask = vi.fn();
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [currentTask]),
+      patchTask,
+    });
+
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: { op: 'request_changes', comment: '同一轮再补一条意见。' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(
+      expect.objectContaining({ ok: true, revisionCount: 1, needsHumanIntervention: false })
+    );
+    expect(harness.dependencies.addFeedbackItem).toHaveBeenCalledWith('team-a', 'task-12345678', {
+      text: '同一轮再补一条意见。',
+    });
+    expect(patchTask).not.toHaveBeenCalled();
+    expect(harness.dependencies.appendTaskHistoryEvent).not.toHaveBeenCalled();
+    expect(harness.dependencies.dispatchTask).not.toHaveBeenCalled();
+    expect(harness.dependencies.broadcastTaskChange).toHaveBeenCalledWith(
+      'team-a',
+      'task-12345678'
+    );
   });
 
   it('returns squad deliveries to the collaboration state machine for rework', async () => {
@@ -706,18 +922,6 @@ describe('team task routes', () => {
       })
     );
 
-    const commented = await harness.app.inject({
-      method: 'POST',
-      url: `/api/task-bus/tasks/${stored.id}/comments`,
-      payload: { team: 'team-b', text: '正在处理' },
-    });
-    expect(commented.json()).toEqual(
-      expect.objectContaining({
-        ok: true,
-        comment: expect.objectContaining({ author: 'team-b', text: '正在处理' }),
-      })
-    );
-
     const clarified = await harness.app.inject({
       method: 'POST',
       url: `/api/task-bus/tasks/${stored.id}/clarification`,
@@ -756,10 +960,7 @@ describe('team task routes', () => {
       })
     );
     expect(stored.status).toBe('done');
-    expect(stored.comments).toEqual([
-      expect.objectContaining({ author: 'team-b', text: '正在处理' }),
-    ]);
-    expect(harness.dependencies.broadcastTaskChange).toHaveBeenCalledTimes(4);
+    expect(harness.dependencies.broadcastTaskChange).toHaveBeenCalledTimes(3);
   });
 
   it('keeps request-review and review alias behavior identical, including the doing guard', async () => {
@@ -897,15 +1098,6 @@ describe('team task routes', () => {
       method: 'GET',
       url: '/api/teams/team-a/task-change-presence',
     });
-    const comment = await harness.app.inject({
-      method: 'POST',
-      url: '/api/teams/team-a/tasks/task-12345678/comments',
-      payload: {
-        text: 'Please check TASK-1',
-        taskRefs: [{ taskId: 'task-1', displayId: 'TASK-1', teamName: 'team-a' }],
-        attachments: [],
-      },
-    });
     await harness.app.inject({
       method: 'POST',
       url: '/api/teams/team-a/tasks/task-12345678/clarification',
@@ -933,18 +1125,8 @@ describe('team task routes', () => {
 
     expect(kanban.json()).toEqual({ teamName: 'team-a', reviewers: [], tasks: {} });
     expect(presence.json()).toEqual({});
-    expect(comment.statusCode).toBe(200);
-    expect(comment.json()).toEqual(
-      expect.objectContaining({
-        author: 'user',
-        text: 'Please check TASK-1',
-        type: 'regular',
-        taskRefs: [{ taskId: 'task-1', displayId: 'TASK-1', teamName: 'team-a' }],
-      })
-    );
     expect(afterAdd.json()).toEqual([
       expect.objectContaining({
-        comments: [expect.objectContaining({ text: 'Please check TASK-1' })],
         needsClarification: 'lead',
         blockedBy: ['task-2'],
       }),
@@ -954,97 +1136,23 @@ describe('team task routes', () => {
     expect(harness.dependencies.dispatchTask).not.toHaveBeenCalled();
   });
 
-  it('resumes an assigned task when the user replies in comments', async () => {
-    let stored = task({
-      status: 'doing',
-      assignee: '测试',
-      needsClarification: 'user',
-    });
-    const harness = createHarness({
-      readTasks: vi.fn(async () => [stored]),
-      patchTask: vi.fn(async (_teamName, _taskId, patch) => {
-        stored = { ...stored, ...patch };
-        return stored;
-      }),
-    });
-
-    const response = await harness.app.inject({
+  it('任务评论接口已移除：原评论路由返回 404', async () => {
+    const harness = createHarness();
+    const teamComment = await harness.app.inject({
       method: 'POST',
       url: '/api/teams/team-a/tasks/task-12345678/comments',
       payload: { text: '行，继续处理' },
     });
-
-    expect(response.statusCode).toBe(200);
-    expect(stored.needsClarification).toBeUndefined();
-    expect(stored.status).toBe('doing');
-    expect(stored.comments).toEqual([
-      expect.objectContaining({ author: 'user', text: '行，继续处理' }),
-    ]);
-    expect(harness.dependencies.dispatchTask).toHaveBeenCalledWith(
-      'team-a',
-      expect.objectContaining({ id: 'task-12345678', needsClarification: undefined })
-    );
-    expect(harness.dependencies.broadcastTaskChange).toHaveBeenCalledWith(
-      'team-a',
-      'task-12345678'
-    );
-  });
-
-  it('cancels an assigned task immediately instead of sending it back for review', async () => {
-    let stored = task({
-      status: 'done',
-      assignee: '测试',
-      reviewState: 'review',
-    });
-    const harness = createHarness({
-      readTasks: vi.fn(async () => [stored]),
-      patchTask: vi.fn(async (_teamName, _taskId, patch) => {
-        stored = { ...stored, ...patch };
-        return stored;
-      }),
-    });
-
-    const response = await harness.app.inject({
+    const busComment = await harness.app.inject({
       method: 'POST',
-      url: '/api/teams/team-a/tasks/task-12345678/comments',
-      payload: { text: '任务取消' },
+      url: '/api/task-bus/tasks/task-12345678/comments',
+      payload: { team: 'team-b', text: '正在处理' },
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(stored.status).toBe('done');
-    expect(stored.deletedAt).toEqual(expect.any(String));
-    expect(stored.reviewState).toBeUndefined();
-    expect(harness.dependencies.dispatchTask).not.toHaveBeenCalled();
-    expect(harness.dependencies.broadcastTaskChange).toHaveBeenCalledWith(
-      'team-a',
-      'task-12345678'
-    );
-  });
-
-  it('rejects unsupported browser comment attachments without mutating the board', async () => {
-    const harness = createHarness();
-    const response = await harness.app.inject({
-      method: 'POST',
-      url: '/api/teams/team-a/tasks/task-12345678/comments',
-      payload: {
-        text: 'comment with attachment',
-        attachments: [
-          {
-            id: 'attachment-1',
-            filename: 'note.txt',
-            mimeType: 'text/plain',
-            base64Data: Buffer.from('hello').toString('base64'),
-          },
-        ],
-      },
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({
-      error: '浏览器模式暂不支持评论附件，请移除附件后重试。',
-    });
-    expect(harness.dependencies.readTasks).not.toHaveBeenCalled();
+    expect(teamComment.statusCode).toBe(404);
+    expect(busComment.statusCode).toBe(404);
     expect(harness.dependencies.patchTask).not.toHaveBeenCalled();
+    expect(harness.dependencies.dispatchTask).not.toHaveBeenCalled();
   });
 
   it('validates every clarification and relationship handler before board mutation', async () => {

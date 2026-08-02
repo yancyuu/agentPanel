@@ -47,7 +47,6 @@ import type {
 import type { SystemManagerAPI } from './systemManager';
 import type {
   AddMemberRequest,
-  AddTaskCommentRequest,
   AttachmentFileData,
   BoardTaskActivityDetailResult,
   BoardTaskActivityEntry,
@@ -71,7 +70,7 @@ import type {
   SystemManagerSummary,
   TaskAttachmentMeta,
   TaskChangePresenceState,
-  TaskComment,
+  TeamAssetsResponse,
   TeamAgentRuntimeSnapshot,
   TeamChangeEvent,
   TeamClaudeLogsQuery,
@@ -772,11 +771,6 @@ export interface TeamsAPI {
     memberName: string,
     role: string | undefined
   ) => Promise<void>;
-  addTaskComment: (
-    teamName: string,
-    taskId: string,
-    request: AddTaskCommentRequest
-  ) => Promise<TaskComment>;
   setTaskClarification: (
     teamName: string,
     taskId: string,
@@ -822,6 +816,7 @@ export interface TeamsAPI {
     attachmentId: string,
     mimeType: string
   ) => Promise<string | null>;
+  getTeamAssets: (teamName: string) => Promise<TeamAssetsResponse>;
   deleteTaskAttachment: (
     teamName: string,
     taskId: string,

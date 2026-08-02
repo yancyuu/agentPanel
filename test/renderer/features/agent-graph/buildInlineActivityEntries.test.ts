@@ -123,7 +123,7 @@ describe('buildInlineActivityEntries', () => {
     ]);
   });
 
-  it('builds synthetic comment messages that open with full task context and route owner-self comments to lead', () => {
+  it('builds synthetic delivery messages that open with full task context and route owner deliveries to the owner lane', () => {
     const data = createBaseTeamData({
       tasks: [
         {
@@ -132,13 +132,12 @@ describe('buildInlineActivityEntries', () => {
           subject: 'Review contributor notes',
           owner: 'jack',
           status: 'in_progress',
-          comments: [
+          deliveries: [
             {
-              id: 'comment-1',
-              author: 'jack',
-              text: 'Короткий отчет по contributor pass',
-              createdAt: '2026-03-28T19:00:02.000Z',
-              type: 'regular',
+              version: 1,
+              result: 'Короткий отчет по contributor pass',
+              summary: 'Короткий отчет по contributor pass',
+              deliveredAt: '2026-03-28T19:00:02.000Z',
             },
           ],
           reviewState: 'none',
@@ -177,8 +176,8 @@ describe('buildInlineActivityEntries', () => {
     expect(jackEntries).toHaveLength(1);
     expect(jackEntries[0]?.graphItem).toEqual(
       expect.objectContaining({
-        id: 'activity:comment:my-team:task-1:comment-1',
-        kind: 'task_comment',
+        id: 'activity:delivery:my-team:task-1:1',
+        kind: 'task_delivery',
         title: '#8fdd6803 Review contributor notes',
         preview: 'Короткий отчет по contributor pass',
       })
@@ -187,12 +186,13 @@ describe('buildInlineActivityEntries', () => {
       from: 'jack',
       to: 'lead',
       summary: '#8fdd6803 Короткий отчет по contributor pass',
-      messageKind: 'task_comment_notification',
+      messageKind: 'task_activity_notification',
+      source: 'runtime_delivery',
       taskRefs: [{ taskId: 'task-1', displayId: '#8fdd6803', teamName: 'my-team' }],
     });
   });
 
-  it('routes comment activity to a member lane when task.owner is stored as stable owner id', () => {
+  it('routes delivery activity to a member lane when task.owner is stored as stable owner id', () => {
     const data = createBaseTeamData({
       tasks: [
         {
@@ -201,13 +201,11 @@ describe('buildInlineActivityEntries', () => {
           subject: 'Stable owner routing',
           owner: 'agent-jack',
           status: 'in_progress',
-          comments: [
+          deliveries: [
             {
-              id: 'comment-stable-owner',
-              author: 'lead',
-              text: 'Проверь финальную сводку перед merge',
-              createdAt: '2026-03-28T19:00:03.000Z',
-              type: 'regular',
+              version: 2,
+              result: 'Проверь финальную сводку перед merge',
+              deliveredAt: '2026-03-28T19:00:03.000Z',
             },
           ],
           reviewState: 'none',
@@ -247,7 +245,7 @@ describe('buildInlineActivityEntries', () => {
     expect(entries.get('member:my-team:agent-jack')).toEqual([
       expect.objectContaining({
         graphItem: expect.objectContaining({
-          id: 'activity:comment:my-team:task-stable-owner:comment-stable-owner',
+          id: 'activity:delivery:my-team:task-stable-owner:2',
           title: '#91 Stable owner routing',
           taskId: 'task-stable-owner',
         }),

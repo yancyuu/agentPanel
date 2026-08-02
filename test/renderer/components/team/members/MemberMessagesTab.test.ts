@@ -72,7 +72,7 @@ describe('MemberMessagesTab', () => {
     useStore.setState({ teamMessagesByName: {} } as never);
   });
 
-  it('shows both messages and comments by default and filters them separately', async () => {
+  it('shows both messages and task activities by default and filters them separately', async () => {
     const members: ResolvedTeamMember[] = [
       {
         name: 'lead',
@@ -110,13 +110,11 @@ describe('MemberMessagesTab', () => {
         subject: 'Review contributor notes',
         owner: 'jack',
         status: 'in_progress',
-        comments: [
+        deliveries: [
           {
-            id: 'comment-1',
-            author: 'jack',
-            text: 'Короткий отчёт по contributor pass',
-            createdAt: '2026-04-13T13:35:00.000Z',
-            type: 'regular',
+            version: 1,
+            result: 'Короткий отчёт по contributor pass',
+            deliveredAt: '2026-04-13T13:35:00.000Z',
           },
         ],
         reviewState: 'none',
@@ -162,7 +160,7 @@ describe('MemberMessagesTab', () => {
         node.getAttribute('data-kind')
       );
 
-    expect(getRenderedKinds()).toEqual(['task_comment_notification', 'message']);
+    expect(getRenderedKinds()).toEqual(['task_activity_notification', 'message']);
 
     const messagesButton = Array.from(host.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === 'Loop events'
@@ -186,7 +184,7 @@ describe('MemberMessagesTab', () => {
       await Promise.resolve();
     });
 
-    expect(getRenderedKinds()).toEqual(['task_comment_notification']);
+    expect(getRenderedKinds()).toEqual(['task_activity_notification']);
 
     await act(async () => {
       root.unmount();

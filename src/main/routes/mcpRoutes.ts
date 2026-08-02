@@ -1,4 +1,8 @@
-import { executeMcpTool, type McpToolContent } from '../services/team-management/mcpTaskTools';
+import {
+  executeMcpTool,
+  type McpReviewThreadHooks,
+  type McpToolContent,
+} from '../services/team-management/mcpTaskTools';
 
 import type {
   AddDeliveryInput,
@@ -200,12 +204,17 @@ export function openMcpStream({
 async function runMcpTool(
   service: McpTaskService,
   toolName: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  reviewThreadHooks?: McpReviewThreadHooks
 ): Promise<McpToolContent> {
-  return executeMcpTool(service, toolName, args);
+  return executeMcpTool(service, toolName, args, reviewThreadHooks);
 }
 
-export function registerMcpRoutes(app: FastifyInstance, service: McpTaskService): void {
+export function registerMcpRoutes(
+  app: FastifyInstance,
+  service: McpTaskService,
+  reviewThreadHooks?: McpReviewThreadHooks
+): void {
   app.get('/mcp', (request, reply) => openMcpStream({ request, reply }));
 
   app.post<{
@@ -233,7 +242,7 @@ export function registerMcpRoutes(app: FastifyInstance, service: McpTaskService)
         return {
           jsonrpc: '2.0',
           id,
-          result: { content: await runMcpTool(service, toolName, toolArgs) },
+          result: { content: await runMcpTool(service, toolName, toolArgs, reviewThreadHooks) },
         };
       } catch (error) {
         return {

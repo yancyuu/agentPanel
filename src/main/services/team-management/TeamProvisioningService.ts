@@ -13,6 +13,8 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { buildHermitOpsRunbookContext } from './OpsRunbookContext';
+import { ensureOpenspecProject, pointerFileForHarness } from './openspecProject';
+import { ensureOpenspecWrapperCommand, resolveHermitHome } from './openspecRuntime';
 import {
   type CreateTeamInput,
   groupSessionKey,
@@ -117,6 +119,18 @@ export class TeamProvisioningService {
         await removeLegacyHermitTasksMcpConfig(manifest.workDir);
       }
       await this.injectTeamInstructions(manifest.workDir, manifest.slug, manifest.harness);
+    }
+
+    // 工作区即 OpenSpec 项目：骨架 + AGENTS.md 沉淀指令（幂等）
+    const openspecCommand = ensureOpenspecWrapperCommand(resolveHermitHome());
+    if (openspecCommand) {
+      await ensureOpenspecProject(manifest.workDir, openspecCommand, {
+        pointerFile: pointerFileForHarness(manifest.harness),
+      }).catch((error) =>
+        logger.warn(
+          `openspec project init skipped: ${error instanceof Error ? error.message : String(error)}`
+        )
+      );
     }
 
     if (createCcProject) {
@@ -317,14 +331,6 @@ export class TeamProvisioningService {
     return this.workspace.deleteTask(teamSlug, taskId);
   }
 
-  addTaskComment(
-    teamSlug: string,
-    taskId: string,
-    input: Parameters<TeamWorkspaceService['addTaskComment']>[2]
-  ) {
-    return this.workspace.addTaskComment(teamSlug, taskId, input);
-  }
-
   addDelivery(
     teamSlug: string,
     taskId: string,
@@ -431,7 +437,6 @@ Do not use MCP, Skills, or the harness's native task/todo tools for collaborativ
 Use these commands for collaborative tasks:
 - List visible tasks: \`agentcli --port ${process.env.PORT ?? '5680'} tasks list --team ${teamSlug}\`
 - Claim a task before work: \`agentcli --port ${process.env.PORT ?? '5680'} tasks claim --team ${teamSlug} --id <task-id>\`
-- Post progress: \`agentcli --port ${process.env.PORT ?? '5680'} tasks comment --team ${teamSlug} --id <task-id> --text "<progress>"\`
 - Request clarification: \`agentcli --port ${process.env.PORT ?? '5680'} tasks clarify --team ${teamSlug} --id <task-id> --target user\`
 - Submit the result: \`agentcli --port ${process.env.PORT ?? '5680'} tasks complete --team ${teamSlug} --id <task-id> --result "<result>"\`
 

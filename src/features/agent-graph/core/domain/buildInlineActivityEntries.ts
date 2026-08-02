@@ -7,11 +7,9 @@ import { buildGraphMemberNodeIdAliasMap } from './graphOwnerIdentity';
 
 import type { GraphActivityItem } from '@claude-teams/agent-graph';
 import type {
-  AttachmentMeta,
+  Delivery,
   InboxMessage,
   ResolvedTeamMember,
-  TaskAttachmentMeta,
-  TaskComment,
   TaskRef,
   TeamTaskWithKanban,
 } from '@shared/types/team';
@@ -20,7 +18,7 @@ export interface InlineActivityEntry {
   ownerNodeId: string;
   graphItem: GraphActivityItem;
   message: InboxMessage;
-  sourceKind: 'message' | 'comment';
+  sourceKind: 'message' | 'delivery';
   sourceOrder: number | null;
 }
 
@@ -81,10 +79,6 @@ export function buildInlineActivityEntries({
     data.messages.map((message, index) => [getActivityMessageKey(message), index] as const)
   );
   for (const message of orderedMessages) {
-    if (message.summary?.startsWith('Comment on ')) {
-      continue;
-    }
-
     const idleLabel = getIdleGraphLabel(message.text ?? '');
     if (!idleLabel && isInboxNoiseMessage(message.text ?? '')) {
       continue;
@@ -130,15 +124,16 @@ export function buildInlineActivityEntries({
     });
   }
 
-  const orderedComments = [...collectTaskComments(data.tasks)].sort((a, b) => {
-    const ta = String(a.comment.createdAt ?? '');
-    const tb = String(b.comment.createdAt ?? '');
+  const orderedDeliveries = [...collectTaskDeliveries(data.tasks)].sort((a, b) => {
+    const ta = String(a.delivery.deliveredAt ?? '');
+    const tb = String(b.delivery.deliveredAt ?? '');
     return ta.localeCompare(tb);
   });
-  for (const item of orderedComments) {
-    const ownerNodeId = resolveCommentOwnerNodeId({
+  for (const item of orderedDeliveries) {
+    const author = item.task.owner?.trim() || 'agent';
+    const ownerNodeId = resolveDeliveryOwnerNodeId({
       taskOwner: item.task.owner,
-      author: item.comment.author,
+      author,
       leadId,
       leadName,
       ownerNodeIds,
@@ -149,28 +144,29 @@ export function buildInlineActivityEntries({
     }
 
     const taskLabel = item.task.displayId ?? `#${item.task.id.slice(0, 6)}`;
-    const preview = buildActivityPreview(item.comment.text);
+    const preview = buildActivityPreview(item.delivery.summary?.trim() || item.delivery.result);
     const graphItem: GraphActivityItem = {
-      id: `activity:comment:${teamName}:${item.task.id}:${item.comment.id}`,
-      kind: 'task_comment',
-      timestamp: item.comment.createdAt,
+      id: `activity:delivery:${teamName}:${item.task.id}:${item.delivery.version}`,
+      kind: 'task_delivery',
+      timestamp: item.delivery.deliveredAt,
       title: `${taskLabel} ${item.task.subject}`.trim(),
       preview,
       taskId: item.task.id,
       taskDisplayId: item.task.displayId ?? undefined,
-      authorLabel: item.comment.author,
+      authorLabel: author,
     };
 
     appendEntry({
       ownerNodeId,
       graphItem,
-      message: buildCommentActivityMessage({
+      message: buildDeliveryActivityMessage({
         teamName,
         leadName,
         task: item.task,
-        comment: item.comment,
+        delivery: item.delivery,
+        author,
       }),
-      sourceKind: 'comment',
+      sourceKind: 'delivery',
       sourceOrder: item.sourceOrder,
     });
   }
@@ -182,14 +178,14 @@ export function buildInlineActivityEntries({
   return entriesByOwnerNodeId;
 }
 
-function collectTaskComments(
+function collectTaskDeliveries(
   tasks: readonly TeamTaskWithKanban[]
-): { task: TeamTaskWithKanban; comment: TaskComment; sourceOrder: number }[] {
-  const items: { task: TeamTaskWithKanban; comment: TaskComment; sourceOrder: number }[] = [];
+): { task: TeamTaskWithKanban; delivery: Delivery; sourceOrder: number }[] {
+  const items: { task: TeamTaskWithKanban; delivery: Delivery; sourceOrder: number }[] = [];
   let sourceOrder = 0;
   for (const task of tasks) {
-    for (const comment of task.comments ?? []) {
-      items.push({ task, comment, sourceOrder });
+    for (const delivery of task.deliveries ?? []) {
+      items.push({ task, delivery, sourceOrder });
       sourceOrder += 1;
     }
   }
@@ -245,7 +241,7 @@ function resolveMessageOwnerNodeId(args: {
   return ownerNodeIds.has(leadId) ? leadId : null;
 }
 
-function resolveCommentOwnerNodeId(args: {
+function resolveDeliveryOwnerNodeId(args: {
   taskOwner: string | undefined;
   author: string;
   leadId: string;
@@ -281,30 +277,31 @@ function buildActivityMessageTitle(message: InboxMessage, leadName: string): str
   return `${fromLabel} -> ${toLabel}`;
 }
 
-function buildCommentActivityMessage(args: {
+function buildDeliveryActivityMessage(args: {
   teamName: string;
   leadName: string;
   task: TeamTaskWithKanban;
-  comment: TaskComment;
+  delivery: Delivery;
+  author: string;
 }): InboxMessage {
-  const { teamName, leadName, task, comment } = args;
+  const { teamName, leadName, task, delivery, author } = args;
   const taskDisplayId = task.displayId ?? `#${task.id.slice(0, 6)}`;
-  const summaryPreview = buildActivityPreview(comment.text, 90) ?? task.subject;
+  const summaryPreview =
+    buildActivityPreview(delivery.summary?.trim() || delivery.result, 90) ?? task.subject;
   const summary = `${taskDisplayId} ${summaryPreview}`.trim();
-  const recipient = task.owner && task.owner !== comment.author ? task.owner : leadName;
+  const recipient = task.owner && task.owner !== author ? task.owner : leadName;
 
   return {
-    from: comment.author,
+    from: author,
     to: recipient,
-    text: comment.text,
-    timestamp: comment.createdAt,
+    text: `交付 第 ${delivery.version} 版\n\n${delivery.result}`,
+    timestamp: delivery.deliveredAt,
     read: true,
     summary,
-    messageId: `graph-activity-comment:${teamName}:${task.id}:${comment.id}`,
-    messageKind: 'task_comment_notification',
-    source: 'inbox',
+    messageId: `graph-activity-delivery:${teamName}:${task.id}:${delivery.version}`,
+    messageKind: 'task_activity_notification',
+    source: 'runtime_delivery',
     taskRefs: buildTaskRefs(teamName, task),
-    attachments: mapCommentAttachments(comment.attachments),
   };
 }
 
@@ -317,21 +314,6 @@ function buildTaskRefs(teamName: string, task: TeamTaskWithKanban): TaskRef[] | 
       teamName,
     },
   ];
-}
-
-function mapCommentAttachments(
-  attachments: TaskAttachmentMeta[] | undefined
-): AttachmentMeta[] | undefined {
-  if (!attachments || attachments.length === 0) {
-    return undefined;
-  }
-  return attachments.map((attachment) => ({
-    id: attachment.id,
-    filename: attachment.filename,
-    mimeType: attachment.mimeType,
-    size: attachment.size,
-    filePath: attachment.filePath ?? undefined,
-  }));
 }
 
 function buildActivityPreview(text: string | undefined, max = 180): string | undefined {

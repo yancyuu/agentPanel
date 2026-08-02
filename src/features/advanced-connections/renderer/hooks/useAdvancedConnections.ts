@@ -5,10 +5,7 @@ import { api } from '@renderer/api';
 import {
   type AdvancedConnectionSummary,
   type AdvancedConnectionTokenCatalogSummary,
-  DATA_PERMISSION_LABELS,
-  type DataPermissionId,
   type DiscoverAdvancedConnectionResponse,
-  type PermissionDecision,
 } from '../../contracts';
 import { advancedConnectionsApi } from '../adapters/advancedConnectionsApi';
 
@@ -84,7 +81,7 @@ function useAdvancedConnectionsState() {
     if (!result) return;
     setHost(DEFAULT_AGENTBUS_HOST);
     setPreview(null);
-    setNotice('连接服务已添加，下一步请完成用户授权并选择允许的数据范围。');
+    setNotice('连接服务已添加，下一步请完成用户授权。');
     await refresh();
   }, [preview, refresh, run]);
 
@@ -134,14 +131,10 @@ function useAdvancedConnectionsState() {
     [refresh, run]
   );
 
-  const setPermission = useCallback(
-    async (connectionId: string, permissionId: DataPermissionId, decision: PermissionDecision) => {
-      const result = await run(`permission:${connectionId}:${permissionId}`, () =>
-        advancedConnectionsApi.updatePermissions(connectionId, {
-          permissions: { [permissionId]: decision },
-          highRiskAcknowledged:
-            decision === 'granted' && DATA_PERMISSION_LABELS[permissionId].risk === 'high',
-        })
+  const allowInsecure = useCallback(
+    async (connectionId: string) => {
+      const result = await run(`insecure-allow:${connectionId}`, () =>
+        advancedConnectionsApi.allowInsecure(connectionId)
       );
       if (result) {
         setConnections((current) =>
@@ -265,7 +258,7 @@ function useAdvancedConnectionsState() {
     removeConnection,
     startAuth,
     logout,
-    setPermission,
+    allowInsecure,
     syncConnection,
     pullRemoteTasks,
     checkTokenCatalog,

@@ -220,7 +220,7 @@ function makeAppConfig(multimodelEnabled: boolean): AppConfig {
       notifyOnUserInbox: true,
       notifyOnClarifications: true,
       notifyOnStatusChange: true,
-      notifyOnTaskComments: true,
+      notifyOnTaskDeliveries: true,
       notifyOnTaskCreated: true,
       notifyOnAllTasksCompleted: true,
       notifyOnCrossTeamMessage: true,

@@ -134,6 +134,11 @@ describe('team message routes', () => {
         meta: { session_key: 'session-key', source: 'inbox' },
       }),
       groupMessage({
+        id: 'suggestion',
+        ts: '2026-01-01T00:00:01.500Z',
+        meta: { source: 'precipitation_suggestion', conversationId: 'task:task-1' },
+      }),
+      groupMessage({
         id: 'newest',
         ts: '2026-01-01T00:00:02.000Z',
         meta: {
@@ -174,23 +179,26 @@ describe('team message routes', () => {
             title: 'Session title',
           },
         }),
-        expect.objectContaining({ messageId: 'middle', source: 'inbox' }),
+        expect.objectContaining({
+          messageId: 'suggestion',
+          source: 'precipitation_suggestion',
+          conversationId: 'task:task-1',
+        }),
       ],
       nextCursor: '2',
       hasMore: true,
-      feedRevision: '3:oldest:newest',
+      feedRevision: '4:oldest:newest',
     });
     expect(secondPage.json()).toEqual({
       messages: [
         expect.objectContaining({
-          messageId: 'oldest',
-          source: 'user_sent',
-          session: expect.objectContaining({ key: 'hermit:team-a:session' }),
+          messageId: 'middle',
+          source: 'inbox',
         }),
       ],
-      nextCursor: null,
-      hasMore: false,
-      feedRevision: '3:oldest:newest',
+      nextCursor: '3',
+      hasMore: true,
+      feedRevision: '4:oldest:newest',
     });
     expect(listSessions).toHaveBeenCalledWith('project-a');
   });

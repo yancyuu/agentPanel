@@ -904,7 +904,7 @@ export const ActivityItem = memo(
       return normalized || compactPreviewMarkdown;
     }, [compactPreviewMarkdown]);
     const commentTaskRef =
-      message.messageKind === 'task_comment_notification' ? (message.taskRefs?.[0] ?? null) : null;
+      message.messageKind === 'task_activity_notification' ? (message.taskRefs?.[0] ?? null) : null;
     const commentTaskDisplayId =
       commentTaskRef?.displayId ??
       (commentTaskRef?.taskId ? `#${commentTaskRef.taskId.slice(0, 6)}` : null);
