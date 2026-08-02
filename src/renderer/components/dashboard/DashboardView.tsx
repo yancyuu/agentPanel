@@ -135,7 +135,7 @@ export const DashboardView = (): React.JSX.Element => {
                 快速开始
               </div>
               <p className="mt-1 text-xs text-text-muted">
-                先连接可用的 Agent 运行时，再创建数字员工并开始分发任务。
+                先连接可用的 Agent 运行时，再创建智能体并开始分发任务。
               </p>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <button
@@ -158,7 +158,7 @@ export const DashboardView = (): React.JSX.Element => {
                 >
                   <p className="flex items-center gap-2 text-sm font-medium text-text">
                     <Users className="size-4" />
-                    创建数字员工并启动
+                    创建智能体并启动
                   </p>
                   <p className="mt-1 text-xs text-text-muted">设置工作目录后即可开始分发任务。</p>
                 </button>

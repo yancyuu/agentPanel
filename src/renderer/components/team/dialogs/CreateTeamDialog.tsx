@@ -397,7 +397,7 @@ export const CreateTeamDialog = ({
 
   const validateCreateFields = (): boolean => {
     if (!teamName.trim()) {
-      setLocalError('请输入数字员工名称');
+      setLocalError('请输入智能体名称');
       return false;
     }
     if (isDisplayNameTaken) {
@@ -415,7 +415,7 @@ export const CreateTeamDialog = ({
       return false;
     }
     if (isNameProvisioning) {
-      setLocalError('数字员工正在启动中');
+      setLocalError('智能体正在启动中');
       return false;
     }
     if (isBindProjectTaken) {
@@ -476,10 +476,10 @@ export const CreateTeamDialog = ({
     >
       <DialogContent className="w-[calc(100vw-2rem)] max-w-2xl sm:w-[40rem]">
         <DialogHeader>
-          <DialogTitle className="text-sm">创建数字员工</DialogTitle>
+          <DialogTitle className="text-sm">创建智能体</DialogTitle>
           <DialogDescription className="text-xs">
-            {step === 'name' && '设置数字员工名称、Agent 类型和工作目录'}
-            {step === 'done' && '数字员工创建完成'}
+            {step === 'name' && '设置智能体名称、Agent 类型和工作目录'}
+            {step === 'done' && '智能体创建完成'}
           </DialogDescription>
         </DialogHeader>
 
@@ -515,7 +515,7 @@ export const CreateTeamDialog = ({
         {step === 'name' && (
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label htmlFor="team-name">数字员工名称 *</Label>
+              <Label htmlFor="team-name">智能体名称 *</Label>
               <Input
                 id="team-name"
                 required
@@ -531,7 +531,7 @@ export const CreateTeamDialog = ({
               />
               {isNameProvisioning && (
                 <p className="text-[11px]" style={{ color: 'var(--warning-text)' }}>
-                  同名数字员工正在启动中
+                  同名智能体正在启动中
                 </p>
               )}
               {showDisplayNameTaken && (
@@ -685,7 +685,7 @@ export const CreateTeamDialog = ({
             <div className="flex flex-col items-center gap-3 py-4">
               <CheckCircle2 size={48} className="text-green-500" />
               <p className="text-sm font-medium text-green-700 dark:text-green-400">
-                数字员工已创建成功！
+                智能体已创建成功！
               </p>
               <p className="text-center text-xs text-gray-500">
                 已在本机创建。外部渠道绑定可稍后在详情页完成。
@@ -748,7 +748,7 @@ export const CreateTeamDialog = ({
                     onClose();
                   }}
                 >
-                  打开数字员工
+                  打开智能体
                 </Button>
               </>
             ) : (
@@ -771,7 +771,7 @@ export const CreateTeamDialog = ({
                   }
                   onClick={handleCreate}
                 >
-                  {isSubmitting ? '创建中...' : '创建数字员工'}
+                  {isSubmitting ? '创建中...' : '创建智能体'}
                 </Button>
               </>
             )}

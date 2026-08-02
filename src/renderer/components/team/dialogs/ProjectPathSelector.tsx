@@ -223,8 +223,9 @@ const FolderBrowser = ({ value, onChange, fieldError }: FolderBrowserProps): Rea
   };
 
   const handleConfirm = () => {
-    if (currentPath) {
-      onChange(currentPath);
+    const trimmed = currentPath.trim();
+    if (trimmed) {
+      onChange(trimmed);
     }
     setOpen(false);
   };
@@ -269,17 +270,30 @@ const FolderBrowser = ({ value, onChange, fieldError }: FolderBrowserProps): Rea
             <DialogTitle>选择目录</DialogTitle>
           </DialogHeader>
 
-          {/* Path breadcrumb */}
-          <div className="flex items-center gap-1 truncate text-xs text-[var(--color-text-muted)]">
+          {/* Path breadcrumb + 手动输入（空目录时也能直接键入目标路径） */}
+          <div className="flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
             <button
               type="button"
               className="shrink-0 hover:text-[var(--color-text)]"
               onClick={handleNavigateUp}
               disabled={!currentPath || currentPath === '/'}
+              aria-label="返回上一级"
             >
               <ChevronLeft size={14} />
             </button>
-            <span className="truncate font-mono">{currentPath || '/'}</span>
+            <Input
+              className="h-7 flex-1 font-mono text-xs"
+              value={currentPath}
+              aria-label="手动输入目录路径"
+              placeholder="输入或修改目录路径"
+              onChange={(event) => setCurrentPath(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  handleConfirm();
+                }
+              }}
+            />
           </div>
 
           {/* Directory list */}
@@ -293,7 +307,7 @@ const FolderBrowser = ({ value, onChange, fieldError }: FolderBrowserProps): Rea
             {error && <div className="px-3 py-4 text-xs text-red-400">{error}</div>}
             {!loading && !error && dirs.length === 0 && (
               <div className="px-3 py-4 text-xs text-[var(--color-text-muted)]">
-                此目录下没有子目录。可手动输入路径。
+                此目录下没有子目录，可直接在上方输入框修改路径后点「选择」。
               </div>
             )}
             {!loading && !error && dirs.length > 0 && (
@@ -323,7 +337,7 @@ const FolderBrowser = ({ value, onChange, fieldError }: FolderBrowserProps): Rea
             <Button variant="outline" onClick={() => setOpen(false)}>
               取消
             </Button>
-            <Button onClick={handleConfirm} disabled={!currentPath}>
+            <Button onClick={handleConfirm} disabled={!currentPath.trim()}>
               选择
             </Button>
           </DialogFooter>

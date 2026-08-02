@@ -856,7 +856,7 @@ export const TeamListView = (): React.JSX.Element => {
     <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="text-sm">从模板创建数字员工</DialogTitle>
+          <DialogTitle className="text-sm">从模板创建智能体</DialogTitle>
           <DialogDescription className="text-xs">
             从数字员工模板仓库读取可复用配置。默认源为 AgentCLI 官方模板
             https://github.com/yancyuu/HermitTeams.git，仓库根目录下含有 hermit-team.json
@@ -1023,7 +1023,7 @@ export const TeamListView = (): React.JSX.Element => {
             onClick={openCreateDialog}
           >
             <Plus size={13} aria-hidden="true" />
-            创建数字员工
+            创建智能体
           </Button>
         </div>
       </div>

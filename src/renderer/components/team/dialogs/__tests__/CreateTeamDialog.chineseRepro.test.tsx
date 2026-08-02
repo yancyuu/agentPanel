@@ -187,7 +187,7 @@ const baseProps = (
 
 const findCreateButton = (host: HTMLElement): HTMLButtonElement | null =>
   Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
-    b.textContent?.includes('创建数字员工')
+    b.textContent?.includes('创建智能体')
   ) ?? null;
 
 const bindProjectInput = (host: HTMLElement): HTMLInputElement | null =>

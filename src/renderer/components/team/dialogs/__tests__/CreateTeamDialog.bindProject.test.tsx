@@ -181,7 +181,7 @@ const baseProps = (existingBindProjects: string[]): Record<string, unknown> => (
 
 const findCreateButton = (host: HTMLElement): HTMLButtonElement | null => {
   const buttons = Array.from(host.querySelectorAll<HTMLButtonElement>('button'));
-  return buttons.find((b) => b.textContent?.includes('创建数字员工')) ?? null;
+  return buttons.find((b) => b.textContent?.includes('创建智能体')) ?? null;
 };
 
 const findBindProjectInput = (host: HTMLElement): HTMLInputElement | null =>
@@ -328,7 +328,7 @@ describe('CreateTeamDialog bindProject invariant', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(host.textContent).toContain('数字员工已创建成功');
+    expect(host.textContent).toContain('智能体已创建成功');
     expect(host.textContent).not.toContain('该名称已存在');
 
     await unmount();
@@ -339,7 +339,7 @@ describe('CreateTeamDialog bindProject invariant', () => {
     // the just-created slug to existingBindProjects. The live `bindProject`
     // re-derives (its candidate is now taken) and the numeric-counter fallback
     // landed on an UNRELATED existing team's slug (e.g. "team-2"), so the done
-    // step's "打开数字员工" button opened the WRONG team. The dialog must capture
+    // step's "打开智能体" button opened the WRONG team. The dialog must capture
     // the slug actually used at creation and open THAT one.
     const createdSlug = generateBindProject(draftState.teamName, new Set());
     // What the live derivation would regenerate to once `createdSlug` is taken:
@@ -370,7 +370,7 @@ describe('CreateTeamDialog bindProject invariant', () => {
     });
     expect(onCreate).toHaveBeenCalledTimes(1);
     expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ teamName: createdSlug }));
-    expect(host.textContent).toContain('数字员工已创建成功');
+    expect(host.textContent).toContain('智能体已创建成功');
 
     // Parent list refreshes and now reports the just-created slug as existing.
     await rerender({
@@ -382,7 +382,7 @@ describe('CreateTeamDialog bindProject invariant', () => {
     // The done step's "open" button must use the captured created slug, not the
     // regenerated counter value that collides with an unrelated existing team.
     const openBtn = Array.from(host.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('打开数字员工')
+      b.textContent?.includes('打开智能体')
     );
     expect(openBtn, 'open button rendered in done step').toBeTruthy();
     await act(async () => {

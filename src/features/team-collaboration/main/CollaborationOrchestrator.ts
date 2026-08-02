@@ -246,6 +246,20 @@ function memberListForPrompt(members: CollaborationMemberSnapshot[]): string {
     .join('\n');
 }
 
+/** 结果过短或疑似错误文本时告警（不阻断，仅提示可能混入了错误消息） */
+function warnSuspiciousWorkResult(
+  item: Pick<CollaborationWorkItem, 'title'>,
+  result: string
+): void {
+  const trimmed = result.trim();
+  const looksLikeError = /错误|失败|异常|无法|error|failed/i.test(trimmed);
+  if (trimmed.length < 200 || (looksLikeError && trimmed.length < 500)) {
+    console.warn(
+      `[collaboration] 工作项「${item.title}」结果可疑（${trimmed.length} 字符${looksLikeError ? '，疑似错误文本' : ''}）：${trimmed.slice(0, 120)}`
+    );
+  }
+}
+
 export class CollaborationOrchestrator {
   private readonly pendingResponses = new Map<string, PendingResponse>();
   private readonly running = new Set<string>();
@@ -723,7 +737,10 @@ export class CollaborationOrchestrator {
       }));
     }
 
-    const incompleteItems = run.workItems.filter((item) => item.status !== 'completed');
+    // 空结果视同未完成（completed 但无内容的项也要返工，修复历史卡死 run 的 retry 路径）
+    const incompleteItems = run.workItems.filter(
+      (item) => item.status !== 'completed' || !item.result?.trim()
+    );
     if (incompleteItems.length > 0) {
       await Promise.all(
         incompleteItems.map(async (item) => {
@@ -739,6 +756,7 @@ export class CollaborationOrchestrator {
                 ? {
                     ...candidate,
                     status: 'running',
+                    result: candidate.result?.trim() ? candidate.result : undefined,
                     error: undefined,
                     updatedAt: new Date().toISOString(),
                   }
@@ -755,6 +773,8 @@ export class CollaborationOrchestrator {
               `work-${item.id}`,
               this.buildWorkPrompt(run, item, assignee)
             );
+            if (!result.trim()) throw new Error('未产出内容');
+            warnSuspiciousWorkResult(item, result);
             // 工作项成果记录为一条交付成果（delivery），不再写单一的 result 字段
             await this.dependencies.teams.addDelivery(run.rootTaskTeamSlug, item.taskId, {
               result,
@@ -788,6 +808,7 @@ export class CollaborationOrchestrator {
                   ? {
                       ...candidate,
                       status: 'failed',
+                      result: undefined,
                       error: message,
                       updatedAt: new Date().toISOString(),
                     }
@@ -803,8 +824,12 @@ export class CollaborationOrchestrator {
     }
 
     run = await this.dependencies.workspace.readRun(runId);
-    if (run.workItems.some((item) => item.status !== 'completed' || !item.result?.trim())) {
-      throw new Error('仍有成员工作项未完成，不能开始队长整合');
+    const missingResultItems = run.workItems.filter(
+      (item) => item.status !== 'completed' || !item.result?.trim()
+    );
+    if (missingResultItems.length > 0) {
+      const listing = missingResultItems.map((item) => item.title).join('、');
+      throw new Error(`以下工作项缺少有效结果，不能开始队长整合：${listing}`);
     }
     if (!run.rootTaskId || !run.rootTaskTeamSlug) throw new Error('协作总任务不存在');
 

@@ -158,7 +158,7 @@ describe('CreateTeamDialog defaultProjectPath', () => {
     );
 
     const createButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent?.includes('创建数字员工')
+      (button) => button.textContent?.includes('创建智能体')
     );
     expect(createButton, 'create button rendered').toBeTruthy();
 

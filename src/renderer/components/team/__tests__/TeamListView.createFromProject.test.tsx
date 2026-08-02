@@ -198,7 +198,7 @@ describe('TeamListView collaboration roster entry points', () => {
     );
     expect(templateButton).toBeTruthy();
     await act(async () => templateButton?.click());
-    expect(host.textContent).toContain('从模板创建数字员工');
+    expect(host.textContent).toContain('从模板创建智能体');
 
     const launchButton = host.querySelector<HTMLButtonElement>(
       '[aria-label="启动常驻运行时 Alpha 团队"]'
