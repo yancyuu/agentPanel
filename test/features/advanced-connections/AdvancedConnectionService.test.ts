@@ -582,6 +582,31 @@ describe('AdvancedConnectionService', () => {
     ]);
   });
 
+  it('uses the file-based secret store end to end (secretPresent 与授权状态一致)', async () => {
+    const { SystemCredentialSecretStore } = await import(
+      '@features/advanced-connections/main/infrastructure/SystemCredentialSecretStore'
+    );
+    const secretStore = new SystemCredentialSecretStore(
+      path.join(hermitHome, 'connections', 'secrets')
+    );
+    const service = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: compatibilityFetch(),
+      secretStore,
+    });
+    const connection = await service.create({ baseUrl: 'https://bus.company.test' });
+
+    // 默认文件后端：hermitHome/connections/secrets
+    expect((await service.list())[0]?.secretPresent).toBe(false);
+    await secretStore.put(
+      connection.id,
+      JSON.stringify({ accessToken: 'token', tokenType: 'Bearer', scopes: [] })
+    );
+    expect((await service.list())[0]?.secretPresent).toBe(true);
+    await secretStore.delete(connection.id);
+    expect((await service.list())[0]?.secretPresent).toBe(false);
+  });
+
   it('persists only an explicit permission grant', async () => {
     const service = new AdvancedConnectionService({
       hermitHome,

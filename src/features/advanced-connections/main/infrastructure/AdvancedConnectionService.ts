@@ -450,7 +450,9 @@ export class AdvancedConnectionService {
     this.indexPath = path.join(this.rootDir, 'index.json');
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? (() => new Date());
-    this.secretStore = options.secretStore ?? new SystemCredentialSecretStore();
+    this.secretStore =
+      options.secretStore ??
+      new SystemCredentialSecretStore(path.join(options.hermitHome, 'connections', 'secrets'));
     this.runtimeHome = options.runtimeHome ?? os.homedir();
     this.runtimeCredentialApplier =
       options.runtimeCredentialApplier ??

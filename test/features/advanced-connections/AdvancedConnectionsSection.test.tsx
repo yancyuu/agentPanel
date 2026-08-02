@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AdvancedConnectionsSection } from '@features/advanced-connections/renderer/ui/AdvancedConnectionsSection';
+import { describeConnectionOperationError } from '@features/advanced-connections/renderer/hooks/useAdvancedConnections';
 
 import type { AdvancedConnectionSummary } from '@features/advanced-connections/contracts';
 
@@ -38,6 +39,8 @@ function renderSection(props: {
   onStartAuth?: (connection: AdvancedConnectionSummary) => void;
   onAllowInsecure?: (connectionId: string) => void;
   busyAction?: string | null;
+  channelStatus?: Parameters<typeof AdvancedConnectionsSection>[0]['channelStatus'];
+  catalogStatus?: Parameters<typeof AdvancedConnectionsSection>[0]['catalogStatus'];
 }): { host: HTMLElement; root: ReturnType<typeof createRoot> } {
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -52,9 +55,9 @@ function renderSection(props: {
         busyAction={props.busyAction ?? null}
         error={null}
         notice={null}
-        catalogStatus={{}}
+        catalogStatus={props.catalogStatus ?? {}}
         catalogs={{}}
-        channelStatus={{}}
+        channelStatus={props.channelStatus ?? {}}
         onHostChange={vi.fn()}
         onDiscover={vi.fn()}
         onAddConnection={vi.fn()}
@@ -182,5 +185,55 @@ describe('AdvancedConnectionsSection', () => {
     expect(pullButtons[0]?.disabled).toBe(false);
     expect(syncButtons[1]?.disabled).toBe(true);
     expect(pullButtons[1]?.disabled).toBe(true);
+  });
+
+  it('展示最近一次操作结果（成功摘要与失败错误原文 + 时间）', () => {
+    const connection = makeConnection({
+      state: 'authenticated',
+      secretPresent: true,
+      secure: true,
+      baseUrl: 'https://bus.company.test',
+    });
+    const { host } = renderSection({
+      connections: [connection],
+      channelStatus: {
+        [connection.id]: {
+          ok: true,
+          at: '2026-08-02T10:00:00.000Z',
+          text: '发现 2 个远程任务：整理报价、巡检站点。为安全起见，尚未自动执行。',
+        },
+      },
+      catalogStatus: {
+        [connection.id]: {
+          ok: false,
+          at: '2026-08-02T10:01:00.000Z',
+          text: '授权已失效，请重新登录（Token 池查询失败（HTTP 401））',
+        },
+      },
+    });
+
+    const outcomes = host.querySelectorAll('[data-testid="operation-outcome"]');
+    expect(outcomes).toHaveLength(2);
+    expect(outcomes[0]?.textContent).toContain('发现 2 个远程任务');
+    expect(outcomes[0]?.className).toContain('emerald');
+    expect(outcomes[1]?.textContent).toContain('授权已失效，请重新登录');
+    expect(outcomes[1]?.textContent).toContain('HTTP 401');
+    expect(outcomes[1]?.className).toContain('rose');
+  });
+});
+
+describe('describeConnectionOperationError', () => {
+  it('区分授权失效 / 服务端 4xx / 服务端 5xx / 网络错误', () => {
+    expect(describeConnectionOperationError('读取远程任务失败（HTTP 401）')).toContain(
+      '授权已失效，请重新登录'
+    );
+    expect(describeConnectionOperationError('同步失败（HTTP 403）')).toContain('服务端拒绝请求');
+    expect(describeConnectionOperationError('Token 池查询失败（HTTP 500）')).toContain(
+      '服务端异常'
+    );
+    expect(describeConnectionOperationError('fetch failed')).toContain('网络错误');
+    expect(describeConnectionOperationError('请先完成用户授权')).toContain(
+      '授权已失效，请重新登录'
+    );
   });
 });

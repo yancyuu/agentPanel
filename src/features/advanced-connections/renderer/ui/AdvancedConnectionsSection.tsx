@@ -20,6 +20,8 @@ import {
   type DiscoverAdvancedConnectionResponse,
 } from '../../contracts';
 
+import type { AdvancedConnectionOperationOutcome } from '../hooks/useAdvancedConnections';
+
 interface AdvancedConnectionsSectionProps {
   connections: AdvancedConnectionSummary[];
   host: string;
@@ -28,9 +30,9 @@ interface AdvancedConnectionsSectionProps {
   busyAction: string | null;
   error: string | null;
   notice: string | null;
-  catalogStatus: Record<string, string>;
+  catalogStatus: Record<string, AdvancedConnectionOperationOutcome>;
   catalogs: Record<string, AdvancedConnectionTokenCatalogSummary | undefined>;
-  channelStatus: Record<string, string>;
+  channelStatus: Record<string, AdvancedConnectionOperationOutcome>;
   onHostChange: (value: string) => void;
   onDiscover: () => void;
   onAddConnection: () => void;
@@ -44,6 +46,33 @@ interface AdvancedConnectionsSectionProps {
   onCheckTokenCatalog: (connectionId: string) => void;
   onClaimAndApplyToken: (connectionId: string) => void;
   onRefresh: () => void;
+}
+
+function OutcomeLine({
+  outcome,
+}: Readonly<{ outcome: AdvancedConnectionOperationOutcome }>): React.JSX.Element {
+  const time = new Date(outcome.at);
+  const timeLabel = Number.isNaN(time.getTime())
+    ? ''
+    : time.toLocaleTimeString('zh-CN', { hour12: false });
+  return (
+    <p
+      className={`mt-2 flex items-start gap-1.5 text-[11px] leading-4 ${
+        outcome.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
+      }`}
+      data-testid="operation-outcome"
+    >
+      {outcome.ok ? (
+        <Check className="mt-0.5 size-3 shrink-0" />
+      ) : (
+        <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+      )}
+      <span className="min-w-0 flex-1">{outcome.text}</span>
+      {timeLabel ? (
+        <span className="shrink-0 text-[var(--color-text-muted)]">{timeLabel}</span>
+      ) : null}
+    </p>
+  );
 }
 
 const STATE_LABELS: Record<AdvancedConnectionSummary['state'], string> = {
@@ -409,9 +438,7 @@ export function AdvancedConnectionsSection({
                           </button>
                         ) : null}
                         {channelStatus[connection.id] ? (
-                          <p className="w-full text-[11px] leading-4 text-[var(--color-text-muted)]">
-                            {channelStatus[connection.id]}
-                          </p>
+                          <OutcomeLine outcome={channelStatus[connection.id]} />
                         ) : null}
                       </div>
                     ) : null}
@@ -461,9 +488,7 @@ export function AdvancedConnectionsSection({
                           </p>
                         ) : null}
                         {catalogStatus[connection.id] ? (
-                          <p className="mt-2 text-[11px] leading-4 text-[var(--color-text-muted)]">
-                            {catalogStatus[connection.id]}
-                          </p>
+                          <OutcomeLine outcome={catalogStatus[connection.id]} />
                         ) : null}
                       </div>
                     ) : null}
