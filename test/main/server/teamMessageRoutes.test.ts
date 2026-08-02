@@ -118,6 +118,74 @@ describe('team message routes', () => {
     expect(readMessages).toHaveBeenCalledWith('team-a', { limit: 5000 });
   });
 
+  it('is idempotent: same messageId returns existing without re-append', async () => {
+    const existing = groupMessage({
+      id: 'optimistic-1',
+      ts: new Date().toISOString(),
+      from: 'user',
+      content: 'hello',
+      meta: { conversationId: 'c-1' },
+    });
+    const appendMessage = vi.fn(async () => existing);
+    const harness = createHarness({
+      appendMessage,
+      readMessages: vi.fn(async () => [existing]),
+    });
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/send-message',
+      payload: { member: 'alice', text: 'hello', messageId: 'optimistic-1' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      ok: true,
+      messageId: 'optimistic-1',
+      deduplicated: true,
+    });
+    expect(appendMessage).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate submissions within 2s (same conversationId+from+text)', async () => {
+    const existing = groupMessage({
+      id: 'optimistic-older',
+      ts: new Date().toISOString(),
+      from: 'user',
+      content: 'hello',
+      meta: { conversationId: 'c-1' },
+    });
+    const appendMessage = vi.fn(async () => existing);
+    const harness = createHarness({
+      appendMessage,
+      readMessages: vi.fn(async () => [existing]),
+    });
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/send-message',
+      // 双击/回车连发：客户端生成了不同的 optimistic id，但属于同一 conversationId
+      payload: { member: 'alice', text: 'hello', messageId: 'optimistic-newer', conversationId: 'c-1' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      ok: true,
+      messageId: 'optimistic-older',
+      deduplicated: true,
+    });
+    expect(appendMessage).not.toHaveBeenCalled();
+
+    // 内容不同则正常落盘
+    const other = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/send-message',
+      payload: { member: 'alice', text: 'different content', messageId: 'optimistic-other', conversationId: 'c-1' },
+    });
+    expect(other.statusCode).toBe(200);
+    expect(appendMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('paginates newest-first, clamps cursor and enriches message/session metadata', async () => {
     const taskRef = { taskId: 'task-1', displayId: 'TASK-1', teamName: 'team-a' };
     const readMessages = vi.fn(async () => [

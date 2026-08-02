@@ -85,6 +85,8 @@ const pendingFreshTeamMessagesHeadRefreshes = new Set<string>();
 const inFlightTeamMemberActivityMetaRequests = new Map<string, Promise<void>>();
 const pendingFreshTeamMemberActivityMetaRefreshes = new Set<string>();
 const pendingTeamPendingReplyRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** 防双重提交的在途发送请求集合（team+conversationId+text） */
+const inFlightSendMessages = new Set<string>();
 const activeTeamPendingReplyWaitSourceIdsByTeam = new Map<string, Set<string>>();
 const lastResolvedTeamDataRefreshAtByTeam = new Map<string, number>();
 const teamLocalStateEpochByTeam = new Map<string, number>();
@@ -4132,6 +4134,20 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
   },
 
   sendTeamMessage: async (teamName: string, request: SendMessageRequest) => {
+    // 防双重提交：全局发送中，或同 team+conversationId+text 已有在途请求时直接忽略
+    const inFlightKey = `${teamName}${request.conversationId ?? ''}${request.text.trim()}`;
+    if (get().sendingMessage || inFlightSendMessages.has(inFlightKey)) {
+      return (
+        get().lastSendMessageResult ??
+        ({
+          deliveredToInbox: false,
+          messageId: request.messageId ?? '',
+          conversationId: request.conversationId,
+          deduplicated: true,
+        } as SendMessageResult)
+      );
+    }
+    inFlightSendMessages.add(inFlightKey);
     const optimisticMessageId =
       request.messageId ?? `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimisticTimestamp = request.timestamp ?? nowIso();
@@ -4218,6 +4234,8 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
         sendMessageError: mapSendMessageError(error),
       });
       throw error;
+    } finally {
+      inFlightSendMessages.delete(inFlightKey);
     }
   },
 

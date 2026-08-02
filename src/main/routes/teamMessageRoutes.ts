@@ -260,6 +260,49 @@ export function registerTeamMessageRoutes(
         typeof request.body?.to === 'string' && request.body.to.trim()
           ? request.body.to.trim()
           : member || teamName;
+      // 幂等：同一 messageId 已存在 → 返回既有结果不重复 append（客户端重试同 id）
+      if (requestedMessageId) {
+        const existing = (await dependencies.readMessages(teamName, { limit: 200 })).find(
+          (entry) => entry.id === requestedMessageId
+        );
+        if (existing) {
+          return {
+            ok: true,
+            deliveredToInbox: true,
+            messageId: existing.id,
+            conversationId:
+              typeof existing.meta?.conversationId === 'string'
+                ? existing.meta.conversationId
+                : conversationId,
+            deduplicated: true,
+            runtimeDelivery: { attempted: false, delivered: false },
+          };
+        }
+      }
+      // 双重提交拦截：同 conversationId+from+text 且 2s 内的请求视为重复（双击/回车连发，
+      // 客户端生成了不同 optimistic id）。选择返回既有消息并标 deduplicated（不 409，
+      // 与 messageId 重试语义一致）。
+      const DUPLICATE_WINDOW_MS = 2_000;
+      const nowMs = Date.now();
+      const recentDuplicate = (await dependencies.readMessages(teamName, { limit: 20 })).find(
+        (entry) => {
+          if (entry.content.trim() !== text.trim() || entry.from !== from) return false;
+          if ((entry.meta?.conversationId ?? '') !== conversationId) return false;
+          const ts = Date.parse(entry.ts);
+          return Number.isFinite(ts) && nowMs - ts < DUPLICATE_WINDOW_MS && nowMs - ts >= 0;
+        }
+      );
+      if (recentDuplicate) {
+        return {
+          ok: true,
+          deliveredToInbox: true,
+          messageId: recentDuplicate.id,
+          conversationId,
+          deduplicated: true,
+          runtimeDelivery: { attempted: false, delivered: false },
+        };
+      }
+
       const attachments = Array.isArray(request.body?.attachments)
         ? request.body.attachments.filter(isAttachmentPayload)
         : [];

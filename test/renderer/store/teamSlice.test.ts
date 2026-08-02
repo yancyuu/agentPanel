@@ -270,6 +270,33 @@ describe('teamSlice actions', () => {
     });
   });
 
+  it('ignores duplicate sends while a send is in flight (no double POST)', async () => {
+    const store = createSliceStore();
+    let resolveSend: ((value: unknown) => void) | undefined;
+    hoisted.sendMessage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSend = resolve;
+        })
+    );
+
+    const first = store
+      .getState()
+      .sendTeamMessage('my-team', { member: 'alice', text: 'hello', conversationId: 'c-1' });
+    const second = store
+      .getState()
+      .sendTeamMessage('my-team', { member: 'alice', text: 'hello', conversationId: 'c-1' });
+
+    // 第二个请求被防并发拦截：不会发出第二个 POST
+    const secondResult = await second;
+    expect(secondResult.deduplicated).toBe(true);
+    expect(hoisted.sendMessage).toHaveBeenCalledTimes(1);
+
+    resolveSend?.({ deliveredToInbox: true, messageId: 'm1' });
+    await first;
+    expect(hoisted.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('maps inbox verify failure to user-friendly text', async () => {
     const store = createSliceStore();
     hoisted.sendMessage.mockRejectedValue(new Error('Failed to verify inbox write'));
