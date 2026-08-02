@@ -297,7 +297,11 @@ const PlatformSetupQR = ({
                 : '下一步将统一重启服务并刷新平台长连接。'}
           </p>
           <div className="flex gap-2">
-            <Button onClick={handleComplete} disabled={phase === 'restarting'}>
+            <Button
+              onClick={handleComplete}
+              disabled={phase === 'restarting'}
+              className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+            >
               {phase === 'restarting' && <Loader2 size={14} className="mr-1.5 animate-spin" />}
               {phase === 'restarting' ? '正在重启...' : restartHandled ? '完成' : '重启并完成'}
             </Button>

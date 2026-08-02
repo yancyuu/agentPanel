@@ -911,6 +911,7 @@ export const RuntimeConfigDialog = ({
               size="sm"
               onClick={handleSave}
               disabled={saving || bindingSavePending || savePhase === 'done'}
+              className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
             >
               {saving && <Loader2 size={14} className="mr-1.5 animate-spin" />}
               {saveLabel}
