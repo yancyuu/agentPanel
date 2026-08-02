@@ -37,6 +37,7 @@ import { TaskInputPicker } from './TaskInputPicker';
 import { TaskReviewThread } from './TaskReviewThread';
 
 import { extractFilePathFromChangeKey } from '@renderer/utils/reviewKey';
+import { getReviewStateFromTask } from '@shared/utils/reviewState';
 
 import type { InboxTaskRecipientOption } from '../hooks/useInboxTaskRecipients';
 
@@ -129,7 +130,10 @@ export function CollaborativeInboxView({
       taskModel.members.find((member) => member.name === owner || member.agentId === owner) ?? null
     );
   }, [selectedTask?.task, taskModel.members, taskModel.task]);
-  const selectedTaskReviewState = (taskModel.task ?? selectedTask?.task)?.reviewState;
+  const selectedTaskReviewState = (() => {
+    const task = taskModel.task ?? selectedTask?.task;
+    return task ? getReviewStateFromTask(task) : undefined;
+  })();
   const selectedTaskRecipient = useMemo(() => {
     if (!selectedTask || !selectedTaskOwnerMember) return null;
     return (
@@ -583,7 +587,7 @@ export function CollaborativeInboxView({
                     deliveries={detailTask.deliveries}
                     feedbackItems={detailTask.feedbackItems}
                     historyEvents={detailTask.historyEvents}
-                    reviewState={detailTask.reviewState}
+                    reviewState={getReviewStateFromTask(detailTask)}
                     owner={detailTask.owner}
                     members={taskModel.members}
                     onOpenHunk={
@@ -639,21 +643,20 @@ export function CollaborativeInboxView({
                     <ArrowLeft size={13} />
                     返回列表
                   </button>
+                  {/* 评审入口：messages / tasks 两种模式在 review 态都显示「满意并归档」 */}
+                  {selectedTaskReviewState === 'review' ? (
+                    <button
+                      type="button"
+                      disabled={reviewSubmitting}
+                      onClick={approveCurrentTask}
+                      className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+                    >
+                      <CheckCircle2 size={12} />
+                      满意并归档
+                    </button>
+                  ) : null}
                   {mode === 'messages' ? (
                     <>
-                      {selectedTaskReviewState === 'review' ? (
-                        <>
-                          <button
-                            type="button"
-                            disabled={reviewSubmitting}
-                            onClick={approveCurrentTask}
-                            className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
-                          >
-                            <CheckCircle2 size={12} />
-                            满意并归档
-                          </button>
-                        </>
-                      ) : null}
                       {selectedTaskOwnerMember ? (
                         <button
                           type="button"

@@ -4,6 +4,7 @@
  * project UI primitives and store-backed selectors.
  */
 
+import { getReviewStateFromTask } from '@shared/utils/reviewState';
 import { useMemo } from 'react';
 
 import { KanbanTaskCard } from '@renderer/components/team/kanban/KanbanTaskCard';
@@ -49,7 +50,7 @@ function getGlowStyle(task: TeamTask, taskMap: ReadonlyMap<string, TeamTask>): R
         boxShadow: '0 0 14px rgba(59, 130, 246, 0.4), inset 0 0 6px rgba(59, 130, 246, 0.08)',
       };
     case 'review':
-      return task.reviewState === 'needsFix'
+      return getReviewStateFromTask(task) === 'needsFix'
         ? { boxShadow: '0 0 14px rgba(239, 68, 68, 0.4), inset 0 0 6px rgba(239, 68, 68, 0.08)' }
         : { boxShadow: '0 0 14px rgba(245, 158, 11, 0.4), inset 0 0 6px rgba(245, 158, 11, 0.08)' };
     case 'approved':

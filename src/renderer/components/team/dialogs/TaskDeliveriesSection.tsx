@@ -25,8 +25,10 @@ interface TaskDeliveriesSectionProps {
   feedbackItems?: FeedbackItem[];
   /** 点击 hunk 锚点时打开变更审查（无则静态展示）。 */
   onOpenHunk?: (changeKey: string) => void;
-  /** 只读展示时的评审入口引导（如「评审请在收件箱进行」） */
+  /** 只读展示时的评审入口引导文案（如「前往收件箱评审」） */
   reviewLocationHint?: string;
+  /** 提供时引导渲染为可点击按钮 */
+  onReviewLocationClick?: () => void;
 }
 
 function formatRelativeTime(timestamp: string): string | null {
@@ -53,6 +55,7 @@ export const TaskDeliveriesSection = ({
   feedbackItems,
   onOpenHunk,
   reviewLocationHint,
+  onReviewLocationClick,
 }: TaskDeliveriesSectionProps): React.JSX.Element | null => {
   // null = 跟随最新一版；用户手动切换后固定在所选版本
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
@@ -99,9 +102,20 @@ export const TaskDeliveriesSection = ({
   return (
     <div className="space-y-3">
       {reviewLocationHint ? (
-        <div className="text-[11px] text-[var(--color-text-muted)] opacity-70">
-          {reviewLocationHint}
-        </div>
+        onReviewLocationClick ? (
+          <button
+            type="button"
+            data-testid="review-location-button"
+            onClick={onReviewLocationClick}
+            className="inline-flex items-center gap-1.5 rounded-md border border-indigo-500/30 bg-indigo-500/[0.06] px-2.5 py-1 text-[11px] font-medium text-indigo-600 transition-colors hover:bg-indigo-500/15 dark:text-indigo-300"
+          >
+            {reviewLocationHint}
+          </button>
+        ) : (
+          <div className="text-[11px] text-[var(--color-text-muted)] opacity-70">
+            {reviewLocationHint}
+          </div>
+        )
       ) : null}
 
       {currentDelivery ? (

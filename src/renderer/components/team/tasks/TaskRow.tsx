@@ -3,7 +3,7 @@ import {
   REVIEW_STATE_DISPLAY,
   TASK_STATUS_LABELS,
 } from '@renderer/utils/memberHelpers';
-import { getTaskKanbanColumn } from '@shared/utils/reviewState';
+import { getReviewStateFromTask, getTaskKanbanColumn } from '@shared/utils/reviewState';
 import { deriveTaskDisplayId, formatTaskDisplayLabel } from '@shared/utils/taskIdentity';
 
 import type { TeamTaskWithKanban } from '@shared/types';
@@ -33,7 +33,7 @@ export const TaskRow = ({ task }: TaskRowProps): React.JSX.Element => {
               ? KANBAN_COLUMN_DISPLAY[kanbanColumn].label
               : (TASK_STATUS_LABELS[task.status] ?? task.status)}
           </span>
-          {task.reviewState === 'needsFix' ? (
+          {getReviewStateFromTask(task) === 'needsFix' ? (
             <span
               className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${REVIEW_STATE_DISPLAY.needsFix.bg} ${REVIEW_STATE_DISPLAY.needsFix.text}`}
             >

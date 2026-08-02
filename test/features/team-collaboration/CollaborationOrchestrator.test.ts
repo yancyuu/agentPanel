@@ -322,6 +322,16 @@ describe('CollaborationOrchestrator', () => {
           }))
         );
       },
+      appendTaskHistoryEvent(_teamSlug: string, taskId: string, event: unknown) {
+        const task = tasks.find((candidate) => candidate.id === taskId);
+        if (task) {
+          task.historyEvents = [
+            ...(task.historyEvents ?? []),
+            event as Task['historyEvents'] extends (infer E)[] | undefined ? E : never,
+          ];
+        }
+        return Promise.resolve(task ?? ({} as Task));
+      },
     } as unknown as Pick<
       TeamProvisioningService,
       | 'readTeamManifest'
@@ -331,6 +341,7 @@ describe('CollaborationOrchestrator', () => {
       | 'readTasks'
       | 'appendMessage'
       | 'readMessages'
+      | 'appendTaskHistoryEvent'
     >;
     const directCli = new FakeDirectCli();
     const orchestrator = new CollaborationOrchestrator({
@@ -384,6 +395,12 @@ describe('CollaborationOrchestrator', () => {
     expect(rootTask).toMatchObject({
       status: 'done',
       reviewState: 'review',
+    });
+    // 评审状态以 historyEvents 为单一事实源：整合交付必须落 review_requested 事件
+    expect(rootTask?.historyEvents?.at(-1)).toMatchObject({
+      type: 'review_requested',
+      to: 'review',
+      actor: 'agent',
     });
     // 交付通知走消息线程（task:<taskId>），不再写任务评论
     const deliveryMessage = appendedMessages.find(

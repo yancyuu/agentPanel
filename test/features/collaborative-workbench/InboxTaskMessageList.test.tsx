@@ -177,4 +177,71 @@ describe('InboxTaskMessageList', () => {
 
     act(() => root.unmount());
   });
+
+  it('字段 review 但最新事件是 needsFix 时按派生显示「进行中」（historyEvents 单一事实源）', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const inconsistent: InboxTaskMessageProjection = {
+      key: 'team-a:task-inconsistent',
+      task: {
+        id: 'task-inconsistent',
+        displayId: 'task-inconsistent',
+        subject: '不一致任务',
+        status: 'completed',
+        reviewState: 'review',
+        historyEvents: [
+          {
+            id: 'e1',
+            type: 'review_requested',
+            from: 'none',
+            to: 'review',
+            timestamp: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            id: 'e2',
+            type: 'review_changes_requested',
+            from: 'review',
+            to: 'needsFix',
+            timestamp: '2026-01-01T01:00:00.000Z',
+          },
+        ],
+        teamName: 'team-a',
+        teamDisplayName: '测试',
+        owner: 'alice',
+      },
+      latestMessage: {
+        id: 'delivery:2',
+        author: 'alice',
+        text: '交付 第 2 版',
+        createdAt: '2026-01-01T02:00:00.000Z',
+      },
+      unreadCount: 0,
+      updatedAtMs: Date.parse('2026-01-01T02:00:00.000Z'),
+    };
+
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <InboxTaskMessageList
+          messages={[inconsistent]}
+          selectedKey={null}
+          query=""
+          onQueryChange={vi.fn()}
+          teamFilter="all"
+          onTeamFilterChange={vi.fn()}
+          teamOptions={[]}
+          onSelect={vi.fn()}
+          onRefresh={vi.fn()}
+          loading={false}
+        />
+      );
+      await Promise.resolve();
+    });
+
+    // 派生为 needsFix 而非字段的 review：绝不显示「待你评审」
+    expect(host.textContent).not.toContain('待你评审');
+    expect(host.textContent).toContain('已完成');
+    act(() => root.unmount());
+  });
 });

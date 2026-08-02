@@ -1,3 +1,4 @@
+import { getReviewStateFromTask } from '@shared/utils/reviewState';
 import type { KanbanColumnId, KanbanTaskState, TeamTask, TeamTaskWithKanban } from '@shared/types';
 
 type TaskColumnInput = Pick<TeamTaskWithKanban, 'status' | 'reviewState' | 'kanbanColumn'>;
@@ -6,8 +7,9 @@ type TaskBlockInput = Pick<TeamTask, 'blockedBy'>;
 type TaskBlockState = Pick<TeamTask, 'status'>;
 
 export function resolveTaskGraphColumn(task: TaskColumnInput): KanbanColumnId {
-  if (task.reviewState === 'approved') return 'approved';
-  if (task.reviewState === 'review' || task.reviewState === 'needsFix') return 'review';
+  if (getReviewStateFromTask(task) === 'approved') return 'approved';
+  if (getReviewStateFromTask(task) === 'review' || getReviewStateFromTask(task) === 'needsFix')
+    return 'review';
   if (task.kanbanColumn === 'review' || task.kanbanColumn === 'approved') {
     return task.kanbanColumn;
   }
@@ -18,8 +20,8 @@ export function resolveTaskGraphColumn(task: TaskColumnInput): KanbanColumnId {
 
 export function isTaskInReviewCycle(task: TaskColumnInput): boolean {
   return (
-    task.reviewState === 'review' ||
-    task.reviewState === 'needsFix' ||
+    getReviewStateFromTask(task) === 'review' ||
+    getReviewStateFromTask(task) === 'needsFix' ||
     task.kanbanColumn === 'review'
   );
 }

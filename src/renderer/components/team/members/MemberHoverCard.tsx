@@ -1,3 +1,4 @@
+import { getReviewStateFromTask } from '@shared/utils/reviewState';
 import { Badge } from '@renderer/components/ui/badge';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@renderer/components/ui/hover-card';
 import {
@@ -174,7 +175,7 @@ export const MemberHoverCard = ({
         (task) =>
           task.reviewer === member.name &&
           task.id !== member.currentTaskId &&
-          (task.reviewState === 'review' || task.kanbanColumn === 'review')
+          getReviewStateFromTask(task) === 'review'
       ) ?? null)
     : null;
 

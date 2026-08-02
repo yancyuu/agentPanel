@@ -133,6 +133,13 @@ function createTeams(tasks: Task[], appendedMessages: Record<string, unknown>[])
     readMessages() {
       return Promise.resolve([]);
     },
+    appendTaskHistoryEvent(_teamSlug: string, taskId: string, event: unknown) {
+      const task = tasks.find((candidate) => candidate.id === taskId);
+      if (task) {
+        task.historyEvents = [...(task.historyEvents ?? []), event as Task['historyEvents'] extends (infer E)[] | undefined ? E : never];
+      }
+      return Promise.resolve(task ?? ({} as Task));
+    },
   } as unknown as Pick<
     TeamProvisioningService,
     | 'readTeamManifest'
@@ -142,6 +149,7 @@ function createTeams(tasks: Task[], appendedMessages: Record<string, unknown>[])
     | 'readTasks'
     | 'appendMessage'
     | 'readMessages'
+    | 'appendTaskHistoryEvent'
   >;
 }
 

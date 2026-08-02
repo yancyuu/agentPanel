@@ -314,6 +314,7 @@ describe('TaskDetailPanel presentations', () => {
         deliveredAt: '2026-01-02T00:00:00.000Z',
       },
     ];
+    task.status = 'completed';
     task.reviewState = 'review';
     task.needsClarification = 'user';
     const host = document.createElement('div');
@@ -339,7 +340,7 @@ describe('TaskDetailPanel presentations', () => {
 
     expect(host.textContent).toContain('交付成果');
     expect(host.textContent).toContain('调研报告');
-    expect(host.textContent).toContain('评审请在收件箱进行');
+    expect(host.textContent).toContain('前往收件箱评审');
     expect(host.textContent).not.toContain('通过交付');
     expect(host.textContent).not.toContain('请求修改');
     expect(host.textContent).not.toContain('标记为已解决');

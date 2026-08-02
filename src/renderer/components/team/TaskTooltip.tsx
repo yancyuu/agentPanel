@@ -7,7 +7,7 @@ import { useStore } from '@renderer/store';
 import { selectResolvedMembersForTeamName } from '@renderer/store/slices/teamSlice';
 import { buildMemberColorMap, REVIEW_STATE_DISPLAY } from '@renderer/utils/memberHelpers';
 import { linkifyTaskIdsInMarkdown } from '@renderer/utils/taskReferenceUtils';
-import { getTaskKanbanColumn } from '@shared/utils/reviewState';
+import { getReviewStateFromTask, getTaskKanbanColumn } from '@shared/utils/reviewState';
 import { formatTaskDisplayLabel, taskMatchesRef } from '@shared/utils/taskIdentity';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -159,7 +159,7 @@ export const TaskTooltip = ({
           >
             {label}
           </span>
-          {task.reviewState === 'needsFix' ? (
+          {getReviewStateFromTask(task) === 'needsFix' ? (
             <span
               className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${REVIEW_STATE_DISPLAY.needsFix.bg} ${REVIEW_STATE_DISPLAY.needsFix.text}`}
             >

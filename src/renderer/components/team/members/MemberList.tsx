@@ -1,3 +1,4 @@
+import { getReviewStateFromTask } from '@shared/utils/reviewState';
 import { memo, useCallback, useMemo, useRef } from 'react';
 
 import { buildMemberColorMap } from '@renderer/utils/memberHelpers';
@@ -311,7 +312,7 @@ export const MemberList = memo(function MemberList({
     const result = new Map<string, TeamTaskWithKanban>();
     if (!taskMap) return result;
     for (const task of taskMap.values()) {
-      if (task.reviewer && (task.reviewState === 'review' || task.kanbanColumn === 'review')) {
+      if (task.reviewer && getReviewStateFromTask(task) === 'review') {
         result.set(task.reviewer, task);
       }
     }

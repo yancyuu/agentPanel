@@ -40,7 +40,7 @@ vi.mock('@features/collaborative-workbench/renderer/hooks/useCollaborativeInbox'
           id: 'task-1',
           displayId: 'task-1',
           subject: 'Task one',
-          status: 'pending',
+          status: selectedReviewState ? 'completed' : 'pending',
           owner: 'alice',
           reviewState: selectedReviewState,
           teamName: 'team-a',
@@ -63,7 +63,7 @@ vi.mock('@features/collaborative-workbench/renderer/hooks/useCollaborativeInbox'
         id: 'task-1',
         displayId: 'task-1',
         subject: 'Task one',
-        status: 'pending',
+        status: selectedReviewState ? 'completed' : 'pending',
         owner: 'alice',
         reviewState: selectedReviewState,
         teamName: 'team-a',
@@ -77,7 +77,7 @@ vi.mock('@features/collaborative-workbench/renderer/hooks/useCollaborativeInbox'
         id: 'task-1',
         displayId: 'task-1',
         subject: 'Task one',
-        status: 'pending',
+        status: selectedReviewState ? 'completed' : 'pending',
         owner: 'alice',
         reviewState: selectedReviewState,
         teamName: 'team-a',
@@ -234,6 +234,29 @@ describe('CollaborativeInboxView compact navigation', () => {
     expect(host.textContent).not.toContain('回复当前任务');
     expect(host.textContent).not.toContain('私信');
     expect(host.textContent).not.toContain('写私信');
+
+    act(() => root.unmount());
+  });
+
+  it('shows the approve action in tasks mode for a submitted deliverable', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    selectedReviewState = 'review';
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(<CollaborativeInboxView surface="tasks" />);
+      await Promise.resolve();
+    });
+
+    // tasks 模式 header 同样出现「满意并归档」，与 messages 模式行为一致
+    expect(host.textContent).toContain('满意并归档');
+    await act(async () => {
+      buttonByText(host, '满意并归档').click();
+      await Promise.resolve();
+    });
+    expect(approveTask).toHaveBeenCalledWith('team-a', 'task-1', false);
 
     act(() => root.unmount());
   });

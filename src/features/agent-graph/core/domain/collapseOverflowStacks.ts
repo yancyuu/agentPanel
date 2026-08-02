@@ -1,3 +1,4 @@
+import { getReviewStateFromTask } from '@shared/utils/reviewState';
 import type { GraphNode } from '@claude-teams/agent-graph';
 
 export interface OverflowCollapseResult {
@@ -6,8 +7,9 @@ export interface OverflowCollapseResult {
 }
 
 function resolveOverflowColumnKey(task: GraphNode): string {
-  if (task.reviewState === 'approved') return 'approved';
-  if (task.reviewState === 'review' || task.reviewState === 'needsFix') return 'review';
+  if (getReviewStateFromTask(task) === 'approved') return 'approved';
+  if (getReviewStateFromTask(task) === 'review' || getReviewStateFromTask(task) === 'needsFix')
+    return 'review';
   if (task.taskStatus === 'completed') return 'done';
   if (task.taskStatus === 'in_progress') return 'wip';
   return 'todo';

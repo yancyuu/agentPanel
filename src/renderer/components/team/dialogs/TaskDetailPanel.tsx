@@ -50,7 +50,11 @@ import {
   type ParsedTaskLinkHref,
   parseTaskLinkHref,
 } from '@renderer/utils/taskReferenceUtils';
-import { getTaskKanbanColumn } from '@shared/utils/reviewState';
+import {
+  getKanbanColumnFromReviewState,
+  getReviewStateFromTask,
+  getTaskKanbanColumn,
+} from '@shared/utils/reviewState';
 import { canDisplayTaskChanges } from '@shared/utils/taskChangeState';
 import {
   deriveTaskDisplayId,
@@ -167,6 +171,7 @@ export const TaskDetailPanel = ({
   const { isLight } = useTheme();
   const currentTask = task ? (taskMap.get(task.id) ?? task) : null;
   const updateTaskFields = useStore((s) => s.updateTaskFields);
+  const openInboxTab = useStore((s) => s.openInboxTab);
   const recordTaskChangePresence = useStore((s) => s.recordTaskChangePresence);
   const setSelectedTeamTaskChangePresence = useStore((s) => s.setSelectedTeamTaskChangePresence);
 
@@ -563,8 +568,10 @@ export const TaskDetailPanel = ({
     );
   }
 
+  const derivedReviewState = getReviewStateFromTask(currentTask);
   const kanbanColumn =
     kanbanTaskState?.column ??
+    getKanbanColumnFromReviewState(derivedReviewState) ??
     getTaskKanbanColumn({
       reviewState: currentTask.reviewState,
       kanbanColumn: currentTask.kanbanColumn,
@@ -602,13 +609,13 @@ export const TaskDetailPanel = ({
           <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-normal">
             {formatTaskDisplayLabel(currentTask)}
           </Badge>
-          {(currentTask.reviewState === 'approved' || currentTask.reviewState === 'review') &&
+          {(derivedReviewState === 'approved' || derivedReviewState === 'review') &&
           currentTask.reviewer &&
           currentTask.reviewer !== 'user' ? (
             (() => {
               const reviewerColor = colorMap.get(currentTask.reviewer);
               const colors =
-                currentTask.reviewState === 'review'
+                derivedReviewState === 'review'
                   ? getTeamColorSet('blue')
                   : getTeamColorSet(reviewerColor ?? '');
               const reviewerBadgeStyle = {
@@ -620,7 +627,7 @@ export const TaskDetailPanel = ({
               };
               const lastReviewEvent = currentTask.historyEvents
                 ?.filter((e) =>
-                  currentTask.reviewState === 'approved'
+                  derivedReviewState === 'approved'
                     ? e.type === 'review_approved'
                     : e.type === 'review_requested' || e.type === 'review_started'
                 )
@@ -672,7 +679,7 @@ export const TaskDetailPanel = ({
               {statusLabel}
             </span>
           )}
-          {currentTask.reviewState === 'needsFix' ? (
+          {derivedReviewState === 'needsFix' ? (
             <span
               className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${REVIEW_STATE_DISPLAY.needsFix.bg} ${REVIEW_STATE_DISPLAY.needsFix.text}`}
             >
@@ -1084,8 +1091,16 @@ export const TaskDetailPanel = ({
                 feedbackItems={currentTask.feedbackItems}
                 onOpenHunk={variant === 'team' && onViewChanges ? handleOpenHunkAnchor : undefined}
                 reviewLocationHint={
-                  currentTask.reviewState === 'review' || currentTask.reviewState === 'needsFix'
-                    ? '评审请在收件箱进行'
+                  derivedReviewState === 'review' || derivedReviewState === 'needsFix'
+                    ? '前往收件箱评审'
+                    : undefined
+                }
+                onReviewLocationClick={
+                  derivedReviewState === 'review' || derivedReviewState === 'needsFix'
+                    ? () => {
+                        handleClose();
+                        openInboxTab();
+                      }
                     : undefined
                 }
               />

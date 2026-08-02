@@ -1,3 +1,4 @@
+import { getReviewStateFromTask } from '@shared/utils/reviewState';
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 
 import { MemberBadge } from '@renderer/components/team/MemberBadge';
@@ -266,7 +267,7 @@ export const KanbanTaskCard = memo(
               {task.needsClarification === 'user' ? '等待用户回复' : '等待负责人回复'}
             </span>
           ) : null}
-          {task.reviewState === 'needsFix' ? (
+          {getReviewStateFromTask(task) === 'needsFix' ? (
             <span
               className={`mt-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${REVIEW_STATE_DISPLAY.needsFix.bg} ${REVIEW_STATE_DISPLAY.needsFix.text}`}
             >

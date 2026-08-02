@@ -1,3 +1,4 @@
+import { getReviewStateFromTask } from '@shared/utils/reviewState';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -13,6 +14,7 @@ import type {
 import type { CollaborationWorkspaceService } from './CollaborationWorkspaceService';
 import type { DirectCliEvent } from '@main/services/direct-cli';
 import type { TeamProvisioningService } from '@main/services/team-management';
+import { historyEventId } from '@main/services/team-management/mcpTaskTools';
 import { buildDeliveryThreadMessage } from '@main/services/team-management/reviewThreadMessages';
 import type { Task } from '@main/services/team-management/TeamWorkspaceService';
 
@@ -50,6 +52,7 @@ export interface CollaborationOrchestratorDependencies {
     | 'addDelivery'
     | 'appendMessage'
     | 'readMessages'
+    | 'appendTaskHistoryEvent'
   >;
   directCli: DirectCliGateway;
   workbenchUrl: string;
@@ -422,7 +425,7 @@ export class CollaborationOrchestrator {
           const teamSlug = run.rootTaskTeamSlug ?? '';
           const tasks = await this.dependencies.teams.readTasks(teamSlug);
           const rootTask = tasks.find((task) => task.id === run.rootTaskId);
-          if (rootTask?.reviewState === 'approved') {
+          if (rootTask && getReviewStateFromTask(rootTask as never) === 'approved') {
             await this.updateRun(run.id, (current) => ({
               ...current,
               phase: 'completed',
@@ -853,6 +856,16 @@ export class CollaborationOrchestrator {
     await this.dependencies.teams.patchTask(run.rootTaskTeamSlug, run.rootTaskId, {
       status: 'done',
       reviewState: 'review',
+    });
+    // 评审状态以 historyEvents 为单一事实源：交付必须落 review_requested 事件，
+    // 否则派生状态（getReviewStateFromTask 优先 events）与字段不一致、评审入口不出现
+    await this.dependencies.teams.appendTaskHistoryEvent(run.rootTaskTeamSlug, run.rootTaskId, {
+      id: historyEventId(),
+      type: 'review_requested',
+      from: existingRootTask?.reviewState ?? 'none',
+      to: 'review',
+      timestamp: new Date().toISOString(),
+      actor: 'agent',
     });
     // 评审沟通统一走消息线程：交付邮件写入 task:<taskId> 线程（确定性 id 幂等）
     await this.dependencies.teams.appendMessage(run.rootTaskTeamSlug, {

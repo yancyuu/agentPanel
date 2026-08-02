@@ -14,7 +14,7 @@ import { IpcError, unwrapIpc } from '@renderer/utils/unwrapIpc';
 import { stripAgentBlocks } from '@shared/constants/agentBlocks';
 import { WORKBENCH_TOOL_APPROVAL_SETTINGS } from '@shared/types/team';
 import { createLogger } from '@shared/utils/logger';
-import { getTaskKanbanColumn } from '@shared/utils/reviewState';
+import { getReviewStateFromTask, getTaskKanbanColumn } from '@shared/utils/reviewState';
 import { formatTaskDisplayLabel } from '@shared/utils/taskIdentity';
 import { buildTeamGraphDefaultLayoutSeed } from '@shared/utils/teamGraphDefaultLayout';
 import { getStableTeamOwnerId } from '@shared/utils/teamStableOwnerId';
@@ -1183,7 +1183,8 @@ function detectStatusChangeNotifications(
     const oldTaskKanbanColumn = getTaskKanbanColumn(oldTask);
     const becameApproved = taskKanbanColumn === 'approved' && oldTaskKanbanColumn !== 'approved';
     const becameReview = taskKanbanColumn === 'review' && oldTaskKanbanColumn !== 'review';
-    const becameNeedsFix = task.reviewState === 'needsFix' && oldTask.reviewState !== 'needsFix';
+    const becameNeedsFix =
+      getReviewStateFromTask(task) === 'needsFix' && getReviewStateFromTask(oldTask) !== 'needsFix';
 
     const statusChanged = oldTask.status !== task.status;
     if (!statusChanged && !becameApproved && !becameReview && !becameNeedsFix) continue;
@@ -2741,7 +2742,7 @@ export const createTeamSlice: StateCreator<AppState, [], [], TeamSlice> = (set, 
                 notifiedClarificationTaskKeys.add(`${task.teamName}:${task.id}`);
               }
               notifiedStatusChangeKeys.add(`${task.teamName}:${task.id}:${task.status}`);
-              if (task.reviewState === 'needsFix') {
+              if (getReviewStateFromTask(task) === 'needsFix') {
                 notifiedStatusChangeKeys.add(`${task.teamName}:${task.id}:needsFix`);
               }
               if (getTaskKanbanColumn(task) === 'approved') {

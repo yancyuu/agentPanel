@@ -3,6 +3,8 @@ import { agentAvatarUrl } from '@renderer/utils/memberHelpers';
 import { stripAgentBlocks } from '@shared/constants/agentBlocks';
 import { RefreshCw, Search } from 'lucide-react';
 
+import { getReviewStateFromTask } from '@shared/utils/reviewState';
+
 import type { InboxTaskMessageProjection } from '../utils/inboxProjection';
 
 interface InboxTaskMessageListProps {
@@ -40,7 +42,7 @@ function getTaskFeedbackState(entry: InboxTaskMessageProjection): {
   }
   // 只有「等用户评审」是用户的行动项，优先级高于任务状态；
   // needsFix（返工中）按任务状态归入「进行中」，approved 归入「已完成」。
-  if (entry.task.reviewState === 'review') {
+  if (getReviewStateFromTask(entry.task) === 'review') {
     return {
       label: '待你评审',
       className: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
