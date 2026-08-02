@@ -42,8 +42,10 @@ export const AgentTuningDialog = ({
   const sendError = useStore((state) => state.sendMessageError);
   const allMessages = useStore((state) => selectTeamMessages(state, teamName));
   const conversationId = member ? `tuning:${teamName}:${member.name}` : '';
+  // selectTeamMessages 返回最新在前，这里反转为时间正序：渲染自上而下、
+  // 末尾即最新消息，typing 判定才成立。
   const messages = useMemo(
-    () => allMessages.filter((message) => message.conversationId === conversationId),
+    () => allMessages.filter((message) => message.conversationId === conversationId).reverse(),
     [allMessages, conversationId]
   );
 

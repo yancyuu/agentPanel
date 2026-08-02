@@ -120,6 +120,7 @@ describe('AgentTuningDialog 发送与等待状态', () => {
   });
 
   it('最后一条是用户消息时显示「正在输入…」typing 指示，agent 回复后消失', () => {
+    // selectTeamMessages 返回最新在前（newest-first），mock 数据保持同样顺序
     messagesState.value = [
       {
         messageId: 'm-1',
@@ -134,8 +135,8 @@ describe('AgentTuningDialog 发送与等待状态', () => {
     expect(host.querySelector('[data-testid="tuning-typing"]')).not.toBeNull();
     expect(host.textContent).toContain('正在输入…');
 
+    // agent 回复到达后位于数组头部（最新在前）
     messagesState.value = [
-      ...messagesState.value,
       {
         messageId: 'm-2',
         from: '产品经理',
@@ -144,9 +145,16 @@ describe('AgentTuningDialog 发送与等待状态', () => {
         conversationId: 'tuning:team-a:产品经理',
         read: true,
       },
+      ...messagesState.value,
     ];
     const host2 = renderDialog();
     expect(host2.querySelector('[data-testid="tuning-typing"]')).toBeNull();
+
+    // 渲染为时间正序：用户消息在上，agent 回复在下
+    const text = host2.textContent ?? '';
+    expect(text.indexOf('回答再简短一点')).toBeLessThan(
+      text.indexOf('好的，之后回答控制在三句话以内。')
+    );
   });
 
   it('发送失败展示错误', () => {
