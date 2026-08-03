@@ -217,7 +217,11 @@ export const MessagesFilterPopover = ({
             >
               重置
             </Button>
-            <Button size="sm" className="h-7 px-3 text-[11px]" onClick={handleSave}>
+            <Button
+              size="sm"
+              className="hover:bg-[var(--color-accent)]/90 h-7 bg-[var(--color-accent)] px-3 text-[11px] text-white"
+              onClick={handleSave}
+            >
               保存
             </Button>
           </div>

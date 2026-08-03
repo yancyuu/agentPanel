@@ -205,7 +205,11 @@ export const CcCronScheduleDialog = ({
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             取消
           </Button>
-          <Button onClick={() => void handleSubmit()} disabled={saving}>
+          <Button
+            className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+            onClick={() => void handleSubmit()}
+            disabled={saving}
+          >
             {saving ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
             {isEditing ? '保存' : '添加'}
           </Button>

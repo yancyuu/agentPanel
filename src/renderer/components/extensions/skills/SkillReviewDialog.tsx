@@ -150,7 +150,11 @@ export const SkillReviewDialog = ({
               <ChevronLeft className="mr-1.5 size-3.5" />
               {backLabel}
             </Button>
-            <Button onClick={onConfirm} disabled={loading || !preview || !hasChanges}>
+            <Button
+              className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+              onClick={onConfirm}
+              disabled={loading || !preview || !hasChanges}
+            >
               {loading ? (
                 <Save className="mr-1.5 size-3.5" />
               ) : (

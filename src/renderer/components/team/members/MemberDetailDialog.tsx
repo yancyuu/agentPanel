@@ -116,7 +116,12 @@ export const MemberDetailDialog = ({
         </DialogHeader>
 
         <div className="grid gap-2 sm:grid-cols-2">
-          <Button type="button" onClick={onAssignTask} disabled={!onAssignTask}>
+          <Button
+            type="button"
+            className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+            onClick={onAssignTask}
+            disabled={!onAssignTask}
+          >
             <Plus size={15} />
             新建任务
           </Button>

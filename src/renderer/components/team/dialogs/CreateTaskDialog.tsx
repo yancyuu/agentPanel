@@ -493,7 +493,12 @@ export const CreateTaskDialog = ({
           <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>
             取消
           </Button>
-          <Button size="sm" onClick={handleSubmit} disabled={!canSubmit}>
+          <Button
+            size="sm"
+            className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+          >
             {submitting ? '创建中...' : '创建'}
           </Button>
         </DialogFooter>

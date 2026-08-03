@@ -123,7 +123,12 @@ const PlatformManualForm = ({
         <Button variant="outline" size="sm" onClick={onCancel}>
           返回
         </Button>
-        <Button size="sm" onClick={handleSave} disabled={saving}>
+        <Button
+          size="sm"
+          className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+          onClick={handleSave}
+          disabled={saving}
+        >
           {saving ? '保存中...' : '绑定平台'}
         </Button>
       </div>

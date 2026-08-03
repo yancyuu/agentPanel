@@ -864,7 +864,11 @@ export const ProjectEditorOverlay = ({
             <Button variant="destructive" size="sm" onClick={handleDiscardAndClose}>
               丢弃并关闭
             </Button>
-            <Button size="sm" onClick={() => void handleSaveAndClose()}>
+            <Button
+              size="sm"
+              className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+              onClick={() => void handleSaveAndClose()}
+            >
               全部保存并关闭
             </Button>
           </DialogFooter>
@@ -903,7 +907,11 @@ export const ProjectEditorOverlay = ({
             <Button variant="destructive" size="sm" onClick={handleDiscardAndCloseTab}>
               丢弃
             </Button>
-            <Button size="sm" onClick={() => void handleSaveAndCloseTab()}>
+            <Button
+              size="sm"
+              className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+              onClick={() => void handleSaveAndCloseTab()}
+            >
               保存
             </Button>
           </DialogFooter>

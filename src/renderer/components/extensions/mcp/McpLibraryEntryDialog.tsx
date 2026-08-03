@@ -410,7 +410,12 @@ export const McpLibraryEntryDialog = ({
             <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
               取消
             </Button>
-            <Button size="sm" disabled={!canSubmit} onClick={() => void handleSave()}>
+            <Button
+              size="sm"
+              className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+              disabled={!canSubmit}
+              onClick={() => void handleSave()}
+            >
               {saving ? '保存中...' : '保存'}
             </Button>
           </div>

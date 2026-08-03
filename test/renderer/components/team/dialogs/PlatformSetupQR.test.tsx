@@ -60,6 +60,9 @@ async function renderQr(platformType: 'feishu' | 'lark' | 'weixin', onComplete =
   const startButton = Array.from(host.querySelectorAll('button')).find((button) =>
     button.textContent?.includes('开始扫码绑定')
   );
+  // 主按钮显式 accent（浅色主题下不再是「看不见的白色按钮」）
+  expect(startButton?.className).toContain('bg-[var(--color-accent)]');
+  expect(startButton?.className).toContain('text-white');
   await act(async () => {
     startButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await Promise.resolve();

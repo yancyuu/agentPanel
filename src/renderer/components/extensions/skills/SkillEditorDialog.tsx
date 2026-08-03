@@ -832,7 +832,11 @@ export const SkillEditorDialog = ({
                 <p className="text-sm text-text-muted">请先检查文件变更，然后在下一步确认保存。</p>
                 {mutationError && <p className="mt-1 text-sm text-red-400">{mutationError}</p>}
               </div>
-              <Button onClick={() => void handleReview()} disabled={reviewLoading || saveLoading}>
+              <Button
+                className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+                onClick={() => void handleReview()}
+                disabled={reviewLoading || saveLoading}
+              >
                 <FileSearch className="mr-1.5 size-3.5" />
                 {reviewLoading ? '准备中...' : mode === 'create' ? '检查并创建' : '检查并保存'}
               </Button>

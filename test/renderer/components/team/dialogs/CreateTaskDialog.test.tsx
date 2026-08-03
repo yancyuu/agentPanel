@@ -182,11 +182,14 @@ describe('CreateTaskDialog 负责人必填', () => {
     expect(host.textContent).toContain('请选择负责人后再创建');
     expect(buttonByText(host, '创建').disabled).toBe(true);
 
-    // 重新选择 → 可用
+    // 重新选择 → 可用；主按钮为显式 accent
     act(() => {
       buttonByText(host, '选择阿尔法团队').click();
     });
-    expect(buttonByText(host, '创建').disabled).toBe(false);
+    const submitButton = buttonByText(host, '创建');
+    expect(submitButton.disabled).toBe(false);
+    expect(submitButton.className).toContain('bg-[var(--color-accent)]');
+    expect(submitButton.className).toContain('text-white');
     await act(async () => {
       buttonByText(host, '创建').click();
       await Promise.resolve();

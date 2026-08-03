@@ -115,7 +115,11 @@ const CcConnectConfigRawDialog = ({
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             关闭
           </Button>
-          <Button onClick={() => void handleSave()} disabled={loading || saving}>
+          <Button
+            className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+            onClick={() => void handleSave()}
+            disabled={loading || saving}
+          >
             {saving ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
             {saved && !saving ? <Check className="mr-1.5 size-3.5 text-emerald-400" /> : null}
             {saved && !saving ? '已保存' : '保存'}

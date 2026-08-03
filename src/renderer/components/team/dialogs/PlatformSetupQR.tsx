@@ -240,7 +240,12 @@ const PlatformSetupQR = ({
           <p className="text-center text-sm text-gray-600 dark:text-gray-400">
             使用手机扫描 {platformLabel} 二维码，快速绑定渠道
           </p>
-          <Button onClick={startFlow}>开始扫码绑定</Button>
+          <Button
+            className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+            onClick={startFlow}
+          >
+            开始扫码绑定
+          </Button>
         </>
       )}
 

@@ -754,7 +754,11 @@ export const ProviderRuntimeSettingsDialog = ({
                 <Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>
                   关闭
                 </Button>
-                <Button disabled={saving} onClick={() => void handleSave()}>
+                <Button
+                  className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+                  disabled={saving}
+                  onClick={() => void handleSave()}
+                >
                   {saving ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : null}
                   {editingName ? '保存修改' : '保存 Provider'}
                 </Button>

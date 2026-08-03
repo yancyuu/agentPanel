@@ -293,7 +293,12 @@ export const McpLibraryEnableDialog = ({
               <Button variant="ghost" size="sm" onClick={onClose} disabled={installing}>
                 取消
               </Button>
-              <Button size="sm" disabled={!canSubmit} onClick={() => void handleEnable()}>
+              <Button
+                size="sm"
+                className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
+                disabled={!canSubmit}
+                onClick={() => void handleEnable()}
+              >
                 {installing ? '添加中...' : '添加到当前项目'}
               </Button>
             </div>
