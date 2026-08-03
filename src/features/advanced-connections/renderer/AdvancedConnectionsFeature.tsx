@@ -31,6 +31,7 @@ export function AdvancedConnectionsFeature(): React.JSX.Element {
       onSetUsageReporting={(connectionId, enabled) =>
         void state.setUsageReporting(connectionId, enabled)
       }
+      usageReportingEnabled={state.usageReportingEnabled}
       onPullRemoteTasks={(connectionId) => void state.pullRemoteTasks(connectionId)}
       onClaimAndApplyToken={(connectionId) => {
         if (

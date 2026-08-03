@@ -86,6 +86,48 @@ describe('readAikeyClaimed', () => {
   });
 });
 
+describe('usageReportingEnabled — 上报状态权威开关（telemetry.enabled）', () => {
+  let tmp;
+  let previousHermitHome;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), 'featurestate-usage-'));
+    previousHermitHome = process.env.HERMIT_HOME;
+    process.env.HERMIT_HOME = tmp;
+  });
+  afterEach(() => {
+    if (previousHermitHome === undefined) delete process.env.HERMIT_HOME;
+    else process.env.HERMIT_HOME = previousHermitHome;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('enabled=false 时关闭、enabled=true 时开启（worker 存活不决定标题语义）', async () => {
+    meMock.mockResolvedValue({ authorized: false, developerMode: false });
+    localMock.mockReturnValue({ authorized: false, developerMode: false });
+    writeFileSync(
+      path.join(tmp, 'settings.json'),
+      JSON.stringify({ taskBus: { telemetry: { enabled: false } } })
+    );
+    vi.resetModules();
+    let fresh = await import('../featureState.mjs');
+    expect(fresh.currentFeatureStates().usageReportingEnabled).toBe(false);
+
+    writeFileSync(
+      path.join(tmp, 'settings.json'),
+      JSON.stringify({ taskBus: { telemetry: { enabled: true } } })
+    );
+    vi.resetModules();
+    fresh = await import('../featureState.mjs');
+    expect(fresh.currentFeatureStates().usageReportingEnabled).toBe(true);
+
+    // 缺失 settings 时默认关闭
+    rmSync(path.join(tmp, 'settings.json'));
+    vi.resetModules();
+    fresh = await import('../featureState.mjs');
+    expect(fresh.currentFeatureStates().usageReportingEnabled).toBe(false);
+  });
+});
+
 describe('refreshAuthCacheFromServer — /me is authoritative, never clobbers a fresh cache', () => {
   // Reproduces "我明明登录了，但上报/状态都还显示未登录": the menu reads
   // currentFeatureStates().auth, which comes from _authProbeCache. Two failures

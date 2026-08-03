@@ -166,6 +166,9 @@ export function currentFeatureStates() {
     usagePid,
     webRunning: pidRunning || serverRunning,
     usageRunning,
+    // 上报状态的权威开关（与 UsageTelemetryService 的 worker gate 一致）：
+    // telemetry.enabled；worker 存活（usageRunning）只作附属信息，不再直接映射「运行中」
+    usageReportingEnabled: telemetry.enabled === true,
     conversationUploadEnabled: resolveConversationUploadEnabled(telemetry),
     uploadProviders,
     aikeyClaimed,

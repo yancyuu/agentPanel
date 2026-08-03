@@ -3,6 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@renderer/api';
 
 import {
+  readUsageReportingEnabled,
+  writeUsageReportingEnabled,
+} from '../services/usageReportingSync';
+
+import {
   type AdvancedConnectionSummary,
   type AdvancedConnectionTokenClaimStepEvent,
   type DiscoverAdvancedConnectionResponse,
@@ -79,10 +84,18 @@ function useAdvancedConnectionsState() {
     };
   }, []);
 
+  const [usageReportingEnabled, setUsageReportingEnabled] = useState<boolean | undefined>(
+    undefined
+  );
+
   const refresh = useCallback(async () => {
     try {
-      const next = await advancedConnectionsApi.list();
+      const [next, reportingEnabled] = await Promise.all([
+        advancedConnectionsApi.list(),
+        readUsageReportingEnabled().catch(() => undefined),
+      ]);
       setConnections(next);
+      setUsageReportingEnabled(reportingEnabled);
       setError(null);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : '读取高级连接失败');
@@ -212,11 +225,15 @@ function useAdvancedConnectionsState() {
 
   const setUsageReporting = useCallback(
     async (connectionId: string, enabled: boolean) => {
-      const result = await run(`usage-reporting:${connectionId}`, () =>
-        advancedConnectionsApi.updatePermissions(connectionId, {
+      const result = await run(`usage-reporting:${connectionId}`, async () => {
+        // 统一状态语义：先写 settings.json 的 telemetry.enabled（PUT 内联动启停
+        // 本地扫描 worker），再写连接权限——任一失败都不会两边各说各话
+        await writeUsageReportingEnabled(enabled);
+        setUsageReportingEnabled(enabled);
+        return advancedConnectionsApi.updatePermissions(connectionId, {
           permissions: { 'usage.aggregates': enabled ? 'granted' : 'denied' },
-        })
-      );
+        });
+      });
       if (result) {
         setConnections((current) =>
           current.map((connection) => (connection.id === result.id ? result : connection))
@@ -385,6 +402,7 @@ function useAdvancedConnectionsState() {
     startAuth,
     logout,
     allowInsecure,
+    usageReportingEnabled,
     setUsageReporting,
     pullRemoteTasks,
     claimAndApplyToken,

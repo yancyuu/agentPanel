@@ -1779,10 +1779,16 @@ async function postMessagesInBatches(
   batchDelay: number,
   runTotalMessages: number,
   uploadedBeforeRun: number
-): Promise<{ status: ConversationUploadStatus; uploadedCount: number; uploadedTokens: number }> {
+): Promise<{
+  status: ConversationUploadStatus;
+  uploadedCount: number;
+  uploadedTokens: number;
+  allBatchesSucceeded: boolean;
+}> {
   const statuses: ConversationUploadStatus[] = [];
   let uploadedCount = 0;
   let uploadedTokens = 0;
+  let hadFailure = false;
   const size = Math.max(1, batchSize);
   const totalBatches = Math.ceil(messages.length / size);
   // Stability over speed: a single transient timeout (HTTP 599) must NOT abort
@@ -1825,14 +1831,23 @@ async function postMessagesInBatches(
     const batchToken = freshToken ?? token;
 
     try {
-      // Attach the cursor to EVERY batch, not only the last. The cursor marks
-      // the scan position (per-file offsets) and is identical across batches;
-      // the server commits it from whichever batch it durably processes, so a
-      // mid-run crash still leaves an accurate cursor instead of none.
-      const status = await postPayload(home, baseUrl, endpointPath, platform, batchToken, {
+      // A cursor may only commit after every preceding batch in this scan window
+      // was accepted. Earlier batches omit it; the final batch also omits it if
+      // any prior batch failed. This prevents a later successful batch from
+      // advancing past a 422-rejected pricing batch.
+      const batchPayload: UploadPayload = {
         ...payloadBase,
         messages: batchMessages,
-      });
+      };
+      if (batchIndex < totalBatches || hadFailure) delete batchPayload.clientCursor;
+      const status = await postPayload(
+        home,
+        baseUrl,
+        endpointPath,
+        platform,
+        batchToken,
+        batchPayload
+      );
       statuses.push(status);
       // A batch that didn't hard-fail was accepted for processing (the 202
       // receipt). lastError is only set on intake rejection / HTTP error, so its
@@ -1860,11 +1875,13 @@ async function postMessagesInBatches(
         lastError: status.lastError,
       });
       if (status.lastError) {
+        hadFailure = true;
         consecutiveFailures += 1;
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) break;
       }
       if (batchIndex < totalBatches && batchDelay > 0) await wait(batchDelay);
     } catch (error) {
+      hadFailure = true;
       const message = sanitizeUploadError(error);
       await appendUploadLog(home, 'upload-batch-failed', {
         platform,
@@ -1899,7 +1916,12 @@ async function postMessagesInBatches(
     }
   }
 
-  return { status: mergeStatuses(statuses), uploadedCount, uploadedTokens };
+  return {
+    status: mergeStatuses(statuses),
+    uploadedCount,
+    uploadedTokens,
+    allBatchesSucceeded: !hadFailure && uploadedCount === messages.length,
+  };
 }
 
 async function uploadPlatformMessages(
@@ -2034,29 +2056,28 @@ async function uploadPlatformMessages(
       baseUrl,
     });
 
-    const { status, uploadedCount, uploadedTokens } = await postMessagesInBatches(
-      home,
-      baseUrl,
-      UPLOAD_ENDPOINT,
-      platform,
-      token,
-      payloadBase,
-      messages,
-      uploadBatchSize,
-      uploadBatchDelay,
-      totalDiscovered,
-      totalUploaded
-    );
+    const { status, uploadedCount, uploadedTokens, allBatchesSucceeded } =
+      await postMessagesInBatches(
+        home,
+        baseUrl,
+        UPLOAD_ENDPOINT,
+        platform,
+        token,
+        payloadBase,
+        messages,
+        uploadBatchSize,
+        uploadBatchDelay,
+        totalDiscovered,
+        totalUploaded
+      );
     statuses.push(status);
     totalUploaded += uploadedCount;
     totalUploadedTokens += uploadedTokens;
 
-    // Break the window loop only when this window uploaded NOTHING — a fully-down
-    // server. A transient per-batch timeout (handled inside postMessagesInBatches
-    // by skipping and continuing) must not abort the whole backfill: it left
-    // claudecode stuck retrying window 1 forever. Some success ⇒ advance cursor
-    // and keep draining history.
-    if (!fullRescan || messages.length < windowSize || uploadedCount === 0) break;
+    // A full-rescan window may advance only when every batch succeeded and the
+    // final batch carried its cursor. Partial success is retried by eventId on
+    // the next run instead of skipping rejected messages.
+    if (!fullRescan || messages.length < windowSize || !allBatchesSucceeded) break;
     cursorForScan = clientCursorAsServerCursor(clientCursor);
   }
 

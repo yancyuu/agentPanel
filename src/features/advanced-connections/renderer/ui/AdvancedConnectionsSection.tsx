@@ -45,8 +45,10 @@ interface AdvancedConnectionsSectionProps {
   onLogout: (connectionId: string) => void;
   /** 用户确认 HTTP 传输风险后持久化放行（per-connection） */
   onAllowInsecure: (connectionId: string) => void;
-  /** 用量上报开关（permissions['usage.aggregates'] granted/denied） */
+  /** 用量上报开关（permissions['usage.aggregates'] granted/denied + settings.json telemetry.enabled） */
   onSetUsageReporting: (connectionId: string, enabled: boolean) => void;
+  /** 上报总开关展示值（telemetry.enabled 优先；undefined 时回退连接权限） */
+  usageReportingEnabled?: boolean;
   onPullRemoteTasks: (connectionId: string) => void;
   onClaimAndApplyToken: (connectionId: string) => void;
   /** 用户确认所选模型（第二段写配置） */
@@ -260,6 +262,7 @@ export function AdvancedConnectionsSection({
   onLogout,
   onAllowInsecure,
   onSetUsageReporting,
+  usageReportingEnabled,
   onPullRemoteTasks,
   onClaimAndApplyToken,
   onConfirmClaimModel,
@@ -554,14 +557,17 @@ export function AdvancedConnectionsSection({
                       (item) => item.id === 'team-bus' || item.id === 'reporting'
                     ) ? (
                       <div className="mt-4 flex flex-wrap items-center gap-2">
-                        {/* 用量上报开关：复用 permissions['usage.aggregates'] 语义（默认开） */}
+                        {/* 用量上报开关：telemetry.enabled 优先展示，回退连接权限（统一后两者一致） */}
                         <span className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
                           用量上报
                           {busyAction === `usage-reporting:${connection.id}` ? (
                             <Loader2 className="size-3.5 animate-spin" />
                           ) : (
                             <SettingsToggle
-                              enabled={connection.permissions['usage.aggregates'] === 'granted'}
+                              enabled={
+                                usageReportingEnabled ??
+                                connection.permissions['usage.aggregates'] === 'granted'
+                              }
                               disabled={busyAction === `usage-reporting:${connection.id}`}
                               onChange={(enabled) => onSetUsageReporting(connection.id, enabled)}
                             />

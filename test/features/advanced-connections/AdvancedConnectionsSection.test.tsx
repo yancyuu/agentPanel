@@ -48,6 +48,7 @@ function renderSection(props: {
   claimModels?: Parameters<typeof AdvancedConnectionsSection>[0]['claimModels'];
   onConfirmClaimModel?: (connectionId: string, model: string) => void;
   onCancelTokenClaim?: (connectionId: string) => void;
+  usageReportingEnabled?: boolean;
 }): { host: HTMLElement; root: ReturnType<typeof createRoot> } {
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -76,6 +77,7 @@ function renderSection(props: {
         onAllowInsecure={props.onAllowInsecure ?? vi.fn()}
         onPullRemoteTasks={vi.fn()}
         onSetUsageReporting={props.onSetUsageReporting ?? vi.fn()}
+        usageReportingEnabled={props.usageReportingEnabled}
         onClaimAndApplyToken={vi.fn()}
         onConfirmClaimModel={props.onConfirmClaimModel ?? vi.fn()}
         onCancelTokenClaim={props.onCancelTokenClaim ?? vi.fn()}
@@ -278,6 +280,66 @@ describe('AdvancedConnectionsSection', () => {
     });
     expect(onSetUsageReporting).toHaveBeenCalledWith('connection_granted', false);
     expect(onSetUsageReporting).toHaveBeenCalledWith('connection_denied', true);
+  });
+
+  it('展示值优先级：telemetry.enabled 覆盖连接权限显示', () => {
+    // 权限 granted 但 telemetry.enabled=false → 显示关闭（用户最近操作优先）
+    const granted = makeConnection({
+      id: 'connection_granted',
+      secure: true,
+      baseUrl: 'https://bus.company.test',
+      permissions: { 'usage.aggregates': 'granted' } as AdvancedConnectionSummary['permissions'],
+    });
+    const { host } = renderSection({
+      connections: [granted],
+      usageReportingEnabled: false,
+    });
+    const toggle = host.querySelector<HTMLButtonElement>('[role="switch"]');
+    expect(toggle?.getAttribute('aria-checked')).toBe('false');
+
+    // 权限 denied 但 telemetry.enabled=true → 显示开启
+    const denied = makeConnection({
+      id: 'connection_denied',
+      permissions: { 'usage.aggregates': 'denied' } as AdvancedConnectionSummary['permissions'],
+    });
+    const host2 = document.createElement('div');
+    document.body.appendChild(host2);
+    const root2 = createRoot(host2);
+    act(() => {
+      root2.render(
+        <AdvancedConnectionsSection
+          connections={[denied]}
+          host=""
+          preview={null}
+          loading={false}
+          busyAction={null}
+          error={null}
+          notice={null}
+          catalogStatus={{}}
+          claimSteps={{}}
+          claimModels={{}}
+          channelStatus={{}}
+          onHostChange={vi.fn()}
+          onDiscover={vi.fn()}
+          onAddConnection={vi.fn()}
+          onRemoveConnection={vi.fn()}
+          onStartAuth={vi.fn()}
+          onLogout={vi.fn()}
+          onAllowInsecure={vi.fn()}
+          onPullRemoteTasks={vi.fn()}
+          onSetUsageReporting={vi.fn()}
+          usageReportingEnabled
+          onClaimAndApplyToken={vi.fn()}
+          onConfirmClaimModel={vi.fn()}
+          onCancelTokenClaim={vi.fn()}
+          onRefresh={vi.fn()}
+        />
+      );
+    });
+    expect(host2.querySelector<HTMLButtonElement>('[role="switch"]')?.getAttribute('aria-checked')).toBe(
+      'true'
+    );
+    act(() => root2.unmount());
   });
 
   it('compat 连接显示「未提供远程任务通道」说明而不渲染检查按钮', () => {

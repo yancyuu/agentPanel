@@ -41,19 +41,19 @@ export function resolveConversationUploadEnabled(telemetry) {
 /**
  * Map the logical 消息上报 state to the row label + badge shown in the menu.
  *
- * The key invariant: when the toggle is ON but the background worker is NOT
- * running, we surface "未运行" — we never show a bare "已开启", which used to
- * read as "on and working" even though nothing was uploading.
+ * 状态语义统一（2026-08）：标题由 enabled（telemetry.enabled，worker gate 的同一开关）
+ * 驱动——「上报已开启」/「上报已关闭」；worker 存活只作附属信息：enabled 但 worker
+ * 未运行时给出 warn 变体，绝不把 worker 存活直接映射成「运行中」标题。
  *
  * @param {{ enabled: boolean, running: boolean }} input
  * @returns {{ badge: string, rowLabel: string, rowState: 'off'|'ok'|'warn', badgeState: 'error'|'ok'|'warn' }}
  */
 export function describeUploadToggle({ enabled, running }) {
   if (!enabled) {
-    return { badge: '未开启', rowLabel: '上报未开启', rowState: 'off', badgeState: 'error' };
+    return { badge: '已关闭', rowLabel: '上报已关闭', rowState: 'off', badgeState: 'error' };
   }
   if (running) {
-    return { badge: '运行中', rowLabel: '上报运行中', rowState: 'ok', badgeState: 'ok' };
+    return { badge: '运行中', rowLabel: '上报已开启', rowState: 'ok', badgeState: 'ok' };
   }
   return { badge: '未运行', rowLabel: '上报已开启·后台未运行', rowState: 'warn', badgeState: 'warn' };
 }

@@ -65,30 +65,26 @@ describe('resolveConversationUploadEnabled — canonical boolean matching the wo
 });
 
 describe('describeUploadToggle — menu labels for the 消息上报 state', () => {
-  it('disabled → 未开启 (off / error)', () => {
-    const d = describeUploadToggle({ enabled: false, running: false });
-    expect(d.badge).toBe('未开启');
-    expect(d.rowLabel).toBe('上报未开启');
+  it('disabled → 上报已关闭（即使 worker 仍存活也不显示运行中）', () => {
+    const d = describeUploadToggle({ enabled: false, running: true });
+    expect(d.badge).toBe('已关闭');
+    expect(d.rowLabel).toBe('上报已关闭');
     expect(d.rowState).toBe('off');
     expect(d.badgeState).toBe('error');
   });
 
-  it('enabled + running → 运行中 (ok)', () => {
+  it('enabled + running → 上报已开启（badge 运行中作附属信息）', () => {
     const d = describeUploadToggle({ enabled: true, running: true });
     expect(d.badge).toBe('运行中');
-    expect(d.rowLabel).toBe('上报运行中');
+    expect(d.rowLabel).toBe('上报已开启');
     expect(d.rowState).toBe('ok');
     expect(d.badgeState).toBe('ok');
   });
 
-  it('enabled + NOT running → surfaces idle worker, never claims "已开启"', () => {
+  it('enabled + NOT running → 开启但后台未运行（warn 变体）', () => {
     const d = describeUploadToggle({ enabled: true, running: false });
-    // The regression: this used to be "已开启" / "上报已开启", which misled users
-    // into thinking uploading was active when the worker was actually stopped.
-    expect(d.badge).not.toBe('已开启');
-    expect(d.rowLabel).not.toBe('上报已开启');
     expect(d.rowLabel).toContain('未运行');
-    expect(d.badge).toContain('运行'); // e.g. "未运行"
+    expect(d.badge).toBe('未运行');
     expect(d.rowState).toBe('warn');
     expect(d.badgeState).toBe('warn');
   });

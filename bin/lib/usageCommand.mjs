@@ -1274,7 +1274,8 @@ async function printUsageRows(title, data, hint) {
   const uploadRaw = data.telemetry.conversationUpload;
   const upload =
     uploadRaw && typeof uploadRaw === 'object' ? { ...uploadRaw, lastError: '' } : uploadRaw;
-  const uploadEnabled = Boolean(states.conversationUploadEnabled || upload?.enabled);
+  // 上报状态权威开关：telemetry.enabled（与菜单/worker gate 同一语义）
+  const uploadEnabled = Boolean(states.usageReportingEnabled);
   const workerText = states.usageRunning
     ? `后台运行中 (pid ${states.usagePid})，每 5 分钟增量扫描`
     : '后台未运行';

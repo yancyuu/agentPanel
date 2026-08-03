@@ -200,7 +200,7 @@ function hasDeveloperModeEnabled() {
 
 function currentMenuStatusItems(states = currentFeatureStates()) {
   const upload = describeUploadToggle({
-    enabled: states.conversationUploadEnabled,
+    enabled: states.usageReportingEnabled,
     running: states.usageRunning,
   });
   return [
@@ -237,7 +237,7 @@ function actionStateLabel(action, states) {
     };
   if (action.toggle === 'conversation-upload' || action.id === 'toggle-message-upload') {
     const upload = describeUploadToggle({
-      enabled: states.conversationUploadEnabled,
+      enabled: states.usageReportingEnabled,
       running: states.usageRunning,
     });
     return {
@@ -257,7 +257,7 @@ function actionStateLabel(action, states) {
     };
   if (['data-sync', 'local-collection'].includes(action.id)) {
     const upload = describeUploadToggle({
-      enabled: states.conversationUploadEnabled,
+      enabled: states.usageReportingEnabled,
       running: states.usageRunning,
     });
     return { text: upload.badge, state: upload.badgeState };

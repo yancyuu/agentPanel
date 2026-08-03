@@ -1816,7 +1816,7 @@ describe('ConversationMessageUploadService', () => {
     expect(result.attempted).toBe(1);
   });
 
-  it('allows model-less Codex text but quarantines token usage without an exact model', async () => {
+  it('allows model-less Codex text and info:null rows while holding unpriced usage at its cursor', async () => {
     const codexHome = path.join(tmpDir, '.codex');
     process.env.CODEX_HOME = codexHome;
     const sessionDir = path.join(codexHome, 'sessions', '2026', '08', '03');
@@ -1827,6 +1827,10 @@ describe('ConversationMessageUploadService', () => {
     await writeFile(
       textPath,
       `${JSON.stringify({
+        timestamp: '2026-08-03T09:39:00.000Z',
+        type: 'event_msg',
+        payload: { type: 'token_count', info: null },
+      })}\n${JSON.stringify({
         timestamp: '2026-08-03T09:40:00.000Z',
         type: 'event_msg',
         payload: {
@@ -1836,9 +1840,14 @@ describe('ConversationMessageUploadService', () => {
         },
       })}\n`
     );
+    const usagePrefix = `${JSON.stringify({
+      timestamp: '2026-08-03T09:40:30.000Z',
+      type: 'session_meta',
+      payload: { cwd: '/tmp/model-less-usage' },
+    })}\n`;
     await writeFile(
       usagePath,
-      `${JSON.stringify({
+      `${usagePrefix}${JSON.stringify({
         timestamp: '2026-08-03T09:41:00.000Z',
         type: 'event_msg',
         payload: {
@@ -1853,6 +1862,7 @@ describe('ConversationMessageUploadService', () => {
 
     const textFileKey = createHash('sha256').update(textPath).digest('hex');
     const usageFileKey = createHash('sha256').update(usagePath).digest('hex');
+    const usageUploadedOffset = Buffer.byteLength(usagePrefix, 'utf8');
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/api/v1/auth/me')) {
         return Response.json({
@@ -1868,9 +1878,25 @@ describe('ConversationMessageUploadService', () => {
               reporter: 'agentcli',
               client: 'codex',
               scene: 'coding',
-              status: 'never_reported',
+              status: 'succeeded',
               inFlight: { count: 0, uploadIds: [] },
-              currentCursor: null,
+              currentCursor: {
+                schemaVersion: 1,
+                purpose: 'local-jsonl-scan-position',
+                generatedAt: '2026-08-03T09:40:45.000Z',
+                files: [
+                  {
+                    fileKey: usageFileKey,
+                    pathHash: `sha256-${usageFileKey}`,
+                    size: usageUploadedOffset,
+                    mtimeMs: 1,
+                    fromOffset: 0,
+                    toOffset: usageUploadedOffset,
+                  },
+                ],
+                fileCount: 1,
+                messageCount: 0,
+              },
             },
           ],
         });
@@ -1883,12 +1909,19 @@ describe('ConversationMessageUploadService', () => {
         });
         expect(body.messages[0].message.modelName).toBeUndefined();
         expect(body.messages[0].message.usage).toBeUndefined();
-        expect(body.clientCursor.files.map((file: { fileKey: string }) => file.fileKey)).toContain(
-          textFileKey
+        const cursorFiles = new Map(
+          body.clientCursor.files.map(
+            (file: { fileKey: string; fromOffset: number; toOffset: number }) => [
+              file.fileKey,
+              file,
+            ]
+          )
         );
-        expect(
-          body.clientCursor.files.map((file: { fileKey: string }) => file.fileKey)
-        ).not.toContain(usageFileKey);
+        expect(cursorFiles.get(textFileKey)).toBeDefined();
+        expect(cursorFiles.get(usageFileKey)).toMatchObject({
+          fromOffset: usageUploadedOffset,
+          toOffset: usageUploadedOffset,
+        });
         return Response.json(
           {
             ok: true,
@@ -2294,6 +2327,91 @@ describe('ConversationMessageUploadService', () => {
     expect(result.lastError ?? '').not.toMatch(/服务端不可用/);
   });
 
+  it('does not attach a full cursor to later successful batches after a 422 rejection', async () => {
+    process.env.OPENHERMIT_CONVERSATION_UPLOAD_BATCH_SIZE = '1';
+    process.env.OPENHERMIT_UPLOAD_BATCH_DELAY_MS = '0';
+    const projectDir = path.join(claudeBase, 'projects', '-tmp-partial-bizfail');
+    await mkdir(projectDir, { recursive: true });
+    const lines = Array.from({ length: 3 }, (_, i) =>
+      JSON.stringify({
+        type: 'user',
+        sessionId: 's-partial-bizfail',
+        uuid: `partial-${i + 1}`,
+        cwd: '/tmp/project',
+        timestamp: `2026-06-24T08:22:0${i}.000Z`,
+        message: { role: 'user', content: `partial ${i + 1}`, model: 'claude-test-model' },
+      })
+    );
+    await writeFile(
+      path.join(projectDir, 'session-partial-bizfail.jsonl'),
+      `${lines.join('\n')}\n`
+    );
+
+    let messagePost = 0;
+    const batchHasCursor: boolean[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/v1/auth/me')) {
+        return Response.json({
+          authenticated: true,
+          status: 'ok',
+          scopes: ['upload:read', 'upload:write'],
+        });
+      }
+      if (url.includes('/api/v1/report/usage/status')) {
+        return Response.json({
+          channels: [
+            {
+              reporter: 'agentcli',
+              client: 'claudecode',
+              scene: 'coding',
+              status: 'never_reported',
+              inFlight: { count: 0, uploadIds: [] },
+              currentCursor: null,
+            },
+          ],
+        });
+      }
+      if (url.endsWith('/api/v1/report/messages')) {
+        messagePost += 1;
+        const payload = JSON.parse(String(init?.body ?? '{}')) as { clientCursor?: unknown };
+        batchHasCursor.push(Boolean(payload.clientCursor));
+        if (messagePost === 1) {
+          return Response.json(
+            { detail: { code: 'pricing_contract_invalid', msg: 'missing_exact_model' } },
+            { status: 422 }
+          );
+        }
+        return Response.json(
+          {
+            ok: true,
+            uploadId: `upl_partial_${messagePost}`,
+            status: 'queued',
+            received: 1,
+            acceptedForProcessing: 1,
+            rejectedAtReceive: 0,
+          },
+          { status: 202 }
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    const result = await uploadConversationMessages({
+      telemetry: {
+        enabled: true,
+        platform: 'claudecode',
+        conversationUploadEnabled: true,
+        uploadProviders: ['claudecode'],
+        conversations: { uploadBatchSize: 1 },
+      },
+    });
+
+    expect(messagePost).toBe(3);
+    expect(batchHasCursor).toEqual([false, false, false]);
+    expect(result.lastError ?? '').toMatch(/422/);
+    expect(result.pending).toBe(1);
+  });
+
   it('proactively refreshes the access token before each upload batch when within the expiry buffer', async () => {
     // Regression for "抱着抱着报权限错": a long multi-batch run outlasts the
     // access-token TTL. The token is captured once at the start, so without a
@@ -2330,6 +2448,7 @@ describe('ConversationMessageUploadService', () => {
     let refreshCalls = 0;
     let messagesCalls = 0;
     const messageBatchSizes: number[] = [];
+    const batchHasCursor: boolean[] = [];
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/api/v1/auth/refresh')) {
         refreshCalls += 1;
@@ -2365,6 +2484,7 @@ describe('ConversationMessageUploadService', () => {
       }
       if (url.endsWith('/api/v1/report/messages')) {
         const payload = JSON.parse(String(init?.body ?? '{}')) as {
+          clientCursor?: unknown;
           messages?: { conversation?: { conversationId?: string } }[];
         };
         const messages = payload.messages ?? [];
@@ -2374,6 +2494,7 @@ describe('ConversationMessageUploadService', () => {
         if (belongsToRefreshSession) {
           messagesCalls += 1;
           messageBatchSizes.push(messages.length);
+          batchHasCursor.push(Boolean(payload.clientCursor));
         }
         return Response.json(
           {
@@ -2402,6 +2523,7 @@ describe('ConversationMessageUploadService', () => {
 
     // Both batches shipped...
     expect(messageBatchSizes).toEqual([2, 1]);
+    expect(batchHasCursor).toEqual([false, true]);
     expect(messagesCalls).toBe(2);
     // ...and refresh fired once per batch PLUS the start-of-run getValidBearerToken
     // (≥ 3). Without the per-batch refresh, refreshCalls would be 1 (start only) and
