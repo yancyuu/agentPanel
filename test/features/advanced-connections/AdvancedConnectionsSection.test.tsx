@@ -34,6 +34,8 @@ function makeConnection(overrides: Partial<AdvancedConnectionSummary> = {}): Adv
   };
 }
 
+const createdRoots: ReturnType<typeof createRoot>[] = [];
+
 function renderSection(props: {
   connections: AdvancedConnectionSummary[];
   onStartAuth?: (connection: AdvancedConnectionSummary) => void;
@@ -46,6 +48,7 @@ function renderSection(props: {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
+  createdRoots.push(root);
   act(() => {
     root.render(
       <AdvancedConnectionsSection
@@ -101,6 +104,9 @@ describe('AdvancedConnectionsSection', () => {
   });
 
   afterEach(() => {
+    for (const root of createdRoots.splice(0)) {
+      act(() => root.unmount());
+    }
     document.body.innerHTML = '';
     vi.clearAllMocks();
     vi.unstubAllGlobals();

@@ -45,6 +45,7 @@ import {
   type ConnectionSecretStore,
   SystemCredentialSecretStore,
 } from './SystemCredentialSecretStore';
+import { createAgentBusHttpLogger } from './agentBusHttpLog';
 
 const CONNECTION_SCHEMA_VERSION = 1;
 const DISCOVERY_TIMEOUT_MS = 10_000;
@@ -421,7 +422,10 @@ export class AdvancedConnectionService {
     this.rootDir = path.join(options.hermitHome, 'connections');
     this.indexPath = path.join(this.rootDir, 'index.json');
     this.authStorePath = path.join(options.hermitHome, 'auth', 'openhermit.json');
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    // 全部出站调用包一层 HTTP 交互记录器（服务日志，~/.hermit/logs/agentbus-http.log）
+    this.fetchImpl = createAgentBusHttpLogger({ hermitHome: options.hermitHome }).wrapFetch(
+      options.fetchImpl ?? fetch
+    );
     this.now = options.now ?? (() => new Date());
     this.secretStore =
       options.secretStore ??
@@ -707,7 +711,7 @@ export class AdvancedConnectionService {
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        body: JSON.stringify({ region_id: 'cn-beijing', include_upstream_models: true }),
+        body: JSON.stringify({ region_id: 'cn-shenzhen', include_upstream_models: true }),
         signal: AbortSignal.timeout(TOKEN_CATALOG_TIMEOUT_MS),
         redirect: 'error',
       });
@@ -776,7 +780,7 @@ export class AdvancedConnectionService {
         },
         body: JSON.stringify({
           discovery_id: discoveryId,
-          region_id: request.regionId?.trim() || 'cn-beijing',
+          region_id: request.regionId?.trim() || 'cn-shenzhen',
           ...(request.gatewayId?.trim() ? { gateway_id: request.gatewayId.trim() } : {}),
           model_api_ids: modelApiIds,
         }),
@@ -1394,16 +1398,30 @@ export class AdvancedConnectionService {
       record.manifest.endpoints.authRefresh,
       '授权刷新'
     );
+    let response: Awaited<ReturnType<typeof this.fetchImpl>>;
     try {
-      const response = await this.fetchImpl(refreshUrl, {
+      response = await this.fetchImpl(refreshUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ refresh_token: current.refreshToken }),
         signal: AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS),
         redirect: 'error',
       });
-      const refreshed = tokenPayload(await response.json().catch(() => null), Date.now());
-      if (!response.ok || !refreshed) throw new Error('refresh failed');
+    } catch (error) {
+      // 网络级失败（断网/超时/DNS）：保留凭证，本轮操作软失败，下次再试。
+      // 此前一律删 secret，导致网络抖动就会把用户踢下线。
+      await this.updateRecord(record.id, (connection) => ({
+        ...connection,
+        lastError: {
+          code: 'auth_refresh_network',
+          message: `授权刷新暂时不可用（网络问题，将自动重试）：${error instanceof Error ? error.message : String(error)}`,
+          at: this.now().toISOString(),
+        },
+      }));
+      return null;
+    }
+    const refreshed = tokenPayload(await response.json().catch(() => null), Date.now());
+    if (response.ok && refreshed) {
       const next: ConnectionSecret = {
         ...current,
         accessToken: refreshed.accessToken,
@@ -1416,7 +1434,9 @@ export class AdvancedConnectionService {
       await this.writeSecret(next);
       await this.syncAuthStoreToCli(record);
       return next;
-    } catch {
+    }
+    // 服务端明确拒绝（401/403 或无效响应）：非授权类 5xx 同样保留凭证
+    if (response.status === 401 || response.status === 403 || response.status === 400) {
       await this.secretStore.delete(record.id);
       await this.updateRecord(record.id, (connection) => ({
         ...connection,
@@ -1431,6 +1451,15 @@ export class AdvancedConnectionService {
       }));
       return null;
     }
+    await this.updateRecord(record.id, (connection) => ({
+      ...connection,
+      lastError: {
+        code: 'auth_refresh_server',
+        message: `授权刷新暂时不可用（HTTP ${response.status}，将自动重试）`,
+        at: this.now().toISOString(),
+      },
+    }));
+    return null;
   }
 
   private async readSecret(

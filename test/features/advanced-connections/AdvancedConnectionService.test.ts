@@ -363,6 +363,70 @@ describe('AdvancedConnectionService', () => {
     expect(cliStore.token?.accessToken).toBe('cli-token');
   });
 
+  it('keeps the secret when token refresh fails with a network error', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('fetch failed');
+    });
+    const service = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: fetchImpl as typeof fetch,
+      secretStore: new MemorySecretStore(),
+    });
+    const connection = await service.ensureDefaultConnection('https://bus.company.test');
+    const record = await (
+      service as never as {
+        requireRecord(id: string): Promise<Record<string, unknown>>;
+      }
+    ).requireRecord(connection.id);
+    const expiring = {
+      schemaVersion: 1 as const,
+      connectionId: connection.id,
+      providerId: 'openhermit-agentbus',
+      issuerOrigin: 'https://bus.company.test',
+      accessToken: 'stale-token',
+      refreshToken: 'stale-refresh',
+      tokenType: 'Bearer',
+      scopes: [],
+      expiresAt: '2020-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const secretStore = (
+      service as never as { secretStore: { put(id: string, s: string): Promise<void> } }
+    ).secretStore;
+    await secretStore.put(connection.id, JSON.stringify(expiring));
+    // 模拟已登录状态
+    await (
+      service as never as {
+        updateRecord(
+          id: string,
+          updater: (c: Record<string, unknown>) => Record<string, unknown>
+        ): Promise<unknown>;
+      }
+    ).updateRecord(connection.id, (c: Record<string, unknown>) => ({
+      ...c,
+      state: 'authenticated',
+      account: { id: 'u-1' },
+    }));
+
+    const refreshed = await (
+      service as never as { getValidSecret(record: unknown): Promise<unknown> }
+    ).getValidSecret(record);
+
+    // 网络级失败：本轮拿不到有效凭证，但 secret 保留、连接不被登出
+    expect(refreshed).toBeNull();
+    const current = await (
+      service as never as {
+        requireRecord(id: string): Promise<{ state: string; lastError?: { code: string } }>;
+      }
+    ).requireRecord(connection.id);
+    expect(current.state).toBe('authenticated');
+    expect(current.lastError?.code).toBe('auth_refresh_network');
+    const stored = await (
+      secretStore as never as { get(id: string): Promise<string | null> }
+    ).get(connection.id);
+    expect(stored).not.toBeNull();
+  });
+
   it('creates the default AgentBus connection only once without blocking on discovery', async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('offline');
