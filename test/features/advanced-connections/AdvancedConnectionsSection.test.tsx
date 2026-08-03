@@ -265,16 +265,13 @@ describe('AdvancedConnectionsSection', () => {
       onSetUsageReporting,
     });
 
-    const grantedToggle = host.querySelector<HTMLButtonElement>(
-      '[data-testid="usage-reporting:connection_granted"]'
-    );
-    const deniedToggle = host.querySelector<HTMLButtonElement>(
-      '[data-testid="usage-reporting:connection_denied"]'
-    );
-    expect(grantedToggle?.textContent).toContain('已开启');
+    // 每个连接一个 SettingsToggle（role="switch"），按 article 顺序对应两个连接
+    const toggles = [...host.querySelectorAll<HTMLButtonElement>('[role="switch"]')];
+    expect(toggles).toHaveLength(2);
+    const [grantedToggle, deniedToggle] = toggles;
     expect(grantedToggle?.getAttribute('aria-checked')).toBe('true');
-    expect(deniedToggle?.textContent).toContain('已关闭');
     expect(deniedToggle?.getAttribute('aria-checked')).toBe('false');
+    expect(host.textContent).toContain('用量上报');
 
     act(() => {
       grantedToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));

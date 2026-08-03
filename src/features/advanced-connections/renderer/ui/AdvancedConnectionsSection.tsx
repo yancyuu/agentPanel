@@ -22,6 +22,7 @@ import {
 } from '../../contracts';
 
 import { UsageLogsCard } from './UsageLogsCard';
+import { SettingsToggle } from '@renderer/components/settings/components/SettingsToggle';
 
 import type { AdvancedConnectionOperationOutcome } from '../hooks/useAdvancedConnections';
 
@@ -578,30 +579,18 @@ export function AdvancedConnectionsSection({
                     ) ? (
                       <div className="mt-4 flex flex-wrap items-center gap-2">
                         {/* 用量上报开关：复用 permissions['usage.aggregates'] 语义（默认开） */}
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={connection.permissions['usage.aggregates'] === 'granted'}
-                          data-testid={`usage-reporting:${connection.id}`}
-                          disabled={busyAction === `usage-reporting:${connection.id}`}
-                          onClick={() =>
-                            onSetUsageReporting(
-                              connection.id,
-                              connection.permissions['usage.aggregates'] !== 'granted'
-                            )
-                          }
-                          className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 text-xs text-[var(--color-text-secondary)] disabled:opacity-45"
-                        >
+                        <span className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
+                          用量上报
                           {busyAction === `usage-reporting:${connection.id}` ? (
                             <Loader2 className="size-3.5 animate-spin" />
                           ) : (
-                            <Cloud className="size-3.5" />
+                            <SettingsToggle
+                              enabled={connection.permissions['usage.aggregates'] === 'granted'}
+                              disabled={busyAction === `usage-reporting:${connection.id}`}
+                              onChange={(enabled) => onSetUsageReporting(connection.id, enabled)}
+                            />
                           )}
-                          用量上报：
-                          {connection.permissions['usage.aggregates'] === 'granted'
-                            ? '已开启'
-                            : '已关闭'}
-                        </button>
+                        </span>
                         {connection.capabilities.some((item) => item.id === 'team-bus') ? (
                           connection.compatibilityMode ? (
                             <span
