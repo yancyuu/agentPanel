@@ -1040,6 +1040,96 @@ describe('AdvancedConnectionService', () => {
     expect(raw).not.toContain('secret-token');
   });
 
+  it('两段式：prepare 返回模型列表，claim 用预传 discoveryId 跳过 discover 并按所选模型 provision', async () => {
+    const secretStore = new MemorySecretStore();
+    const tokenDistribution = {
+      discoverCatalog: vi.fn(async () => ({
+        modelApis: [
+          { name: 'GPT 基础版', httpApiId: 'model-1', endpoint: 'https://gw/cpaopen', protocols: ['openai'], aiProtocols: [] },
+          { name: 'Claude Sonnet', httpApiId: 'model-2', endpoint: 'https://gw/cpamc-cc', protocols: [], aiProtocols: ['anthropic'] },
+        ],
+        defaultApiName: 'Claude Sonnet',
+        defaultModelApiIds: ['model-2'],
+        discoveryId: 'discovery-1',
+        gatewayId: 'gw-1',
+        regionId: 'cn-shenzhen',
+        raw: {},
+      })),
+      selectModelApiIds: (ids?: string[]) => ids ?? [],
+      provisionRun: vi.fn(async () => ({ runId: 'run-1', raw: {} })),
+      pollRun: vi.fn(async () => ({})),
+      claimSecret: vi.fn(async () => ({
+        key: 'sk-once',
+        keyId: 'key-1',
+        endpoint: 'https://gw/cpamc-cc',
+        endpoints: {},
+        runtimeProfiles: {},
+        modelsUrl: '',
+        modelIds: ['claude-sonnet-4'],
+        expiresAt: null,
+        raw: {},
+      })),
+    };
+    const runtimeCredentialApplier = vi.fn(async () => ({
+      ok: true,
+      runtimes: [{ runtime: 'claude', ok: true, path: '/Users/test/.claude/settings.json' }],
+    }));
+    const service = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: compatibilityFetch(),
+      secretStore,
+      runtimeCredentialApplier,
+      tokenDistribution,
+    });
+    const connection = await service.create({ baseUrl: 'https://bus.company.test' });
+    secretStore.values.set(
+      connection.id,
+      JSON.stringify({
+        schemaVersion: 1,
+        connectionId: connection.id,
+        providerId: 'openhermit-agentbus',
+        issuerOrigin: 'https://bus.company.test',
+        accessToken: 'secret-token',
+        tokenType: 'Bearer',
+        scopes: [],
+        updatedAt: new Date().toISOString(),
+      })
+    );
+
+    // 第一段：目录 → 模型列表（含默认集与 tier 信息）
+    const stepEvents: { step: string; status: string }[] = [];
+    const prepared = await service.prepareTokenClaim(connection.id, (event) =>
+      stepEvents.push(event)
+    );
+    expect(prepared.discoveryId).toBe('discovery-1');
+    expect(prepared.gatewayId).toBe('gw-1');
+    expect(prepared.defaultApiName).toBe('Claude Sonnet');
+    expect(prepared.models).toEqual([
+      { id: 'model-1', name: 'GPT 基础版', endpoint: 'https://gw/cpaopen', protocols: ['openai'] },
+      { id: 'model-2', name: 'Claude Sonnet', endpoint: 'https://gw/cpamc-cc', protocols: ['anthropic'] },
+    ]);
+    expect(stepEvents).toEqual([
+      { connectionId: connection.id, step: 'discover', status: 'start' },
+      { connectionId: connection.id, step: 'discover', status: 'done', text: '默认模型 Claude Sonnet' },
+    ]);
+
+    // 第二段：预传 discoveryId + 用户所选模型 → 不再调 discover，provision 收到所选 id 与 gateway
+    tokenDistribution.discoverCatalog.mockClear();
+    const applied = await service.claimAndApplyToken(connection.id, {
+      discoveryId: prepared.discoveryId,
+      gatewayId: prepared.gatewayId,
+      modelApiIds: ['model-1'],
+      runtimes: ['claude'],
+    });
+    expect(applied.ok).toBe(true);
+    expect(tokenDistribution.discoverCatalog).not.toHaveBeenCalled();
+    expect(tokenDistribution.provisionRun).toHaveBeenCalledWith({
+      discoveryId: 'discovery-1',
+      gatewayId: 'gw-1',
+      aliyunModelApiIds: ['model-1'],
+    });
+  });
+
   it('uses the file-based secret store end to end (secretPresent 与授权状态一致)', async () => {
     const { SystemCredentialSecretStore } = await import(
       '@features/advanced-connections/main/infrastructure/SystemCredentialSecretStore'

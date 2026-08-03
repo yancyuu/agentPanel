@@ -146,6 +146,22 @@ export function registerAdvancedConnectionRoutes(
     }
   );
 
+  app.post<{ Params: { connectionId: string } }>(
+    '/api/advanced-connections/:connectionId/token-pool/prepare',
+    async (request, reply) => {
+      try {
+        return await dependencies.service.prepareTokenClaim(
+          request.params.connectionId,
+          dependencies.onTokenClaimStep
+        );
+      } catch (error) {
+        return reply
+          .code(400)
+          .send({ ok: false, error: errorMessage(error, 'Token 池目录读取失败') });
+      }
+    }
+  );
+
   app.post<{
     Params: { connectionId: string };
     Body: AdvancedConnectionTokenClaimRequest;

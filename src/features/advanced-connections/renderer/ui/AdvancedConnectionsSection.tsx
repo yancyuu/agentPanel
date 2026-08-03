@@ -16,6 +16,7 @@ import {
 
 import {
   type AdvancedConnectionSummary,
+  type AdvancedConnectionTokenClaimPrepareResult,
   type AdvancedConnectionTokenClaimStepEvent,
   type DiscoverAdvancedConnectionResponse,
 } from '../../contracts';
@@ -34,6 +35,7 @@ interface AdvancedConnectionsSectionProps {
   notice: string | null;
   catalogStatus: Record<string, AdvancedConnectionOperationOutcome>;
   claimSteps: Record<string, AdvancedConnectionTokenClaimStepEvent[]>;
+  claimCatalogs: Record<string, AdvancedConnectionTokenClaimPrepareResult | undefined>;
   channelStatus: Record<string, AdvancedConnectionOperationOutcome>;
   onHostChange: (value: string) => void;
   onDiscover: () => void;
@@ -46,7 +48,11 @@ interface AdvancedConnectionsSectionProps {
   /** 用量上报开关（permissions['usage.aggregates'] granted/denied） */
   onSetUsageReporting: (connectionId: string, enabled: boolean) => void;
   onPullRemoteTasks: (connectionId: string) => void;
-  onClaimAndApplyToken: (connectionId: string) => void;
+  /** 第一段：读取目录并进入选模型 */
+  onPrepareTokenClaim: (connectionId: string) => void;
+  /** 用户确认模型后继续领取（第二段） */
+  onConfirmClaimModel: (connectionId: string, model: { id: string; name: string }) => void;
+  onCancelClaimModel: (connectionId: string) => void;
   onRefresh: () => void;
 }
 
@@ -77,15 +83,116 @@ function OutcomeLine({
   );
 }
 
-const CLAIM_STEP_ORDER = ['discover', 'provision', 'poll', 'claim', 'apply'] as const;
+const CLAIM_STEP_ORDER = [
+  'discover',
+  'select-model',
+  'provision',
+  'poll',
+  'claim',
+  'apply',
+] as const;
 
 const CLAIM_STEP_LABELS: Record<string, string> = {
   discover: '读取目录',
+  'select-model': '选择模型',
   provision: '发起认领',
   poll: '等待开通',
   claim: '领取凭证',
   apply: '写入本地配置',
 };
+
+/** 选模型单选列表：默认勾选服务端默认项（default_model_api_ids/defaultApiName 对应） */
+function ClaimModelPicker({
+  catalog,
+  busy,
+  onConfirm,
+  onCancel,
+}: Readonly<{
+  catalog: AdvancedConnectionTokenClaimPrepareResult;
+  busy: boolean;
+  onConfirm(model: { id: string; name: string }): void;
+  onCancel(): void;
+}>): React.JSX.Element {
+  const defaultId =
+    catalog.defaultModelApiIds.find((id) => catalog.models.some((model) => model.id === id)) ??
+    catalog.models.find((model) => model.name === catalog.defaultApiName)?.id ??
+    catalog.models[0]?.id ??
+    '';
+  const [selectedId, setSelectedId] = useState(defaultId);
+
+  if (catalog.models.length === 0) {
+    return (
+      <div
+        className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-600 dark:text-amber-400"
+        data-testid="claim-models-empty"
+      >
+        目录暂无可用模型，无法继续领取。
+        <button
+          type="button"
+          onClick={onCancel}
+          className="ml-2 underline underline-offset-2 hover:text-amber-500"
+        >
+          关闭
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mt-2 space-y-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5"
+      data-testid="claim-model-picker"
+    >
+      <p className="text-[11px] font-medium text-[var(--color-text-secondary)]">
+        选择要开通的模型（默认勾选服务端默认项）
+      </p>
+      <div className="space-y-1" role="radiogroup" aria-label="可选模型">
+        {catalog.models.map((model) => (
+          <label
+            key={model.id}
+            className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+          >
+            <input
+              type="radio"
+              name="claim-model"
+              value={model.id}
+              checked={selectedId === model.id}
+              onChange={() => setSelectedId(model.id)}
+              className="accent-indigo-600"
+            />
+            <span className="min-w-0 flex-1 truncate font-medium">{model.name}</span>
+            {model.protocols?.length ? (
+              <span className="shrink-0 text-[10px] text-[var(--color-text-muted)]">
+                {model.protocols.join(' / ')}
+              </span>
+            ) : null}
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center justify-end gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-md px-3 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)]"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          disabled={!selectedId || busy}
+          onClick={() => {
+            const model = catalog.models.find((candidate) => candidate.id === selectedId);
+            if (model) onConfirm({ id: model.id, name: model.name });
+          }}
+          className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {busy ? <Loader2 className="size-3 animate-spin" /> : null}
+          确认领取
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /** Token 领取链式步骤进度：进行中高亮、失败停在对应步骤并透出服务端原始错误 */
 function ClaimStepsView({
@@ -166,6 +273,7 @@ export function AdvancedConnectionsSection({
   notice,
   catalogStatus,
   claimSteps,
+  claimCatalogs,
   channelStatus,
   onHostChange,
   onDiscover,
@@ -176,7 +284,9 @@ export function AdvancedConnectionsSection({
   onAllowInsecure,
   onSetUsageReporting,
   onPullRemoteTasks,
-  onClaimAndApplyToken,
+  onPrepareTokenClaim,
+  onConfirmClaimModel,
+  onCancelClaimModel,
   onRefresh,
 }: Readonly<AdvancedConnectionsSectionProps>): React.JSX.Element {
   // 等待用户确认 HTTP 传输风险的连接 id（确认后按连接持久化，不再重复询问）
@@ -529,12 +639,14 @@ export function AdvancedConnectionsSection({
                             disabled={
                               !authenticated ||
                               !transportReady ||
+                              busyAction === `claim-prepare:${connection.id}` ||
                               busyAction === `claim:${connection.id}`
                             }
-                            onClick={() => onClaimAndApplyToken(connection.id)}
+                            onClick={() => onPrepareTokenClaim(connection.id)}
                             className="flex h-8 items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 text-xs font-medium text-white disabled:opacity-45"
                           >
-                            {busyAction === `claim:${connection.id}` ? (
+                            {busyAction === `claim-prepare:${connection.id}` ||
+                            busyAction === `claim:${connection.id}` ? (
                               <Loader2 className="size-3.5 animate-spin" />
                             ) : (
                               <KeyRound className="size-3.5" />
@@ -542,6 +654,14 @@ export function AdvancedConnectionsSection({
                             领取并应用
                           </button>
                         </div>
+                        {claimCatalogs[connection.id] ? (
+                          <ClaimModelPicker
+                            catalog={claimCatalogs[connection.id]!}
+                            busy={busyAction === `claim:${connection.id}`}
+                            onConfirm={(model) => onConfirmClaimModel(connection.id, model)}
+                            onCancel={() => onCancelClaimModel(connection.id)}
+                          />
+                        ) : null}
                         <ClaimStepsView events={claimSteps[connection.id] ?? []} />
                         {catalogStatus[connection.id] ? (
                           <OutcomeLine outcome={catalogStatus[connection.id]} />

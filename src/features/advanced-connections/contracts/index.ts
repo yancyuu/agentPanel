@@ -177,6 +177,7 @@ export type AdvancedConnectionRuntimeId = 'claude' | 'codex' | 'pi';
 /** Token 领取链式步骤（面板进度展示 + SSE token-claim-event 载荷） */
 export type AdvancedConnectionTokenClaimStepId =
   | 'discover'
+  | 'select-model'
   | 'provision'
   | 'poll'
   | 'claim'
@@ -192,8 +193,28 @@ export interface AdvancedConnectionTokenClaimStepEvent {
   error?: string;
 }
 
+/** 目录里的可选模型（选模型两段式第一段返回） */
+export interface AdvancedConnectionTokenClaimModelOption {
+  id: string;
+  name: string;
+  endpoint?: string;
+  protocols?: string[];
+}
+
+export interface AdvancedConnectionTokenClaimPrepareResult {
+  ok: true;
+  discoveryId: string;
+  gatewayId?: string;
+  defaultApiName?: string;
+  defaultModelApiIds: string[];
+  models: AdvancedConnectionTokenClaimModelOption[];
+}
+
 export interface AdvancedConnectionTokenClaimRequest {
-  /** 可选：指定要开通的模型 API id；缺省用服务端精选集（default_model_api_ids） */
+  /** 两段式：prepare 阶段拿到的 discoveryId（提供时跳过 discover，直接进入 provision） */
+  discoveryId?: string;
+  gatewayId?: string;
+  /** 可选：指定要开通的模型 API id（单选为一个元素）；缺省用服务端精选集（default_model_api_ids） */
   modelApiIds?: string[];
   runtimes: AdvancedConnectionRuntimeId[];
   model?: string;

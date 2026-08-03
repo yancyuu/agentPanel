@@ -4,6 +4,7 @@ import { api } from '@renderer/api';
 
 import {
   type AdvancedConnectionSummary,
+  type AdvancedConnectionTokenClaimPrepareResult,
   type AdvancedConnectionTokenClaimStepEvent,
   type DiscoverAdvancedConnectionResponse,
 } from '../../contracts';
@@ -51,6 +52,10 @@ function useAdvancedConnectionsState() {
   /** Token 领取链式步骤事件（SSE token-claim-event 累积，按连接分组） */
   const [claimSteps, setClaimSteps] = useState<
     Record<string, AdvancedConnectionTokenClaimStepEvent[]>
+  >({});
+  /** 第一段目录结果（选模型列表；确认/取消后清除） */
+  const [claimCatalogs, setClaimCatalogs] = useState<
+    Record<string, AdvancedConnectionTokenClaimPrepareResult | undefined>
   >({});
   const [channelStatus, setChannelStatus] = useState<
     Record<string, AdvancedConnectionOperationOutcome>
@@ -258,11 +263,15 @@ function useAdvancedConnectionsState() {
   );
 
   const claimAndApplyToken = useCallback(
-    async (connectionId: string) => {
-      // 防重入：busy 期间直接忽略（busyAction 已由 run 管理）
-      setClaimSteps((current) => ({ ...current, [connectionId]: [] }));
+    async (
+      connectionId: string,
+      selection?: { discoveryId?: string; gatewayId?: string; modelApiIds?: string[] }
+    ) => {
+      // 两段式（先选模型）时保留已有步骤；一键默认流程重置步骤
+      if (!selection) setClaimSteps((current) => ({ ...current, [connectionId]: [] }));
       const result = await run(`claim:${connectionId}`, () =>
         advancedConnectionsApi.claimAndApplyToken(connectionId, {
+          ...selection,
           runtimes: ['claude', 'codex', 'pi'],
         })
       );
@@ -292,6 +301,67 @@ function useAdvancedConnectionsState() {
     [refreshIfAuthExpired, run]
   );
 
+  /** 第一段：读取目录，进入用户选模型 */
+  const prepareTokenClaim = useCallback(
+    async (connectionId: string) => {
+      setClaimSteps((current) => ({ ...current, [connectionId]: [] }));
+      setClaimCatalogs((current) => ({ ...current, [connectionId]: undefined }));
+      const result = await run(`claim-prepare:${connectionId}`, () =>
+        advancedConnectionsApi.prepareTokenClaim(connectionId)
+      );
+      if (!result) {
+        setCatalogStatus((current) => ({
+          ...current,
+          [connectionId]: lastFailure('读取 Token 池目录失败'),
+        }));
+        await refreshIfAuthExpired();
+        return;
+      }
+      setClaimCatalogs((current) => ({ ...current, [connectionId]: result }));
+      // 「选择模型」是用户动作步骤（客户端本地事件，不走 SSE）
+      setClaimSteps((current) => ({
+        ...current,
+        [connectionId]: [
+          ...(current[connectionId] ?? []),
+          { connectionId, step: 'select-model', status: 'start' },
+        ],
+      }));
+    },
+    [refreshIfAuthExpired, run]
+  );
+
+  /** 用户确认模型：第二段 provision → poll → claim → apply */
+  const confirmClaimModel = useCallback(
+    async (connectionId: string, model: { id: string; name: string }) => {
+      const catalog = claimCatalogs[connectionId];
+      if (!catalog) return;
+      setClaimCatalogs((current) => ({ ...current, [connectionId]: undefined }));
+      setClaimSteps((current) => ({
+        ...current,
+        [connectionId]: [
+          ...(current[connectionId] ?? []),
+          { connectionId, step: 'select-model', status: 'done', text: model.name },
+        ],
+      }));
+      await claimAndApplyToken(connectionId, {
+        discoveryId: catalog.discoveryId,
+        gatewayId: catalog.gatewayId,
+        modelApiIds: [model.id],
+      });
+    },
+    [claimAndApplyToken, claimCatalogs]
+  );
+
+  /** 用户取消：终止不领取 */
+  const cancelClaimModel = useCallback((connectionId: string) => {
+    setClaimCatalogs((current) => ({ ...current, [connectionId]: undefined }));
+    setClaimSteps((current) => ({ ...current, [connectionId]: [] }));
+    setCatalogStatus((current) => ({
+      ...current,
+      [connectionId]: { ok: true, at: new Date().toISOString(), text: '已取消领取。' },
+    }));
+  }, []);
+
   return {
     connections,
     host,
@@ -306,6 +376,7 @@ function useAdvancedConnectionsState() {
     notice,
     catalogStatus,
     claimSteps,
+    claimCatalogs,
     channelStatus,
     discover,
     addConnection,
@@ -315,6 +386,9 @@ function useAdvancedConnectionsState() {
     allowInsecure,
     setUsageReporting,
     pullRemoteTasks,
+    prepareTokenClaim,
+    confirmClaimModel,
+    cancelClaimModel,
     claimAndApplyToken,
     refresh,
   };

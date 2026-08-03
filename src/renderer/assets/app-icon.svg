@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#4338ca"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdf6e3"/>
+      <stop offset="1" stop-color="#f0e2bd"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 底板 -->
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- 螺壳主体 -->
+  <circle cx="236" cy="226" r="132" fill="url(#shell)"/>
+  <!-- 螺壳螺旋 -->
+  <path d="M236 226 m0 -86 a86 86 0 1 1 -86 86 a66 66 0 1 1 66 -66 a46 46 0 1 1 -46 46"
+        fill="none" stroke="#e0cfa4" stroke-width="14" stroke-linecap="round"/>
+  <!-- 壳口阴影 -->
+  <circle cx="330" cy="312" r="52" fill="#2e2a6e"/>
+
+  <!-- 寄居蟹身体（从壳口探出） -->
+  <!-- 左眼柄 -->
+  <path d="M318 300 l-14 -22" stroke="#f97316" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="300" cy="272" r="9" fill="#1c1533"/>
+  <!-- 右眼柄 -->
+  <path d="M338 292 l-4 -26" stroke="#f97316" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="333" cy="260" r="9" fill="#1c1533"/>
+  <!-- 头胸 -->
+  <path d="M298 322 q34 -26 64 -6 q22 16 10 44 q-12 26 -46 22 q-32 -4 -36 -30 q-2 -18 8 -30z" fill="#fb923c"/>
+  <!-- 大螯 -->
+  <path d="M356 322 q30 -14 44 6 q12 18 -2 34 q-14 14 -32 6 q-16 -8 -18 -26 q-1 -12 8 -20z" fill="#f97316"/>
+  <path d="M382 330 q14 2 16 16" stroke="#c2410c" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <!-- 步足 -->
+  <path d="M312 372 l-18 20" stroke="#f97316" stroke-width="12" stroke-linecap="round"/>
+  <path d="M336 380 l-6 26" stroke="#f97316" stroke-width="12" stroke-linecap="round"/>
+</svg>

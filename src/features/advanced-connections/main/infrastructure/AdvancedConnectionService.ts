@@ -16,6 +16,7 @@ import {
   type AdvancedConnectionTokenClaimRequest,
   type AdvancedConnectionTokenClaimResult,
   type AdvancedConnectionTokenClaimStepEvent,
+  type AdvancedConnectionTokenClaimPrepareResult,
   type CreateAdvancedConnectionRequest,
   type DataPermissionId,
   type DiscoverAdvancedConnectionResponse,
@@ -687,6 +688,72 @@ export class AdvancedConnectionService {
     return this.toSummary(updated);
   }
 
+  /**
+   * Token 领取第一段：读取目录并返回可选模型列表。
+   * 用户在面板选定模型后，claim-apply 携带 discoveryId+modelApiIds 进入第二段。
+   */
+  async prepareTokenClaim(
+    connectionId: string,
+    onStep?: (event: AdvancedConnectionTokenClaimStepEvent) => void
+  ): Promise<AdvancedConnectionTokenClaimPrepareResult> {
+    const record = await this.requireRecord(connectionId);
+    this.assertAuthorizedTransport(record);
+    if (!record.manifest.capabilities.some((item) => item.id === 'token-pool')) {
+      throw new Error('该服务未提供 Token 池');
+    }
+    const emit = (
+      step: AdvancedConnectionTokenClaimStepEvent['step'],
+      status: AdvancedConnectionTokenClaimStepEvent['status'],
+      extra: { text?: string; error?: string } = {}
+    ): void => {
+      onStep?.({ connectionId, step, status, ...extra });
+    };
+    const tokenDistribution = await (this.injectedTokenDistribution ??
+      loadTokenDistributionRuntime());
+    emit('discover', 'start');
+    const catalog = await tokenDistribution.discoverCatalog({}).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      emit('discover', 'error', { error: message });
+      throw new Error(`读取 Token 池目录失败：${message}`);
+    });
+    if (!catalog.discoveryId) {
+      emit('discover', 'error', { error: '目录未返回 discovery_id' });
+      throw new Error('读取 Token 池目录失败：目录未返回 discovery_id');
+    }
+    emit('discover', 'done', {
+      ...(catalog.defaultApiName ? { text: `默认模型 ${catalog.defaultApiName}` } : {}),
+    });
+    const models = catalog.modelApis.flatMap((api) => {
+      const item = asRecord(api);
+      const id = stringValue(item.httpApiId);
+      const name = stringValue(item.name);
+      if (!id || !name) return [];
+      const protocols = (
+        Array.isArray(item.aiProtocols) && item.aiProtocols.length > 0
+          ? item.aiProtocols
+          : Array.isArray(item.protocols)
+            ? item.protocols
+            : []
+      ).filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()));
+      return [
+        {
+          id,
+          name,
+          ...(stringValue(item.endpoint) ? { endpoint: stringValue(item.endpoint) } : {}),
+          ...(protocols.length > 0 ? { protocols } : {}),
+        },
+      ];
+    });
+    return {
+      ok: true,
+      discoveryId: catalog.discoveryId,
+      ...(catalog.gatewayId ? { gatewayId: catalog.gatewayId } : {}),
+      ...(catalog.defaultApiName ? { defaultApiName: catalog.defaultApiName } : {}),
+      defaultModelApiIds: catalog.defaultModelApiIds,
+      models,
+    };
+  }
+
   async claimAndApplyToken(
     connectionId: string,
     request: AdvancedConnectionTokenClaimRequest,
@@ -726,27 +793,42 @@ export class AdvancedConnectionService {
     try {
       const tokenDistribution = await (this.injectedTokenDistribution ??
         loadTokenDistributionRuntime());
-      // 1. 读取目录（region 默认 cn-shenzhen 由 tokenDistribution 模块内置，service 不出现 region）
-      emit('discover', 'start');
-      const catalog = await tokenDistribution
-        .discoverCatalog({})
-        .catch(stepError('discover', '读取 Token 池目录失败'));
-      const discoveryId = catalog.discoveryId;
-      if (!discoveryId) {
-        stepError('discover', '读取 Token 池目录失败')(new Error('目录未返回 discovery_id'));
+      // 目录来源：预传 discoveryId（选模型两段式，用户已在面板选定）则跳过 discover；
+      // 否则自动读取目录并用服务端精选默认模型集
+      let discoveryId: string;
+      let gatewayId: string | null;
+      let fallbackModelApiIds: string[] = [];
+      if (request.discoveryId?.trim()) {
+        discoveryId = request.discoveryId.trim();
+        gatewayId = request.gatewayId?.trim() || null;
+      } else {
+        // 1. 读取目录（region 默认 cn-shenzhen 由 tokenDistribution 模块内置，service 不出现 region）
+        emit('discover', 'start');
+        const catalog = await tokenDistribution
+          .discoverCatalog({})
+          .catch(stepError('discover', '读取 Token 池目录失败'));
+        if (!catalog.discoveryId) {
+          stepError('discover', '读取 Token 池目录失败')(new Error('目录未返回 discovery_id'));
+        }
+        discoveryId = catalog.discoveryId as string;
+        gatewayId = catalog.gatewayId;
+        fallbackModelApiIds = tokenDistribution.selectModelApiIds(catalog.defaultModelApiIds);
+        emit('discover', 'done', {
+          ...(catalog.defaultApiName ? { text: `默认模型 ${catalog.defaultApiName}` } : {}),
+        });
       }
-      emit('discover', 'done', {
-        ...(catalog.defaultApiName ? { text: `默认模型 ${catalog.defaultApiName}` } : {}),
-      });
-      // 2. 发起认领（模型集缺省用服务端精选 default_model_api_ids）
+      // 2. 发起认领（模型集：用户所选 > 服务端精选 default_model_api_ids）
       emit('provision', 'start');
       const modelApiIds = request.modelApiIds?.length
         ? [...new Set(request.modelApiIds.map((id) => id.trim()).filter(Boolean))]
-        : tokenDistribution.selectModelApiIds(catalog.defaultModelApiIds);
+        : fallbackModelApiIds;
+      if (modelApiIds.length === 0) {
+        stepError('provision', 'Token 池认领启动失败')(new Error('未选择可用模型'));
+      }
       const { runId } = await tokenDistribution
         .provisionRun({
-          discoveryId: discoveryId as string,
-          gatewayId: catalog.gatewayId,
+          discoveryId,
+          gatewayId,
           aliyunModelApiIds: modelApiIds,
         })
         .catch(stepError('provision', 'Token 池认领启动失败'));
