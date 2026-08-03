@@ -24,19 +24,11 @@ interface UsageLogsResponse {
   tail: number;
   httpEntries: AgentBusHttpLogEntry[];
   files: UsageLogFileTail[];
-  larkEntries: LarkAuditEntry[];
+  /** lark-credentials-audit.ndjson 的脱敏原文行（最新在前） */
+  larkLines: string[];
 }
 
-interface LarkAuditEntry {
-  timestamp: string;
-  ok: boolean;
-  accountCount?: number;
-  accounts?: { appId?: string; userOpenId?: string; scope?: string }[];
-  error?: string;
-  message?: string;
-}
-
-const TAIL_LINES = 50;
+const TAIL_LINES = 10;
 
 function formatTime(ts: string): string {
   const date = new Date(ts);
@@ -63,7 +55,7 @@ function statusLabel(entry: AgentBusHttpLogEntry): string {
 export function UsageLogsCard(): React.JSX.Element {
   const [httpEntries, setHttpEntries] = useState<AgentBusHttpLogEntry[]>([]);
   const [files, setFiles] = useState<UsageLogFileTail[]>([]);
-  const [larkEntries, setLarkEntries] = useState<LarkAuditEntry[]>([]);
+  const [larkLines, setLarkLines] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,7 +74,7 @@ export function UsageLogsCard(): React.JSX.Element {
       }
       setHttpEntries(payload?.httpEntries ?? []);
       setFiles(payload?.files ?? []);
-      setLarkEntries(payload?.larkEntries ?? []);
+      setLarkLines(payload?.larkLines ?? []);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : '读取日志失败');
     } finally {
@@ -206,39 +198,22 @@ export function UsageLogsCard(): React.JSX.Element {
 
         <div>
           <p className="mb-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
-            飞书授权上报（lark-credentials-audit.ndjson）
+            lark-credentials-audit.ndjson
           </p>
-          {larkEntries.length === 0 ? (
-            <p className="text-[11px] text-[var(--color-text-muted)]">
-              暂无飞书授权上报记录（或功能未开启）。
+          {larkLines.length === 0 ? (
+            <p
+              className="text-[11px] text-[var(--color-text-muted)]"
+              data-testid="usage-log-lark-empty"
+            >
+              日志文件不存在（还没有记录）。
             </p>
           ) : (
-            <div className="space-y-1" data-testid="usage-log-lark">
-              {larkEntries.map((entry, index) => (
-                <div
-                  key={`${entry.timestamp}-${index}`}
-                  className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px]"
-                >
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                      entry.ok
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                        : 'bg-rose-500/10 text-rose-500 dark:text-rose-400'
-                    }`}
-                  >
-                    {entry.ok ? '成功' : '失败'}
-                  </span>
-                  <span className="text-[var(--color-text-muted)]">
-                    {formatTime(entry.timestamp)}
-                  </span>
-                  <span className="text-[var(--color-text-secondary)]">
-                    {entry.ok
-                      ? `已上报 ${entry.accountCount ?? entry.accounts?.length ?? 0} 个账号`
-                      : (entry.error ?? entry.message ?? '上报失败')}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <pre
+              className="max-h-40 overflow-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2 text-[10px] leading-4 text-[var(--color-text-secondary)]"
+              data-testid="usage-log-lark"
+            >
+              {larkLines.join('\n')}
+            </pre>
           )}
         </div>
       </div>

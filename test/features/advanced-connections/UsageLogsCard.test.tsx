@@ -6,7 +6,7 @@ import { UsageLogsCard } from '@features/advanced-connections/renderer/ui/UsageL
 
 const RESPONSE = {
   ok: true,
-  tail: 50,
+  tail: 10,
   httpEntries: [
     {
       ts: '2026-08-02T10:00:01.000Z',
@@ -33,10 +33,8 @@ const RESPONSE = {
       error: 'fetch failed',
     },
   ],
-  files: [
-    { name: 'conversation-upload.log', missing: false, lines: ['upload ok'] },
-    { name: 'telemetry-worker.log', missing: true, lines: [] },
-  ],
+  files: [{ name: 'conversation-upload.log', missing: false, lines: ['upload ok'] }],
+  larkLines: ['{"timestamp":"2026-08-02T10:00:02.000Z","ok":true,"accountCount":2}'],
 };
 
 describe('UsageLogsCard（服务日志）', () => {
@@ -80,9 +78,12 @@ describe('UsageLogsCard（服务日志）', () => {
     expect(entries[0]?.textContent).toContain('返回：{"discovery_id":"d-1"}');
     // 文件尾部与空态
     expect(host.querySelector('[data-testid="usage-log-tail:conversation-upload.log"]')).not.toBeNull();
-    expect(
-      host.querySelector('[data-testid="usage-log-empty:telemetry-worker.log"]')
-    ).not.toBeNull();
+    // lark 区：标题即文件名，展示脱敏 ndjson 原文
+    expect(host.textContent).toContain('lark-credentials-audit.ndjson');
+    expect(host.textContent).not.toContain('飞书授权上报');
+    expect(host.querySelector('[data-testid="usage-log-lark"]')?.textContent).toContain(
+      '"accountCount":2'
+    );
 
     // 刷新按钮触发重新拉取
     const before = fetchMock.mock.calls.length;
@@ -103,12 +104,10 @@ describe('UsageLogsCard（服务日志）', () => {
       vi.fn(async () =>
         Response.json({
           ok: true,
-          tail: 50,
+          tail: 10,
           httpEntries: [],
-          files: [
-            { name: 'conversation-upload.log', missing: true, lines: [] },
-            { name: 'telemetry-worker.log', missing: true, lines: [] },
-          ],
+          files: [{ name: 'conversation-upload.log', missing: true, lines: [] }],
+          larkLines: [],
         })
       )
     );

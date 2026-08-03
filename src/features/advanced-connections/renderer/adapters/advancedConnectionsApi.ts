@@ -2,7 +2,6 @@ import {
   ADVANCED_CONNECTIONS_API_BASE,
   type AdvancedConnectionPullTasksResult,
   type AdvancedConnectionSummary,
-  type AdvancedConnectionTokenClaimPrepareResult,
   type AdvancedConnectionTokenClaimRequest,
   type AdvancedConnectionTokenClaimResult,
   type CreateAdvancedConnectionRequest,
@@ -70,8 +69,6 @@ export const advancedConnectionsApi = {
     request(`/${encodeURIComponent(connectionId)}/insecure-allow`, { method: 'POST' }),
   pullTasks: (connectionId: string): Promise<AdvancedConnectionPullTasksResult> =>
     request(`/${encodeURIComponent(connectionId)}/team-bus/pull-tasks`, { method: 'POST' }),
-  prepareTokenClaim: (connectionId: string): Promise<AdvancedConnectionTokenClaimPrepareResult> =>
-    request(`/${encodeURIComponent(connectionId)}/token-pool/prepare`, { method: 'POST' }),
   claimAndApplyToken: (
     connectionId: string,
     body: AdvancedConnectionTokenClaimRequest

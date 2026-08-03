@@ -5,8 +5,8 @@ import type { FastifyInstance } from 'fastify';
 
 import type { AgentBusHttpLogEntry } from '../../features/advanced-connections/main/infrastructure/agentBusHttpLog';
 
-/** 用量/上传相关日志（面板「服务日志」区的文件尾部） */
-const USAGE_LOG_FILES = ['conversation-upload.log', 'telemetry-worker.log'] as const;
+/** 日志区文件白名单（标题即文件名，低调展示原文） */
+const USAGE_LOG_FILES = ['conversation-upload.log'] as const;
 
 const LARK_AUDIT_LOG = 'lark-credentials-audit.ndjson';
 
@@ -56,7 +56,7 @@ function sanitizeLarkEntry(raw: unknown): LarkAuditEntry | null {
 /** AgentBus 出站 HTTP 交互记录（JSONL，由 AgentBusHttpLogger 写入） */
 const AGENTBUS_HTTP_LOG = 'agentbus-http.log';
 
-const DEFAULT_TAIL_LINES = 50;
+const DEFAULT_TAIL_LINES = 10;
 const MAX_TAIL_LINES = 200;
 
 interface UsageLogRoutesDependencies {
@@ -113,24 +113,26 @@ export function registerUsageLogRoutes(
     );
 
     const larkAuditPath = path.join(dependencies.hermitHome, 'logs', LARK_AUDIT_LOG);
-    const larkEntries: LarkAuditEntry[] = await readFile(larkAuditPath, 'utf8')
+    // 每条直接展示脱敏后的 ndjson 原文（重新序列化 sanitize 结果），最新在前
+    const larkLines: string[] = await readFile(larkAuditPath, 'utf8')
       .then((raw) =>
         raw
           .split('\n')
           .filter((line) => line.trim().length > 0)
           .map((line) => {
             try {
-              return sanitizeLarkEntry(JSON.parse(line));
+              const sanitized = sanitizeLarkEntry(JSON.parse(line));
+              return sanitized ? JSON.stringify(sanitized) : null;
             } catch {
               return null;
             }
           })
-          .filter((entry): entry is LarkAuditEntry => entry !== null)
+          .filter((line): line is string => line !== null)
           .slice(-tail)
           .reverse()
       )
       .catch(() => []);
 
-    return { ok: true, tail, httpEntries, files, larkEntries };
+    return { ok: true, tail, httpEntries, files, larkLines };
   });
 }

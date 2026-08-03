@@ -27,10 +27,8 @@ describe('usage log routes（服务日志）', () => {
     const payload = response.json();
     expect(payload.ok).toBe(true);
     expect(payload.httpEntries).toEqual([]);
-    expect(payload.files).toEqual([
-      { name: 'conversation-upload.log', missing: true, lines: [] },
-      { name: 'telemetry-worker.log', missing: true, lines: [] },
-    ]);
+    expect(payload.files).toEqual([{ name: 'conversation-upload.log', missing: true, lines: [] }]);
+    expect(payload.larkLines).toEqual([]);
   });
 
   it('agentbus-http.log 解析 JSONL 并最新在前，tail 截断', async () => {
@@ -67,14 +65,14 @@ describe('usage log routes（服务日志）', () => {
       missing: false,
       lines: ['line-2', 'line-3'],
     });
-    expect(payload.files[1].missing).toBe(true);
+
   });
 
-  it('tail 上限 200，非法 tail 回退默认 50', async () => {
+  it('tail 上限 200，非法 tail 回退默认 10', async () => {
     await mkdir(path.join(hermitHome, 'logs'), { recursive: true });
     const capped = await app.inject({ method: 'GET', url: '/api/usage-logs?tail=9999' });
     expect(capped.json().tail).toBe(200);
     const fallback = await app.inject({ method: 'GET', url: '/api/usage-logs?tail=abc' });
-    expect(fallback.json().tail).toBe(50);
+    expect(fallback.json().tail).toBe(10);
   });
 });

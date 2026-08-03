@@ -45,11 +45,17 @@ describe('advanced connection routes', () => {
     const app = Fastify();
     const service = new AdvancedConnectionService({
       hermitHome,
-      fetchImpl: vi.fn((input: string | URL | Request) =>
+      fetchImpl: vi.fn((input: string | URL | Request, init?: RequestInit) =>
         Promise.resolve(
-          requestUrl(input).endsWith('/api/v1/auth/me')
-            ? jsonResponse({}, 401)
-            : jsonResponse({}, 404)
+          requestUrl(input).endsWith('/api/v1/auth/start') && init?.method === 'POST'
+            ? jsonResponse({
+                flow_id: 'flow-1',
+                poll_secret: 'poll-secret-1',
+                authorization_url: 'https://login.company.test/authorize',
+              })
+            : requestUrl(input).endsWith('/api/v1/auth/me')
+              ? jsonResponse({}, 401)
+              : jsonResponse({}, 404)
         )
       ) as unknown as typeof fetch,
       secretStore: emptySecretStore,

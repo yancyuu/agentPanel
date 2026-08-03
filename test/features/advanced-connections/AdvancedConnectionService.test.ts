@@ -22,9 +22,18 @@ function requestUrl(input: FetchInput): string {
 }
 
 function compatibilityFetch(): typeof fetch {
-  return vi.fn((input: string | URL | Request) =>
+  return vi.fn((input: string | URL | Request, init?: RequestInit) =>
     Promise.resolve(
-      requestUrl(input).endsWith('/api/v1/auth/me') ? jsonResponse({}, 401) : jsonResponse({}, 404)
+      // 授权面探测：POST /api/v1/auth/start 返回 device_code 契约三字段 → AgentBus 兼容
+      requestUrl(input).endsWith('/api/v1/auth/start') && init?.method === 'POST'
+        ? jsonResponse({
+            flow_id: 'flow-1',
+            poll_secret: 'poll-secret-1',
+            authorization_url: 'https://login.company.test/authorize',
+          })
+        : requestUrl(input).endsWith('/api/v1/auth/me')
+          ? jsonResponse({}, 401)
+          : jsonResponse({}, 404)
     )
   ) as unknown as typeof fetch;
 }
@@ -64,8 +73,17 @@ describe('AdvancedConnectionService', () => {
   });
 
   it('falls back to AgentBus compatibility mode when the manifest path returns the web HTML shell', async () => {
-    const fetchImpl = vi.fn((input: string | URL | Request) => {
+    const fetchImpl = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       const url = requestUrl(input);
+      if (url.endsWith('/api/v1/auth/start') && init?.method === 'POST') {
+        return Promise.resolve(
+          jsonResponse({
+            flow_id: 'flow-1',
+            poll_secret: 'poll-secret-1',
+            authorization_url: 'https://login.company.test/authorize',
+          })
+        );
+      }
       if (url.endsWith('/api/v1/auth/me')) return Promise.resolve(jsonResponse({}, 401));
       return Promise.resolve(
         new Response('<!doctype html><title>AI Monitor</title>', {
@@ -1028,11 +1046,10 @@ describe('AdvancedConnectionService', () => {
       .split('\n')
       .map((line) => JSON.parse(line) as Record<string, unknown>);
     expect(entries.length).toBeGreaterThan(0);
-    const probe = entries.find((entry) =>
-      String(entry.url).includes('/api/v1/auth/me')
-    )!;
+    const probe = entries.find((entry) => String(entry.url).includes('/api/v1/auth/start'))!;
     expect(probe).toBeDefined();
-    expect(probe.status).toBe(401);
+    expect(probe.method).toBe('POST');
+    expect(probe.status).toBe(200);
     expect(typeof probe.durationMs).toBe('number');
     expect(String(probe.url)).not.toContain('?');
     // 日志中不出现任何 token/secret 形态
@@ -1040,16 +1057,13 @@ describe('AdvancedConnectionService', () => {
     expect(raw).not.toContain('secret-token');
   });
 
-  it('两段式：prepare 返回模型列表，claim 用预传 discoveryId 跳过 discover 并按所选模型 provision', async () => {
+  it('provision 传同一次 discover 的 defaultModelApiIds（服务端精选集）', async () => {
     const secretStore = new MemorySecretStore();
     const tokenDistribution = {
       discoverCatalog: vi.fn(async () => ({
-        modelApis: [
-          { name: 'GPT 基础版', httpApiId: 'model-1', endpoint: 'https://gw/cpaopen', protocols: ['openai'], aiProtocols: [] },
-          { name: 'Claude Sonnet', httpApiId: 'model-2', endpoint: 'https://gw/cpamc-cc', protocols: [], aiProtocols: ['anthropic'] },
-        ],
+        modelApis: [],
         defaultApiName: 'Claude Sonnet',
-        defaultModelApiIds: ['model-2'],
+        defaultModelApiIds: ['cpamc-cc', 'cpamc-openai'],
         discoveryId: 'discovery-1',
         gatewayId: 'gw-1',
         regionId: 'cn-shenzhen',
@@ -1070,15 +1084,14 @@ describe('AdvancedConnectionService', () => {
         raw: {},
       })),
     };
-    const runtimeCredentialApplier = vi.fn(async () => ({
-      ok: true,
-      runtimes: [{ runtime: 'claude', ok: true, path: '/Users/test/.claude/settings.json' }],
-    }));
     const service = new AdvancedConnectionService({
       hermitHome,
       fetchImpl: compatibilityFetch(),
       secretStore,
-      runtimeCredentialApplier,
+      runtimeCredentialApplier: vi.fn(async () => ({
+        ok: true,
+        runtimes: [{ runtime: 'claude', ok: true, path: '/Users/test/.claude/settings.json' }],
+      })),
       tokenDistribution,
     });
     const connection = await service.create({ baseUrl: 'https://bus.company.test' });
@@ -1096,38 +1109,145 @@ describe('AdvancedConnectionService', () => {
       })
     );
 
-    // 第一段：目录 → 模型列表（含默认集与 tier 信息）
-    const stepEvents: { step: string; status: string }[] = [];
-    const prepared = await service.prepareTokenClaim(connection.id, (event) =>
-      stepEvents.push(event)
-    );
-    expect(prepared.discoveryId).toBe('discovery-1');
-    expect(prepared.gatewayId).toBe('gw-1');
-    expect(prepared.defaultApiName).toBe('Claude Sonnet');
-    expect(prepared.models).toEqual([
-      { id: 'model-1', name: 'GPT 基础版', endpoint: 'https://gw/cpaopen', protocols: ['openai'] },
-      { id: 'model-2', name: 'Claude Sonnet', endpoint: 'https://gw/cpamc-cc', protocols: ['anthropic'] },
-    ]);
-    expect(stepEvents).toEqual([
-      { connectionId: connection.id, step: 'discover', status: 'start' },
-      { connectionId: connection.id, step: 'discover', status: 'done', text: '默认模型 Claude Sonnet' },
-    ]);
-
-    // 第二段：预传 discoveryId + 用户所选模型 → 不再调 discover，provision 收到所选 id 与 gateway
-    tokenDistribution.discoverCatalog.mockClear();
-    const applied = await service.claimAndApplyToken(connection.id, {
-      discoveryId: prepared.discoveryId,
-      gatewayId: prepared.gatewayId,
-      modelApiIds: ['model-1'],
-      runtimes: ['claude'],
-    });
+    const applied = await service.claimAndApplyToken(connection.id, { runtimes: ['claude'] });
     expect(applied.ok).toBe(true);
-    expect(tokenDistribution.discoverCatalog).not.toHaveBeenCalled();
     expect(tokenDistribution.provisionRun).toHaveBeenCalledWith({
       discoveryId: 'discovery-1',
       gatewayId: 'gw-1',
-      aliyunModelApiIds: ['model-1'],
+      aliyunModelApiIds: ['cpamc-cc', 'cpamc-openai'],
     });
+  });
+
+  it('discovery 过期（aliyun_discovery_stale）自动重新 discover 并重试一次；再失败照常透出', async () => {
+    const secretStore = new MemorySecretStore();
+    const makeCatalog = (discoveryId: string) => ({
+      modelApis: [],
+      defaultApiName: 'Claude Sonnet',
+      defaultModelApiIds: ['cpamc-cc'],
+      discoveryId,
+      gatewayId: 'gw-1',
+      regionId: 'cn-shenzhen',
+      raw: {},
+    });
+    const tokenDistribution = {
+      discoverCatalog: vi
+        .fn()
+        .mockImplementationOnce(async () => makeCatalog('discovery-stale'))
+        .mockImplementation(async () => makeCatalog('discovery-fresh')),
+      selectModelApiIds: (ids?: string[]) => ids ?? [],
+      provisionRun: vi
+        .fn()
+        .mockImplementationOnce(async () => {
+          throw new Error(
+            '410 Gone: {"error_code":"aliyun_discovery_stale","error_message":"discovery expired"}'
+          );
+        })
+        .mockImplementation(async () => ({ runId: 'run-1', raw: {} })),
+      pollRun: vi.fn(async () => ({})),
+      claimSecret: vi.fn(async () => ({
+        key: 'sk-once',
+        keyId: 'key-1',
+        endpoint: 'https://gw/cpamc-cc',
+        endpoints: {},
+        runtimeProfiles: {},
+        modelsUrl: '',
+        modelIds: [],
+        expiresAt: null,
+        raw: {},
+      })),
+    };
+    const service = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: compatibilityFetch(),
+      secretStore,
+      runtimeCredentialApplier: vi.fn(async () => ({
+        ok: true,
+        runtimes: [{ runtime: 'claude', ok: true, path: '/Users/test/.claude/settings.json' }],
+      })),
+      tokenDistribution,
+    });
+    const connection = await service.create({ baseUrl: 'https://bus.company.test' });
+    secretStore.values.set(
+      connection.id,
+      JSON.stringify({
+        schemaVersion: 1,
+        connectionId: connection.id,
+        providerId: 'openhermit-agentbus',
+        issuerOrigin: 'https://bus.company.test',
+        accessToken: 'secret-token',
+        tokenType: 'Bearer',
+        scopes: [],
+        updatedAt: new Date().toISOString(),
+      })
+    );
+
+    // 第一次 stale → 自动重 discover（第 2 次）→ 用新 discoveryId 重试成功
+    const stepEvents: { step: string; status: string; text?: string }[] = [];
+    const applied = await service.claimAndApplyToken(connection.id, { runtimes: ['claude'] }, (e) =>
+      stepEvents.push(e)
+    );
+    expect(applied.ok).toBe(true);
+    expect(tokenDistribution.discoverCatalog).toHaveBeenCalledTimes(2);
+    expect(tokenDistribution.provisionRun).toHaveBeenCalledTimes(2);
+    expect(tokenDistribution.provisionRun).toHaveBeenNthCalledWith(2, {
+      discoveryId: 'discovery-fresh',
+      gatewayId: 'gw-1',
+      aliyunModelApiIds: ['cpamc-cc'],
+    });
+    expect(
+      stepEvents.some((e) => e.step === 'provision' && e.status === 'progress')
+    ).toBe(true);
+
+    // 连续 stale（重试也失败）→ 透出错误，不再第三次尝试
+    tokenDistribution.discoverCatalog.mockClear();
+    tokenDistribution.provisionRun.mockClear();
+    tokenDistribution.provisionRun.mockImplementation(async () => {
+      throw new Error('410 Gone: {"error_code":"aliyun_discovery_stale"}');
+    });
+    await expect(
+      service.claimAndApplyToken(connection.id, { runtimes: ['claude'] })
+    ).rejects.toThrow('Token 池认领启动失败');
+    expect(tokenDistribution.discoverCatalog).toHaveBeenCalledTimes(2);
+    expect(tokenDistribution.provisionRun).toHaveBeenCalledTimes(2);
+  });
+
+  it('授权面探测：auth/start 404 或响应缺字段均不判定为兼容服务', async () => {
+    // 404：端点不存在 → 非兼容
+    const notFoundService = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: vi.fn(async () => jsonResponse({}, 404)) as unknown as typeof fetch,
+      secretStore: new MemorySecretStore(),
+    });
+    await expect(notFoundService.discover('https://unknown.example.com')).rejects.toThrow(
+      '不是可识别的 AgentBus 服务'
+    );
+
+    // 200 但缺 device_code 契约字段 → 非兼容
+    const noFieldsService = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: vi.fn(async (input: string | URL | Request) =>
+        requestUrl(input).endsWith('/api/v1/auth/start')
+          ? jsonResponse({ ok: true })
+          : jsonResponse({}, 404)
+      ) as unknown as typeof fetch,
+      secretStore: new MemorySecretStore(),
+    });
+    await expect(noFieldsService.discover('https://odd.example.com')).rejects.toThrow(
+      '不是可识别的 AgentBus 服务'
+    );
+
+    // 4xx（非 404，端点存在）→ 判定兼容
+    const deniedService = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: vi.fn(async (input: string | URL | Request) =>
+        requestUrl(input).endsWith('/api/v1/auth/start')
+          ? jsonResponse({}, 401)
+          : jsonResponse({}, 404)
+      ) as unknown as typeof fetch,
+      secretStore: new MemorySecretStore(),
+    });
+    const discovered = await deniedService.discover('https://bus.company.test');
+    expect(discovered.compatibilityMode).toBe(true);
   });
 
   it('uses the file-based secret store end to end (secretPresent 与授权状态一致)', async () => {

@@ -16,7 +16,6 @@ import {
   type AdvancedConnectionTokenClaimRequest,
   type AdvancedConnectionTokenClaimResult,
   type AdvancedConnectionTokenClaimStepEvent,
-  type AdvancedConnectionTokenClaimPrepareResult,
   type CreateAdvancedConnectionRequest,
   type DataPermissionId,
   type DiscoverAdvancedConnectionResponse,
@@ -274,6 +273,14 @@ function normalizeAccount(value: unknown): AdvancedConnectionAccountSummary | un
     : undefined;
 }
 
+/** provision 报 discovery 过期（aliyun_discovery_stale）判定：消息或 ApiError.body 任一命中 */
+function isDiscoveryStaleError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/aliyun_discovery_stale/i.test(message)) return true;
+  const body = (error as { body?: unknown }).body;
+  return body ? /aliyun_discovery_stale/i.test(JSON.stringify(body)) : false;
+}
+
 function normalizeBaseUrl(value: string): { baseUrl: string; secure: boolean } {
   const raw = value.trim();
   if (!raw) throw new Error('请输入连接服务地址');
@@ -465,14 +472,34 @@ export class AdvancedConnectionService {
 
   async discover(baseUrlInput: string): Promise<DiscoverAdvancedConnectionResponse> {
     const { baseUrl, secure } = normalizeBaseUrl(baseUrlInput);
+    // 授权面探测（只对比授权）：well-known 探测失败时，按 CLI 同款参数 POST
+    // /api/v1/auth/start——响应含 device_code 契约三字段（flow_id/poll_secret/
+    // authorization_url）或 4xx 但端点存在（非 404），判定为 AgentBus 兼容服务。
     const compatibilityResult = async (): Promise<DiscoverAdvancedConnectionResponse | null> => {
-      const compatibilityProbe = await this.fetchImpl(`${baseUrl}/api/v1/auth/me`, {
-        headers: { Accept: 'application/json' },
+      const probe = await this.fetchImpl(`${baseUrl}/api/v1/auth/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        // client_kind:"cli" 与 CLI 一致：避免被参数校验 400 误判为不兼容
+        body: JSON.stringify({ client_kind: 'cli' }),
         signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS),
         redirect: 'error',
       }).catch(() => null);
-      if (!compatibilityProbe || ![401, 403].includes(compatibilityProbe.status)) return null;
-      return { baseUrl, secure, compatibilityMode: true, manifest: compatibilityManifest() };
+      if (!probe) return null;
+      if (probe.ok) {
+        const payload = asRecord(await probe.json().catch(() => null));
+        const flowId = stringValue(payload.flow_id) ?? stringValue(payload.deviceCode);
+        const pollSecret =
+          stringValue(payload.poll_secret) ?? stringValue(payload.pollSecret) ?? flowId;
+        const authorizationUrl =
+          stringValue(payload.authorization_url) ?? stringValue(payload.verificationUriComplete);
+        return flowId && pollSecret && authorizationUrl
+          ? { baseUrl, secure, compatibilityMode: true, manifest: compatibilityManifest() }
+          : null;
+      }
+      if (probe.status !== 404 && probe.status >= 400 && probe.status < 500) {
+        return { baseUrl, secure, compatibilityMode: true, manifest: compatibilityManifest() };
+      }
+      return null;
     };
 
     const discoveryUrl = `${baseUrl}/.well-known/hermit-provider.json`;
@@ -688,72 +715,6 @@ export class AdvancedConnectionService {
     return this.toSummary(updated);
   }
 
-  /**
-   * Token 领取第一段：读取目录并返回可选模型列表。
-   * 用户在面板选定模型后，claim-apply 携带 discoveryId+modelApiIds 进入第二段。
-   */
-  async prepareTokenClaim(
-    connectionId: string,
-    onStep?: (event: AdvancedConnectionTokenClaimStepEvent) => void
-  ): Promise<AdvancedConnectionTokenClaimPrepareResult> {
-    const record = await this.requireRecord(connectionId);
-    this.assertAuthorizedTransport(record);
-    if (!record.manifest.capabilities.some((item) => item.id === 'token-pool')) {
-      throw new Error('该服务未提供 Token 池');
-    }
-    const emit = (
-      step: AdvancedConnectionTokenClaimStepEvent['step'],
-      status: AdvancedConnectionTokenClaimStepEvent['status'],
-      extra: { text?: string; error?: string } = {}
-    ): void => {
-      onStep?.({ connectionId, step, status, ...extra });
-    };
-    const tokenDistribution = await (this.injectedTokenDistribution ??
-      loadTokenDistributionRuntime());
-    emit('discover', 'start');
-    const catalog = await tokenDistribution.discoverCatalog({}).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      emit('discover', 'error', { error: message });
-      throw new Error(`读取 Token 池目录失败：${message}`);
-    });
-    if (!catalog.discoveryId) {
-      emit('discover', 'error', { error: '目录未返回 discovery_id' });
-      throw new Error('读取 Token 池目录失败：目录未返回 discovery_id');
-    }
-    emit('discover', 'done', {
-      ...(catalog.defaultApiName ? { text: `默认模型 ${catalog.defaultApiName}` } : {}),
-    });
-    const models = catalog.modelApis.flatMap((api) => {
-      const item = asRecord(api);
-      const id = stringValue(item.httpApiId);
-      const name = stringValue(item.name);
-      if (!id || !name) return [];
-      const protocols = (
-        Array.isArray(item.aiProtocols) && item.aiProtocols.length > 0
-          ? item.aiProtocols
-          : Array.isArray(item.protocols)
-            ? item.protocols
-            : []
-      ).filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()));
-      return [
-        {
-          id,
-          name,
-          ...(stringValue(item.endpoint) ? { endpoint: stringValue(item.endpoint) } : {}),
-          ...(protocols.length > 0 ? { protocols } : {}),
-        },
-      ];
-    });
-    return {
-      ok: true,
-      discoveryId: catalog.discoveryId,
-      ...(catalog.gatewayId ? { gatewayId: catalog.gatewayId } : {}),
-      ...(catalog.defaultApiName ? { defaultApiName: catalog.defaultApiName } : {}),
-      defaultModelApiIds: catalog.defaultModelApiIds,
-      models,
-    };
-  }
-
   async claimAndApplyToken(
     connectionId: string,
     request: AdvancedConnectionTokenClaimRequest,
@@ -793,45 +754,51 @@ export class AdvancedConnectionService {
     try {
       const tokenDistribution = await (this.injectedTokenDistribution ??
         loadTokenDistributionRuntime());
-      // 目录来源：预传 discoveryId（选模型两段式，用户已在面板选定）则跳过 discover；
-      // 否则自动读取目录并用服务端精选默认模型集
-      let discoveryId: string;
-      let gatewayId: string | null;
-      let fallbackModelApiIds: string[] = [];
-      if (request.discoveryId?.trim()) {
-        discoveryId = request.discoveryId.trim();
-        gatewayId = request.gatewayId?.trim() || null;
-      } else {
-        // 1. 读取目录（region 默认 cn-shenzhen 由 tokenDistribution 模块内置，service 不出现 region）
-        emit('discover', 'start');
-        const catalog = await tokenDistribution
-          .discoverCatalog({})
-          .catch(stepError('discover', '读取 Token 池目录失败'));
-        if (!catalog.discoveryId) {
-          stepError('discover', '读取 Token 池目录失败')(new Error('目录未返回 discovery_id'));
+      // 1. 读取目录（region 默认 cn-shenzhen 由模块内置；defaultModelApiIds 即服务端
+      // consumer-ready 精选集合，如 cpamc-cc / cpamc-openai——provision 不传全量目录）
+      emit('discover', 'start');
+      let catalog = await tokenDistribution
+        .discoverCatalog({})
+        .catch(stepError('discover', '读取 Token 池目录失败'));
+      if (!catalog.discoveryId) {
+        stepError('discover', '读取 Token 池目录失败')(new Error('目录未返回 discovery_id'));
+      }
+      emit('discover', 'done', {
+        ...(catalog.defaultApiName ? { text: `默认模型 ${catalog.defaultApiName}` } : {}),
+      });
+      // 2. 发起认领：传同一次 discover 返回的 defaultModelApiIds（服务端精选集）；
+      // discovery 过期（aliyun_discovery_stale）时自动重新 discover 一次并重试 provision（仅一次）
+      emit('provision', 'start');
+      let runId: string;
+      try {
+        ({ runId } = await tokenDistribution.provisionRun({
+          discoveryId: catalog.discoveryId as string,
+          gatewayId: catalog.gatewayId,
+          aliyunModelApiIds: tokenDistribution.selectModelApiIds(catalog.defaultModelApiIds),
+        }));
+      } catch (error) {
+        if (!isDiscoveryStaleError(error)) {
+          stepError('provision', 'Token 池认领启动失败')(error);
         }
-        discoveryId = catalog.discoveryId as string;
-        gatewayId = catalog.gatewayId;
-        fallbackModelApiIds = tokenDistribution.selectModelApiIds(catalog.defaultModelApiIds);
+        emit('provision', 'progress', { text: 'discovery 已过期，重新读取目录并重试' });
+        emit('discover', 'start');
+        catalog = await tokenDistribution
+          .discoverCatalog({})
+          .catch(stepError('discover', '重新读取 Token 池目录失败'));
+        if (!catalog.discoveryId) {
+          stepError('discover', '重新读取 Token 池目录失败')(new Error('目录未返回 discovery_id'));
+        }
         emit('discover', 'done', {
           ...(catalog.defaultApiName ? { text: `默认模型 ${catalog.defaultApiName}` } : {}),
         });
+        ({ runId } = await tokenDistribution
+          .provisionRun({
+            discoveryId: catalog.discoveryId as string,
+            gatewayId: catalog.gatewayId,
+            aliyunModelApiIds: tokenDistribution.selectModelApiIds(catalog.defaultModelApiIds),
+          })
+          .catch(stepError('provision', 'Token 池认领启动失败')));
       }
-      // 2. 发起认领（模型集：用户所选 > 服务端精选 default_model_api_ids）
-      emit('provision', 'start');
-      const modelApiIds = request.modelApiIds?.length
-        ? [...new Set(request.modelApiIds.map((id) => id.trim()).filter(Boolean))]
-        : fallbackModelApiIds;
-      if (modelApiIds.length === 0) {
-        stepError('provision', 'Token 池认领启动失败')(new Error('未选择可用模型'));
-      }
-      const { runId } = await tokenDistribution
-        .provisionRun({
-          discoveryId,
-          gatewayId,
-          aliyunModelApiIds: modelApiIds,
-        })
-        .catch(stepError('provision', 'Token 池认领启动失败'));
       emit('provision', 'done');
       // 3. 等待开通（onTick 透传服务端状态做进度）
       emit('poll', 'start');

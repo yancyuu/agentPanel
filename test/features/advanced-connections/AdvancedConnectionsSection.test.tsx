@@ -41,14 +41,10 @@ function renderSection(props: {
   onStartAuth?: (connection: AdvancedConnectionSummary) => void;
   onAllowInsecure?: (connectionId: string) => void;
   onSetUsageReporting?: (connectionId: string, enabled: boolean) => void;
-  onPrepareTokenClaim?: (connectionId: string) => void;
-  onConfirmClaimModel?: (connectionId: string, model: { id: string; name: string }) => void;
-  onCancelClaimModel?: (connectionId: string) => void;
   busyAction?: string | null;
   channelStatus?: Parameters<typeof AdvancedConnectionsSection>[0]['channelStatus'];
   catalogStatus?: Parameters<typeof AdvancedConnectionsSection>[0]['catalogStatus'];
   claimSteps?: Parameters<typeof AdvancedConnectionsSection>[0]['claimSteps'];
-  claimCatalogs?: Parameters<typeof AdvancedConnectionsSection>[0]['claimCatalogs'];
 }): { host: HTMLElement; root: ReturnType<typeof createRoot> } {
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -66,7 +62,6 @@ function renderSection(props: {
         notice={null}
         catalogStatus={props.catalogStatus ?? {}}
         claimSteps={props.claimSteps ?? {}}
-        claimCatalogs={props.claimCatalogs ?? {}}
         channelStatus={props.channelStatus ?? {}}
         onHostChange={vi.fn()}
         onDiscover={vi.fn()}
@@ -77,9 +72,7 @@ function renderSection(props: {
         onAllowInsecure={props.onAllowInsecure ?? vi.fn()}
         onPullRemoteTasks={vi.fn()}
         onSetUsageReporting={props.onSetUsageReporting ?? vi.fn()}
-        onPrepareTokenClaim={props.onPrepareTokenClaim ?? vi.fn()}
-        onConfirmClaimModel={props.onConfirmClaimModel ?? vi.fn()}
-        onCancelClaimModel={props.onCancelClaimModel ?? vi.fn()}
+        onClaimAndApplyToken={vi.fn()}
         onRefresh={vi.fn()}
       />
     );
@@ -360,116 +353,6 @@ describe('AdvancedConnectionsSection', () => {
     );
   });
 
-  it('目录后展示模型列表：默认勾选服务端默认项，确认/取消回调正确', () => {
-    const onConfirmClaimModel = vi.fn();
-    const onCancelClaimModel = vi.fn();
-    const connection = makeConnection({
-      state: 'authenticated',
-      secretPresent: true,
-      secure: true,
-      baseUrl: 'https://bus.company.test',
-    });
-    const { host } = renderSection({
-      connections: [connection],
-      claimCatalogs: {
-        [connection.id]: {
-          ok: true,
-          discoveryId: 'd-1',
-          defaultApiName: 'Claude Sonnet',
-          defaultModelApiIds: ['model-2'],
-          models: [
-            { id: 'model-1', name: 'GPT 基础版', protocols: ['openai'] },
-            { id: 'model-2', name: 'Claude Sonnet', protocols: ['anthropic', 'openai'] },
-          ],
-        },
-      },
-      onConfirmClaimModel,
-      onCancelClaimModel,
-    });
-
-    const picker = host.querySelector('[data-testid="claim-model-picker"]');
-    expect(picker).not.toBeNull();
-    const radios = [...host.querySelectorAll<HTMLInputElement>('input[name="claim-model"]')];
-    expect(radios).toHaveLength(2);
-    // 默认勾选 defaultModelApiIds 命中的 model-2（Claude Sonnet）
-    expect(radios.find((radio) => radio.checked)?.value).toBe('model-2');
-    expect(picker?.textContent).toContain('anthropic / openai');
-
-    // 确认 → 回调所选模型
-    clickButton(host, '确认领取');
-    expect(onConfirmClaimModel).toHaveBeenCalledWith(connection.id, {
-      id: 'model-2',
-      name: 'Claude Sonnet',
-    });
-
-    // 取消 → 回调取消，不触发确认
-    clickButton(host, '取消');
-    expect(onCancelClaimModel).toHaveBeenCalledWith(connection.id);
-    expect(onConfirmClaimModel).toHaveBeenCalledTimes(1);
-  });
-
-  it('改选其他模型后确认，回调所选 id', () => {
-    const onConfirmClaimModel = vi.fn();
-    const connection = makeConnection({
-      state: 'authenticated',
-      secretPresent: true,
-      secure: true,
-      baseUrl: 'https://bus.company.test',
-    });
-    const { host } = renderSection({
-      connections: [connection],
-      claimCatalogs: {
-        [connection.id]: {
-          ok: true,
-          discoveryId: 'd-1',
-          defaultModelApiIds: ['model-2'],
-          models: [
-            { id: 'model-1', name: 'GPT 基础版' },
-            { id: 'model-2', name: 'Claude Sonnet' },
-          ],
-        },
-      },
-      onConfirmClaimModel,
-    });
-
-    const first = host.querySelector<HTMLInputElement>('input[name="claim-model"][value="model-1"]')!;
-    act(() => {
-      first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    clickButton(host, '确认领取');
-    expect(onConfirmClaimModel).toHaveBeenCalledWith(connection.id, {
-      id: 'model-1',
-      name: 'GPT 基础版',
-    });
-  });
-
-  it('目录无可用模型时给空态提示，不出现确认按钮', () => {
-    const connection = makeConnection({
-      state: 'authenticated',
-      secretPresent: true,
-      secure: true,
-      baseUrl: 'https://bus.company.test',
-    });
-    const { host } = renderSection({
-      connections: [connection],
-      claimCatalogs: {
-        [connection.id]: {
-          ok: true,
-          discoveryId: 'd-1',
-          defaultModelApiIds: [],
-          models: [],
-        },
-      },
-    });
-
-    expect(host.querySelector('[data-testid="claim-models-empty"]')).not.toBeNull();
-    expect(host.textContent).toContain('目录暂无可用模型，无法继续领取');
-    expect(
-      [...host.querySelectorAll('button')].some((button) =>
-        button.textContent?.includes('确认领取')
-      )
-    ).toBe(false);
-  });
 });
 
 describe('describeConnectionOperationError', () => {

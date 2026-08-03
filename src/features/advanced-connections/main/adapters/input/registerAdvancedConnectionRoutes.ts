@@ -146,22 +146,6 @@ export function registerAdvancedConnectionRoutes(
     }
   );
 
-  app.post<{ Params: { connectionId: string } }>(
-    '/api/advanced-connections/:connectionId/token-pool/prepare',
-    async (request, reply) => {
-      try {
-        return await dependencies.service.prepareTokenClaim(
-          request.params.connectionId,
-          dependencies.onTokenClaimStep
-        );
-      } catch (error) {
-        return reply
-          .code(400)
-          .send({ ok: false, error: errorMessage(error, 'Token 池目录读取失败') });
-      }
-    }
-  );
-
   app.post<{
     Params: { connectionId: string };
     Body: AdvancedConnectionTokenClaimRequest;
@@ -170,9 +154,6 @@ export function registerAdvancedConnectionRoutes(
       return await dependencies.service.claimAndApplyToken(
         request.params.connectionId,
         {
-          modelApiIds: Array.isArray(request.body?.modelApiIds)
-            ? request.body.modelApiIds
-            : undefined,
           runtimes: Array.isArray(request.body?.runtimes) ? request.body.runtimes : [],
           model: request.body?.model,
           wireApi: request.body?.wireApi,
