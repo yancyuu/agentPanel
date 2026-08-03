@@ -1,10 +1,19 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { AdvancedConnectionService } from '@features/advanced-connections/main';
 import type { ConnectionSecretStore } from '@features/advanced-connections/main/infrastructure/SystemCredentialSecretStore';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// 版本比较用 CLI 真实实现（sortModelsByVersion/pickHighestVersionModel），不在测试里重写
+const { sortModelsByVersion, pickHighestVersionModel } = (await import(
+  pathToFileURL(path.join(process.cwd(), 'bin', 'lib', 'tokenDistribution.mjs')).href
+)) as {
+  sortModelsByVersion(modelIds: string[]): string[];
+  pickHighestVersionModel(modelIds: string[]): string | null;
+};
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -627,10 +636,12 @@ describe('AdvancedConnectionService', () => {
         },
         runtimeProfiles: {},
         modelsUrl: '',
-        modelIds: ['claude-sonnet-4'],
+        modelIds: ['glm-4.5-air', 'glm-5.2', 'glm-5.1'],
         expiresAt: '2027-01-01T00:00:00.000Z',
         raw: {},
       })),
+      sortModelsByVersion,
+      pickHighestVersionModel,
     };
     let service: AdvancedConnectionService;
     const onAuthenticated = vi.fn(async (connectionId: string) => {
@@ -661,7 +672,7 @@ describe('AdvancedConnectionService', () => {
     expect(JSON.stringify(auth)).not.toContain('poll-secret-1');
 
     let loggedIn = (await service.list())[0];
-    for (let attempt = 0; attempt < 20 && loggedIn?.state === 'authenticating'; attempt += 1) {
+    for (let attempt = 0; attempt < 30 && loggedIn?.state !== 'connected'; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 100));
       loggedIn = (await service.list())[0];
     }
@@ -677,16 +688,47 @@ describe('AdvancedConnectionService', () => {
 
     expect(secretStore.values.get(connection.id)).toContain('secret-access-token');
 
-    // 链式领取：discover → provision → poll → claim → apply（步骤事件按序发出）
+    // 链式第一段：discover → provision → poll → claim → 挂起选模型（receipt 含授权清单）
     const stepEvents: { step: string; status: string; text?: string; error?: string }[] = [];
-    const applied = await service.claimAndApplyToken(
+    const staged = await service.claimAndApplyToken(
       connection.id,
       { runtimes: ['claude', 'codex', 'pi'] },
+      (event) => stepEvents.push(event)
+    );
+    expect(staged).toMatchObject({
+      ok: true,
+      stage: 'select-model',
+      modelIds: ['glm-5.2', 'glm-5.1', 'glm-4.5-air'],
+      recommendedModel: 'glm-5.2',
+    });
+    expect(JSON.stringify(staged)).not.toContain('sk-secret-token-pool-value');
+    // 推荐项 = CLI 同款 pickHighestVersionModel（5.2 > 5.1 > 4.5-air）
+    expect(pickHighestVersionModel(['glm-4.5-air', 'glm-5.2', 'glm-5.1'])).toBe('glm-5.2');
+    expect(tokenDistribution.discoverCatalog).toHaveBeenCalledTimes(1);
+    expect(tokenDistribution.provisionRun).toHaveBeenCalledWith({
+      discoveryId: 'discovery-1',
+      gatewayId: 'gw-1',
+      aliyunModelApiIds: ['model-1'],
+    });
+    expect(tokenDistribution.pollRun).toHaveBeenCalledWith('run-1', expect.anything());
+    expect(tokenDistribution.claimSecret).toHaveBeenCalledWith('run-1');
+    // 挂起中防重入
+    await expect(
+      service.claimAndApplyToken(connection.id, { runtimes: ['claude'] })
+    ).rejects.toThrow('正在执行');
+    // 「读取目录」步骤无多余信息行（默认模型文案已删）
+    expect(stepEvents.find((e) => e.step === 'discover' && e.status === 'done')?.text).toBeUndefined();
+
+    // 第二段：确认所选模型 → 写入配置带 choices.model
+    const applied = await service.confirmClaimModel(
+      connection.id,
+      { model: 'glm-5.1' },
       (event) => stepEvents.push(event)
     );
     expect(applied).toMatchObject({
       ok: true,
       keyId: 'key-1',
+      model: 'glm-5.1',
       expiresAt: '2027-01-01T00:00:00.000Z',
       runtimes: [
         { runtime: 'claude', ok: true, path: 'settings.json' },
@@ -699,20 +741,13 @@ describe('AdvancedConnectionService', () => {
     expect(runtimeCredentialApplier).toHaveBeenCalledWith(
       expect.objectContaining({
         secret: expect.objectContaining({ key: 'sk-secret-token-pool-value' }),
+        choices: expect.objectContaining({ model: 'glm-5.1' }),
         runtimes: ['claude', 'codex', 'pi'],
       })
     );
-    expect(tokenDistribution.discoverCatalog).toHaveBeenCalledTimes(1);
-    expect(tokenDistribution.provisionRun).toHaveBeenCalledWith({
-      discoveryId: 'discovery-1',
-      gatewayId: 'gw-1',
-      aliyunModelApiIds: ['model-1'],
-    });
-    expect(tokenDistribution.pollRun).toHaveBeenCalledWith('run-1', expect.anything());
-    expect(tokenDistribution.claimSecret).toHaveBeenCalledWith('run-1');
-    // 步骤顺序与进度（discover/provision/poll/claim/apply 全部 done，poll 有 progress）
+    // 步骤顺序与进度（六步全部 done，poll 有 progress）
     const doneSteps = stepEvents.filter((e) => e.status === 'done').map((e) => e.step);
-    expect(doneSteps).toEqual(['discover', 'provision', 'poll', 'claim', 'apply']);
+    expect(doneSteps).toEqual(['discover', 'provision', 'poll', 'claim', 'select-model', 'apply']);
     expect(stepEvents.some((e) => e.step === 'poll' && e.status === 'progress')).toBe(true);
     // service 代码不再直接请求第二套 /aliyun/* 端点
     expect(
@@ -778,7 +813,7 @@ describe('AdvancedConnectionService', () => {
 
     await service.startAuthentication(connection.id, 'device');
     let loggedIn = (await service.list())[0];
-    for (let attempt = 0; attempt < 20 && loggedIn?.state === 'authenticating'; attempt += 1) {
+    for (let attempt = 0; attempt < 30 && loggedIn?.state !== 'connected'; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 100));
       loggedIn = (await service.list())[0];
     }
@@ -967,6 +1002,8 @@ describe('AdvancedConnectionService', () => {
           })
       ),
       claimSecret: vi.fn(),
+      sortModelsByVersion,
+      pickHighestVersionModel,
     };
     const service = new AdvancedConnectionService({
       hermitHome,
@@ -1079,10 +1116,12 @@ describe('AdvancedConnectionService', () => {
         endpoints: {},
         runtimeProfiles: {},
         modelsUrl: '',
-        modelIds: ['claude-sonnet-4'],
+        modelIds: [],
         expiresAt: null,
         raw: {},
       })),
+      sortModelsByVersion,
+      pickHighestVersionModel,
     };
     const service = new AdvancedConnectionService({
       hermitHome,
@@ -1155,6 +1194,8 @@ describe('AdvancedConnectionService', () => {
         expiresAt: null,
         raw: {},
       })),
+      sortModelsByVersion,
+      pickHighestVersionModel,
     };
     const service = new AdvancedConnectionService({
       hermitHome,
@@ -1248,6 +1289,78 @@ describe('AdvancedConnectionService', () => {
     });
     const discovered = await deniedService.discover('https://bus.company.test');
     expect(discovered.compatibilityMode).toBe(true);
+  });
+
+  it('取消领取：丢弃已领 key 不写配置，随后可重新发起', async () => {
+    const secretStore = new MemorySecretStore();
+    const runtimeCredentialApplier = vi.fn(async () => ({
+      ok: true,
+      runtimes: [{ runtime: 'claude', ok: true, path: '/Users/test/.claude/settings.json' }],
+    }));
+    const tokenDistribution = {
+      discoverCatalog: vi.fn(async () => ({
+        modelApis: [],
+        defaultApiName: null,
+        defaultModelApiIds: ['model-1'],
+        discoveryId: 'discovery-1',
+        gatewayId: null,
+        regionId: 'cn-shenzhen',
+        raw: {},
+      })),
+      selectModelApiIds: (ids?: string[]) => ids ?? [],
+      provisionRun: vi.fn(async () => ({ runId: 'run-1', raw: {} })),
+      pollRun: vi.fn(async () => ({})),
+      claimSecret: vi.fn(async () => ({
+        key: 'sk-pending-burn',
+        keyId: 'key-1',
+        endpoint: '',
+        endpoints: {},
+        runtimeProfiles: {},
+        modelsUrl: '',
+        modelIds: ['glm-5.2', 'glm-5.1'],
+        expiresAt: null,
+        raw: {},
+      })),
+      sortModelsByVersion,
+      pickHighestVersionModel,
+    };
+    const service = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: compatibilityFetch(),
+      secretStore,
+      runtimeCredentialApplier,
+      tokenDistribution,
+    });
+    const connection = await service.create({ baseUrl: 'https://bus.company.test' });
+    secretStore.values.set(
+      connection.id,
+      JSON.stringify({
+        schemaVersion: 1,
+        connectionId: connection.id,
+        providerId: 'openhermit-agentbus',
+        issuerOrigin: 'https://bus.company.test',
+        accessToken: 'secret-token',
+        tokenType: 'Bearer',
+        scopes: [],
+        updatedAt: new Date().toISOString(),
+      })
+    );
+
+    const staged = await service.claimAndApplyToken(connection.id, { runtimes: ['claude'] });
+    expect(staged).toMatchObject({ stage: 'select-model', recommendedModel: 'glm-5.2' });
+
+    await service.cancelTokenClaim(connection.id);
+    // 不写配置、key 不落盘
+    expect(runtimeCredentialApplier).not.toHaveBeenCalled();
+    const indexRaw = await readFile(
+      path.join(hermitHome, 'connections', 'index.json'),
+      'utf8'
+    );
+    expect(indexRaw).not.toContain('sk-pending-burn');
+    // 取消后锁已释放，可重新发起
+    const restaged = await service.claimAndApplyToken(connection.id, { runtimes: ['claude'] });
+    expect(restaged).toMatchObject({ stage: 'select-model' });
+    await service.cancelTokenClaim(connection.id);
   });
 
   it('uses the file-based secret store end to end (secretPresent 与授权状态一致)', async () => {

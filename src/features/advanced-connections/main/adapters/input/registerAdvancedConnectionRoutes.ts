@@ -166,4 +166,30 @@ export function registerAdvancedConnectionRoutes(
       return reply.code(status).send({ ok: false, error: message });
     }
   });
+
+  app.post<{ Params: { connectionId: string }; Body: { model?: string } }>(
+    '/api/advanced-connections/:connectionId/token-pool/claim-confirm',
+    async (request, reply) => {
+      try {
+        return await dependencies.service.confirmClaimModel(
+          request.params.connectionId,
+          { model: request.body?.model ?? '' },
+          dependencies.onTokenClaimStep
+        );
+      } catch (error) {
+        return reply.code(400).send({ ok: false, error: errorMessage(error, '模型确认失败') });
+      }
+    }
+  );
+
+  app.post<{ Params: { connectionId: string } }>(
+    '/api/advanced-connections/:connectionId/token-pool/claim-cancel',
+    async (request, reply) => {
+      try {
+        return await dependencies.service.cancelTokenClaim(request.params.connectionId);
+      } catch (error) {
+        return reply.code(400).send({ ok: false, error: errorMessage(error, '取消领取失败') });
+      }
+    }
+  );
 }

@@ -1027,9 +1027,10 @@ async function recoverCodexContextBeforeOffset(
       const firstRoot = payload.workspace_roots.find((root) => typeof root === 'string' && root);
       if (typeof firstRoot === 'string') recovered.projectPath = firstRoot;
     }
-    if (payload.type === 'turn_context') {
-      recovered.model = exactCodexModel(payload.model) ?? recovered.model;
-    }
+    // Real Codex turn_context records keep the discriminator on obj.type and
+    // often omit payload.type entirely. Recover every exact payload.model so an
+    // incremental scan retains the last model seen before the server cursor.
+    recovered.model = exactCodexModel(payload.model) ?? recovered.model;
     if (!recovered.startedAt && typeof payload.started_at === 'string') {
       recovered.startedAt = payload.started_at;
     }
@@ -1129,7 +1130,10 @@ async function collectCodexMessages(
             parentRef: null,
             role: args.role,
             occurredAt: args.occurredAt,
-            modelName: typeof args.payload?.model === 'string' ? args.payload.model : codexModel,
+            // Provider labels such as "openai" are not billable model names.
+            // Keep the recovered exact model instead of letting a generic label
+            // on the current record overwrite it.
+            modelName: exactCodexModel(args.payload?.model) ?? codexModel,
             content: args.content,
             contentFormat: args.contentFormat,
             usage: args.usage,
@@ -1168,12 +1172,9 @@ async function collectCodexMessages(
           if (!startedAt && typeof payload.timestamp === 'string') startedAt = payload.timestamp;
         }
         const payloadType = String(payload?.type ?? '');
-        if (
-          (payloadType === 'token_count' ||
-            payloadType === 'user_message' ||
-            payloadType === 'agent_message') &&
-          !codexModel
-        ) {
+        // Exact model is a pricing requirement only for records carrying token
+        // usage. Plain user/assistant text remains valid without model metadata.
+        if (payloadType === 'token_count' && !codexModel) {
           missingModelAtOffset = consumedOffset;
           break;
         }

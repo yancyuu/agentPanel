@@ -124,24 +124,6 @@ export function usageDaemonPayload(server) {
 
 // --- Upload status helpers ---------------------------------------------------
 
-function authScopes(auth = readOpenHermitAuthStatus()) {
-  const scopes = Array.isArray(auth.scopes)
-    ? auth.scopes
-    : normalizeScopes({ scope: auth.scope }) || [];
-  return new Set(scopes);
-}
-
-function hasUploadScopes(auth = readOpenHermitAuthStatus()) {
-  const scopes = authScopes(auth);
-  return scopes.has('upload:read') && scopes.has('upload:write');
-}
-
-function normalizeScopes({ scope }) {
-  if (!scope) return null;
-  if (Array.isArray(scope)) return scope;
-  return scope.split(/[,\s]+/).filter(Boolean);
-}
-
 // Server channel status strings (succeeded / unknown / failed / never_reported)
 // are protocol values, not user-facing labels — humanize so "unknown" during a
 // first/in-flight upload reads as a normal waiting state instead of the alarming
@@ -188,7 +170,6 @@ export function cursorStatusText(channel = {}) {
 }
 
 function conversationUploadRows(auth = readOpenHermitAuthStatus(), remote = null) {
-  const missingUploadScope = auth.authorized && !hasUploadScopes(auth);
   const rows = [];
 
   if (remote) {
@@ -232,8 +213,7 @@ function conversationUploadRows(auth = readOpenHermitAuthStatus(), remote = null
     }
   }
 
-  if (missingUploadScope) rows.push(['授权', '缺少 upload:read/upload:write，请重新登录', 'warn']);
-  else if (!auth.authorized) rows.push(['授权', '未登录，请在「用户」中登录', 'warn']);
+  if (!auth.authorized) rows.push(['授权', '未登录，请在「用户」中登录', 'warn']);
 
   return rows;
 }

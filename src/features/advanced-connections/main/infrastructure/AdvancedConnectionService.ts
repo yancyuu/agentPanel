@@ -14,6 +14,7 @@ import {
   type AdvancedConnectionSummary,
   type AdvancedConnectionSyncResult,
   type AdvancedConnectionTokenClaimRequest,
+  type AdvancedConnectionTokenClaimResponse,
   type AdvancedConnectionTokenClaimResult,
   type AdvancedConnectionTokenClaimStepEvent,
   type CreateAdvancedConnectionRequest,
@@ -47,6 +48,20 @@ import {
 import { createAgentBusHttpLogger } from './agentBusHttpLog';
 
 const CONNECTION_SCHEMA_VERSION = 1;
+
+/** 待选模型的挂起领取：与 discovery 同寿命（15 分钟），过期需重新发起 */
+const PENDING_CLAIM_TTL_MS = 15 * 60 * 1000;
+
+interface PendingTokenClaim {
+  claimedSecret: Record<string, unknown>;
+  claimedKey: string;
+  keyId?: string;
+  expiresAt?: string;
+  modelIds: string[];
+  runtimes: AdvancedConnectionRuntimeId[];
+  wireApi?: 'responses' | 'chat';
+  createdAtMs: number;
+}
 const DISCOVERY_TIMEOUT_MS = 10_000;
 const AUTH_REQUEST_TIMEOUT_MS = 30_000;
 // eslint-disable-next-line sonarjs/no-hardcoded-ip -- explicit cloud metadata blocklist
@@ -199,6 +214,10 @@ interface TokenDistributionRuntime {
     expiresAt: string | null;
     raw: unknown;
   }>;
+  /** 版本号降序排序（点分数字段数值比较；与 CLI 同一实现，勿重写比较逻辑） */
+  sortModelsByVersion(modelIds: string[]): string[];
+  /** 推荐项 = 最高版本模型（sortModelsByVersion[0]） */
+  pickHighestVersionModel(modelIds: string[]): string | null;
 }
 
 let tokenDistributionModule: Promise<TokenDistributionRuntime> | undefined;
@@ -416,6 +435,8 @@ export class AdvancedConnectionService {
   private readonly onAuthenticated?: (connectionId: string) => Promise<void> | void;
   private readonly attempts = new Map<string, AuthAttempt>();
   private readonly activeTokenClaims = new Set<string>();
+  /** 已领取待选模型的凭证（即焚：仅内存，confirm/cancel/TTL 到期清除） */
+  private readonly pendingTokenClaims = new Map<string, PendingTokenClaim>();
   private mutationQueue: Promise<void> = Promise.resolve();
 
   constructor(options: AdvancedConnectionServiceOptions) {
@@ -719,7 +740,7 @@ export class AdvancedConnectionService {
     connectionId: string,
     request: AdvancedConnectionTokenClaimRequest,
     onStep?: (event: AdvancedConnectionTokenClaimStepEvent) => void
-  ): Promise<AdvancedConnectionTokenClaimResult> {
+  ): Promise<AdvancedConnectionTokenClaimResponse> {
     const record = await this.requireRecord(connectionId);
     this.assertAuthorizedTransport(record);
     if (!record.manifest.capabilities.some((item) => item.id === 'token-pool')) {
@@ -735,48 +756,12 @@ export class AdvancedConnectionService {
     if (runtimes.length === 0) throw new Error('请至少选择一个本地运行时');
 
     // 链式步骤事件（面板进度 + SSE token-claim-event）；失败停在对应步骤并透出服务端原始错误
-    const emit = (
-      step: AdvancedConnectionTokenClaimStepEvent['step'],
-      status: AdvancedConnectionTokenClaimStepEvent['status'],
-      extra: { text?: string; error?: string } = {}
-    ): void => {
-      onStep?.({ connectionId, step, status, ...extra });
-    };
-    const stepError = (step: AdvancedConnectionTokenClaimStepEvent['step'], label: string) => {
-      return (error: unknown): never => {
-        const message = error instanceof Error ? error.message : String(error);
-        emit(step, 'error', { error: message });
-        throw new Error(`${label}：${message}`);
-      };
-    };
+    const { emit, stepError } = this.createClaimStepEmitters(connectionId, onStep);
 
     this.activeTokenClaims.add(connectionId);
     try {
       const tokenDistribution = await (this.injectedTokenDistribution ??
         loadTokenDistributionRuntime());
-      // 目录里真正用于开通的是 defaultModelApiIds（服务端精选集），展示名称也从
-      // 精选集解析（cpamc-cc、cpamc-openai），而不是 defaultApiName——避免误导。
-      const describeDefaultModels = (catalog: {
-        modelApis?: unknown;
-        defaultModelApiIds?: unknown;
-        defaultApiName?: string | null;
-      }): string | undefined => {
-        const ids = new Set(
-          (Array.isArray(catalog.defaultModelApiIds) ? catalog.defaultModelApiIds : []).map(String)
-        );
-        const apis = Array.isArray(catalog.modelApis) ? catalog.modelApis : [];
-        const names = apis
-          .filter((api) => {
-            const record = (api ?? {}) as { id?: unknown; name?: unknown };
-            return record.id != null && ids.has(String(record.id));
-          })
-          .map((api) => {
-            const record = (api ?? {}) as { id?: unknown; name?: unknown };
-            return typeof record.name === 'string' && record.name ? record.name : String(record.id);
-          });
-        if (names.length > 0) return `默认模型 ${names.join('、')}`;
-        return catalog.defaultApiName ? `默认模型 ${catalog.defaultApiName}` : undefined;
-      };
       // 1. 读取目录（region 默认 cn-shenzhen 由模块内置；defaultModelApiIds 即服务端
       // consumer-ready 精选集合，如 cpamc-cc / cpamc-openai——provision 不传全量目录）
       emit('discover', 'start');
@@ -786,9 +771,7 @@ export class AdvancedConnectionService {
       if (!catalog.discoveryId) {
         stepError('discover', '读取 Token 池目录失败')(new Error('目录未返回 discovery_id'));
       }
-      emit('discover', 'done', {
-        ...(describeDefaultModels(catalog) ? { text: describeDefaultModels(catalog) } : {}),
-      });
+      emit('discover', 'done');
       // 2. 发起认领：传同一次 discover 返回的 defaultModelApiIds（服务端精选集）；
       // discovery 过期（aliyun_discovery_stale）时自动重新 discover 一次并重试 provision（仅一次）
       emit('provision', 'start');
@@ -811,9 +794,7 @@ export class AdvancedConnectionService {
         if (!catalog.discoveryId) {
           stepError('discover', '重新读取 Token 池目录失败')(new Error('目录未返回 discovery_id'));
         }
-        emit('discover', 'done', {
-          ...(describeDefaultModels(catalog) ? { text: describeDefaultModels(catalog) } : {}),
-        });
+        emit('discover', 'done');
         ({ runId } = await tokenDistribution
           .provisionRun({
             discoveryId: catalog.discoveryId as string,
@@ -829,15 +810,13 @@ export class AdvancedConnectionService {
         .pollRun(runId, { onTick: (status) => emit('poll', 'progress', { text: status }) })
         .catch(stepError('poll', 'Token 池认领失败'));
       emit('poll', 'done');
-      // 4. 领取凭证（明文 key 即焚语义：只经内存传给应用步骤，不落盘）
+      // 4. 领取凭证（明文 key 即焚语义：只经内存，不落盘）
       emit('claim', 'start');
       const receipt = await tokenDistribution
         .claimSecret(runId)
         .catch(stepError('claim', 'Token 领取失败'));
       const claimedKey = receipt.key;
       emit('claim', 'done');
-      // 5. 写入本地运行时配置（既有 aikey 复用路径）
-      emit('apply', 'start');
       const claimedSecret: Record<string, unknown> = {
         key: claimedKey,
         keyId: receipt.keyId ?? undefined,
@@ -848,81 +827,206 @@ export class AdvancedConnectionService {
         modelIds: receipt.modelIds,
         expiresAt: receipt.expiresAt ?? undefined,
       };
-      const aikeyRuntime = await loadAikeyRuntime();
-      const validation = aikeyRuntime.validateClaimedSecret(claimedSecret);
-      if (!validation.ok) {
-        stepError(
-          'apply',
-          'Token 无法应用'
-        )(new Error(sanitizeRemoteMessage(validation.reason || '返回内容无效')));
-      }
-      let applied: RuntimeCredentialApplyOutput;
-      try {
-        applied = await this.runtimeCredentialApplier({
-          secret: claimedSecret,
-          choices: {
-            ...(request.model?.trim() ? { model: request.model.trim() } : {}),
-            ...(request.wireApi ? { wireApi: request.wireApi } : {}),
-          },
+      const modelIds = receipt.modelIds.map((id) => id.trim()).filter(Boolean);
+      if (modelIds.length > 0) {
+        // 与 CLI 一致（pickModel）：receipt 的 model_ids 是该 key 被授权的模型清单，
+        // 由用户单选一个写入本地配置——key 挂起在内存等待 confirm/cancel（即焚不落盘）
+        this.pendingTokenClaims.set(connectionId, {
+          claimedSecret,
+          claimedKey,
+          keyId: receipt.keyId ?? undefined,
+          expiresAt: receipt.expiresAt ?? undefined,
+          modelIds,
           runtimes,
-          home: this.runtimeHome,
+          wireApi: request.wireApi,
+          createdAtMs: Date.now(),
         });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        stepError(
-          'apply',
-          'Token 已领取，但本地应用失败'
-        )(new Error(sanitizeRemoteMessage(message, [claimedKey])));
-      }
-      const expectedResultNames: Record<AdvancedConnectionRuntimeId, string[]> = {
-        claude: ['claude'],
-        codex: ['codex-auth', 'codex-config'],
-        pi: ['pi'],
-      };
-      const runtimeResults: AdvancedConnectionRuntimeApplyResult[] = runtimes.map((runtime) => {
-        const matches = (applied.runtimes ?? []).filter((item) =>
-          expectedResultNames[runtime].includes(item.runtime ?? '')
-        );
-        const ok =
-          applied.ok === true &&
-          matches.length === expectedResultNames[runtime].length &&
-          matches.every((item) => item.ok !== false && !item.error);
-        const pathResult = [...matches].reverse().find((item) => item.path);
-        const error = matches.find((item) => item.error)?.error;
+        emit('select-model', 'start');
+        const recommendedModel = tokenDistribution.pickHighestVersionModel(modelIds) ?? undefined;
         return {
-          runtime,
-          ok,
-          ...(pathResult?.path ? { path: path.basename(pathResult.path) } : {}),
-          ...(!ok
-            ? {
-                error: sanitizeRemoteMessage(
-                  error || `缺少 ${expectedResultNames[runtime].join('/')} 成功结果`,
-                  [claimedKey]
-                ),
-              }
-            : {}),
+          ok: true as const,
+          stage: 'select-model' as const,
+          modelIds: tokenDistribution.sortModelsByVersion(modelIds),
+          ...(recommendedModel ? { recommendedModel } : {}),
+          ...(receipt.expiresAt ? { expiresAt: receipt.expiresAt } : {}),
         };
-      });
-      const warnings = runtimeResults
-        .filter((result) => !result.ok)
-        .map((result) => `${result.runtime}：${result.error || '本地配置失败'}`);
-      if (warnings.length > 0) {
-        stepError('apply', 'Token 已领取，但本地应用未完成')(new Error(warnings.join('；')));
       }
-      emit('apply', 'done');
-      return {
-        ok: true,
-        ...(receipt.keyId ? { keyId: receipt.keyId } : {}),
-        maskedKey: aikeyRuntime.maskKey(claimedKey),
-        ...(receipt.expiresAt ? { expiresAt: receipt.expiresAt } : {}),
-        ...(request.model?.trim() ? { model: request.model.trim() } : {}),
-        runtimes: runtimeResults,
-        appliedAt: this.now().toISOString(),
-        warnings,
-      };
+      // receipt 无授权模型清单：跳过选择，按默认直接写入
+      emit('select-model', 'done', { text: '无候选模型，按默认写入' });
+      emit('apply', 'start');
+      return await this.applyClaimedToken(
+        connectionId,
+        {
+          claimedSecret,
+          claimedKey,
+          keyId: receipt.keyId ?? undefined,
+          expiresAt: receipt.expiresAt ?? undefined,
+          runtimes,
+          model: request.model?.trim() || undefined,
+          wireApi: request.wireApi,
+        },
+        onStep
+      );
     } finally {
+      // 挂起待选模型的领取继续持有防重入锁，confirm/cancel 时释放
+      if (!this.pendingTokenClaims.has(connectionId)) {
+        this.activeTokenClaims.delete(connectionId);
+      }
+    }
+  }
+
+  /** 第二段：用户确认模型后写入本地配置（释放挂起的 key 与防重入锁） */
+  async confirmClaimModel(
+    connectionId: string,
+    request: { model: string },
+    onStep?: (event: AdvancedConnectionTokenClaimStepEvent) => void
+  ): Promise<AdvancedConnectionTokenClaimResult> {
+    const pending = this.pendingTokenClaims.get(connectionId);
+    if (!pending) throw new Error('没有待确认的领取，请重新发起');
+    if (Date.now() - pending.createdAtMs > PENDING_CLAIM_TTL_MS) {
+      this.pendingTokenClaims.delete(connectionId);
+      this.activeTokenClaims.delete(connectionId);
+      throw new Error('领取已过期，请重新发起');
+    }
+    const model = request.model.trim();
+    if (!model || !pending.modelIds.includes(model)) throw new Error('请选择有效的模型');
+    const { emit } = this.createClaimStepEmitters(connectionId, onStep);
+    emit('select-model', 'done', { text: model });
+    emit('apply', 'start');
+    try {
+      return await this.applyClaimedToken(connectionId, { ...pending, model }, onStep);
+    } finally {
+      this.pendingTokenClaims.delete(connectionId);
       this.activeTokenClaims.delete(connectionId);
     }
+  }
+
+  /** 取消领取：丢弃内存中的明文 key（即焚），不写任何配置 */
+  async cancelTokenClaim(connectionId: string): Promise<{ ok: true }> {
+    this.pendingTokenClaims.delete(connectionId);
+    this.activeTokenClaims.delete(connectionId);
+    return { ok: true };
+  }
+
+  /** 应用已领取的凭证到本地运行时配置（aikey 复用路径；model 为用户所选或显式默认） */
+  private async applyClaimedToken(
+    connectionId: string,
+    pending: {
+      claimedSecret: Record<string, unknown>;
+      claimedKey: string;
+      keyId?: string;
+      expiresAt?: string;
+      runtimes: AdvancedConnectionRuntimeId[];
+      model?: string;
+      wireApi?: 'responses' | 'chat';
+    },
+    onStep?: (event: AdvancedConnectionTokenClaimStepEvent) => void
+  ): Promise<AdvancedConnectionTokenClaimResult> {
+    const { emit, stepError } = this.createClaimStepEmitters(connectionId, onStep);
+    const { claimedSecret, claimedKey, runtimes } = pending;
+    const aikeyRuntime = await loadAikeyRuntime();
+    const validation = aikeyRuntime.validateClaimedSecret(claimedSecret);
+    if (!validation.ok) {
+      stepError(
+        'apply',
+        'Token 无法应用'
+      )(new Error(sanitizeRemoteMessage(validation.reason || '返回内容无效')));
+    }
+    let applied: RuntimeCredentialApplyOutput;
+    try {
+      applied = await this.runtimeCredentialApplier({
+        secret: claimedSecret,
+        choices: {
+          ...(pending.model ? { model: pending.model } : {}),
+          ...(pending.wireApi ? { wireApi: pending.wireApi } : {}),
+        },
+        runtimes,
+        home: this.runtimeHome,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      stepError(
+        'apply',
+        'Token 已领取，但本地应用失败'
+      )(new Error(sanitizeRemoteMessage(message, [claimedKey])));
+    }
+    const expectedResultNames: Record<AdvancedConnectionRuntimeId, string[]> = {
+      claude: ['claude'],
+      codex: ['codex-auth', 'codex-config'],
+      pi: ['pi'],
+    };
+    const runtimeResults: AdvancedConnectionRuntimeApplyResult[] = runtimes.map((runtime) => {
+      const matches = (applied.runtimes ?? []).filter((item) =>
+        expectedResultNames[runtime].includes(item.runtime ?? '')
+      );
+      const ok =
+        applied.ok === true &&
+        matches.length === expectedResultNames[runtime].length &&
+        matches.every((item) => item.ok !== false && !item.error);
+      const pathResult = [...matches].reverse().find((item) => item.path);
+      const error = matches.find((item) => item.error)?.error;
+      return {
+        runtime,
+        ok,
+        ...(pathResult?.path ? { path: path.basename(pathResult.path) } : {}),
+        ...(!ok
+          ? {
+              error: sanitizeRemoteMessage(
+                error || `缺少 ${expectedResultNames[runtime].join('/')} 成功结果`,
+                [claimedKey]
+              ),
+            }
+          : {}),
+      };
+    });
+    const warnings = runtimeResults
+      .filter((result) => !result.ok)
+      .map((result) => `${result.runtime}：${result.error || '本地配置失败'}`);
+    if (warnings.length > 0) {
+      stepError('apply', 'Token 已领取，但本地应用未完成')(new Error(warnings.join('；')));
+    }
+    emit('apply', 'done');
+    return {
+      ok: true,
+      ...(pending.keyId ? { keyId: pending.keyId } : {}),
+      maskedKey: aikeyRuntime.maskKey(claimedKey),
+      ...(pending.expiresAt ? { expiresAt: pending.expiresAt } : {}),
+      ...(pending.model ? { model: pending.model } : {}),
+      runtimes: runtimeResults,
+      appliedAt: this.now().toISOString(),
+      warnings,
+    };
+  }
+
+  private createClaimStepEmitters(
+    connectionId: string,
+    onStep?: (event: AdvancedConnectionTokenClaimStepEvent) => void
+  ): {
+    emit: (
+      step: AdvancedConnectionTokenClaimStepEvent['step'],
+      status: AdvancedConnectionTokenClaimStepEvent['status'],
+      extra?: { text?: string; error?: string }
+    ) => void;
+    stepError: (
+      step: AdvancedConnectionTokenClaimStepEvent['step'],
+      label: string
+    ) => (error: unknown) => never;
+  } {
+    const emit = (
+      step: AdvancedConnectionTokenClaimStepEvent['step'],
+      status: AdvancedConnectionTokenClaimStepEvent['status'],
+      extra: { text?: string; error?: string } = {}
+    ): void => {
+      onStep?.({ connectionId, step, status, ...extra });
+    };
+    const stepError = (step: AdvancedConnectionTokenClaimStepEvent['step'], label: string) => {
+      return (error: unknown): never => {
+        const message = error instanceof Error ? error.message : String(error);
+        emit(step, 'error', { error: message });
+        throw new Error(`${label}：${message}`);
+      };
+    };
+    return { emit, stepError };
   }
 
   async syncAuthorizedData(

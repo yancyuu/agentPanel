@@ -3,6 +3,7 @@ import {
   type AdvancedConnectionPullTasksResult,
   type AdvancedConnectionSummary,
   type AdvancedConnectionTokenClaimRequest,
+  type AdvancedConnectionTokenClaimResponse,
   type AdvancedConnectionTokenClaimResult,
   type CreateAdvancedConnectionRequest,
   type DiscoverAdvancedConnectionRequest,
@@ -72,9 +73,19 @@ export const advancedConnectionsApi = {
   claimAndApplyToken: (
     connectionId: string,
     body: AdvancedConnectionTokenClaimRequest
-  ): Promise<AdvancedConnectionTokenClaimResult> =>
+  ): Promise<AdvancedConnectionTokenClaimResponse> =>
     request(`/${encodeURIComponent(connectionId)}/token-pool/claim-apply`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  confirmClaimModel: (
+    connectionId: string,
+    model: string
+  ): Promise<AdvancedConnectionTokenClaimResult> =>
+    request(`/${encodeURIComponent(connectionId)}/token-pool/claim-confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ model }),
+    }),
+  cancelTokenClaim: (connectionId: string): Promise<{ ok: true }> =>
+    request(`/${encodeURIComponent(connectionId)}/token-pool/claim-cancel`, { method: 'POST' }),
 };

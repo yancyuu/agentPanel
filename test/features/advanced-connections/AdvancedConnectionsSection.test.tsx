@@ -45,6 +45,9 @@ function renderSection(props: {
   channelStatus?: Parameters<typeof AdvancedConnectionsSection>[0]['channelStatus'];
   catalogStatus?: Parameters<typeof AdvancedConnectionsSection>[0]['catalogStatus'];
   claimSteps?: Parameters<typeof AdvancedConnectionsSection>[0]['claimSteps'];
+  claimModels?: Parameters<typeof AdvancedConnectionsSection>[0]['claimModels'];
+  onConfirmClaimModel?: (connectionId: string, model: string) => void;
+  onCancelTokenClaim?: (connectionId: string) => void;
 }): { host: HTMLElement; root: ReturnType<typeof createRoot> } {
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -62,6 +65,7 @@ function renderSection(props: {
         notice={null}
         catalogStatus={props.catalogStatus ?? {}}
         claimSteps={props.claimSteps ?? {}}
+        claimModels={props.claimModels ?? {}}
         channelStatus={props.channelStatus ?? {}}
         onHostChange={vi.fn()}
         onDiscover={vi.fn()}
@@ -73,6 +77,8 @@ function renderSection(props: {
         onPullRemoteTasks={vi.fn()}
         onSetUsageReporting={props.onSetUsageReporting ?? vi.fn()}
         onClaimAndApplyToken={vi.fn()}
+        onConfirmClaimModel={props.onConfirmClaimModel ?? vi.fn()}
+        onCancelTokenClaim={props.onCancelTokenClaim ?? vi.fn()}
         onRefresh={vi.fn()}
       />
     );
@@ -351,6 +357,41 @@ describe('AdvancedConnectionsSection', () => {
     expect(host.querySelector('[data-testid="claim-step:claim"]')?.getAttribute('data-status')).toBe(
       'pending'
     );
+  });
+
+
+  it('领取后选模型：推荐项置顶标记，确认/取消回调正确', () => {
+    const onConfirmClaimModel = vi.fn();
+    const onCancelTokenClaim = vi.fn();
+    const connection = makeConnection({
+      state: 'authenticated',
+      secretPresent: true,
+      secure: true,
+      baseUrl: 'https://bus.company.test',
+    });
+    const { host } = renderSection({
+      connections: [connection],
+      claimModels: {
+        [connection.id]: { modelIds: ['glm-5.1', 'glm-4.5-air', 'glm-5.2'], recommendedModel: 'glm-5.2' },
+      },
+      onConfirmClaimModel,
+      onCancelTokenClaim,
+    });
+
+    const picker = host.querySelector('[data-testid="claim-model-picker"]');
+    expect(picker).not.toBeNull();
+    const radios = [...host.querySelectorAll<HTMLInputElement>('input[name="claim-model"]')];
+    expect(radios).toHaveLength(3);
+    // 推荐项置顶并带「推荐」标记、默认勾选
+    expect(radios[0]?.value).toBe('glm-5.2');
+    expect(radios[0]?.checked).toBe(true);
+    expect(picker?.textContent).toContain('推荐');
+
+    clickButton(host, '确认写入');
+    expect(onConfirmClaimModel).toHaveBeenCalledWith(connection.id, 'glm-5.2');
+    clickButton(host, '取消');
+    expect(onCancelTokenClaim).toHaveBeenCalledWith(connection.id);
+    expect(onConfirmClaimModel).toHaveBeenCalledTimes(1);
   });
 
 });

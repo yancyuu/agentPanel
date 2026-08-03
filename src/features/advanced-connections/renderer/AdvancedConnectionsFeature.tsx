@@ -15,6 +15,7 @@ export function AdvancedConnectionsFeature(): React.JSX.Element {
       notice={state.notice}
       catalogStatus={state.catalogStatus}
       claimSteps={state.claimSteps}
+      claimModels={state.claimModels}
       channelStatus={state.channelStatus}
       onHostChange={state.setHost}
       onDiscover={() => void state.discover()}
@@ -40,6 +41,10 @@ export function AdvancedConnectionsFeature(): React.JSX.Element {
           void state.claimAndApplyToken(connectionId);
         }
       }}
+      onConfirmClaimModel={(connectionId, model) =>
+        void state.confirmClaimModel(connectionId, model)
+      }
+      onCancelTokenClaim={(connectionId) => void state.cancelTokenClaim(connectionId)}
       onRefresh={() => void state.refresh()}
     />
   );

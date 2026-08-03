@@ -257,10 +257,16 @@ function useAdvancedConnectionsState() {
     [refreshIfAuthExpired, run]
   );
 
+  /** 挂起待选模型的领取（receipt 授权模型清单 + 推荐项） */
+  const [claimModels, setClaimModels] = useState<
+    Record<string, { modelIds: string[]; recommendedModel?: string } | undefined>
+  >({});
+
   const claimAndApplyToken = useCallback(
     async (connectionId: string) => {
       // 防重入：busy 期间直接忽略（busyAction 已由 run 管理）
       setClaimSteps((current) => ({ ...current, [connectionId]: [] }));
+      setClaimModels((current) => ({ ...current, [connectionId]: undefined }));
       const result = await run(`claim:${connectionId}`, () =>
         advancedConnectionsApi.claimAndApplyToken(connectionId, {
           runtimes: ['claude', 'codex', 'pi'],
@@ -270,6 +276,51 @@ function useAdvancedConnectionsState() {
         setCatalogStatus((current) => ({
           ...current,
           [connectionId]: lastFailure('领取 Token 失败'),
+        }));
+        await refreshIfAuthExpired();
+        return;
+      }
+      // receipt 含授权模型清单 → 挂起等用户单选（凭证已领，仅服务端内存持有）
+      if ('stage' in result) {
+        setClaimModels((current) => ({
+          ...current,
+          [connectionId]: {
+            modelIds: result.modelIds,
+            ...(result.recommendedModel ? { recommendedModel: result.recommendedModel } : {}),
+          },
+        }));
+        return;
+      }
+      // result: AdvancedConnectionTokenClaimResult（无候选模型，已直接写入）
+      const applied = result.runtimes
+        .filter((runtime) => runtime.ok)
+        .map((runtime) => runtime.runtime)
+        .join('、');
+      setCatalogStatus((current) => ({
+        ...current,
+        [connectionId]: {
+          ok: true,
+          at: new Date().toISOString(),
+          text: result.warnings.length
+            ? `Token ${result.maskedKey} 已应用到 ${applied || '部分运行时'}；${result.warnings.join('；')}`
+            : `Token ${result.maskedKey} 已安全领取并应用到 ${applied}。`,
+        },
+      }));
+    },
+    [refreshIfAuthExpired, run]
+  );
+
+  /** 用户确认模型：第二段写入本地配置 */
+  const confirmClaimModel = useCallback(
+    async (connectionId: string, model: string) => {
+      setClaimModels((current) => ({ ...current, [connectionId]: undefined }));
+      const result = await run(`claim:${connectionId}`, () =>
+        advancedConnectionsApi.confirmClaimModel(connectionId, model)
+      );
+      if (!result) {
+        setCatalogStatus((current) => ({
+          ...current,
+          [connectionId]: lastFailure('写入本地配置失败'),
         }));
         await refreshIfAuthExpired();
         return;
@@ -292,6 +343,26 @@ function useAdvancedConnectionsState() {
     [refreshIfAuthExpired, run]
   );
 
+  /** 取消领取：丢弃已领 key（不写配置） */
+  const cancelTokenClaim = useCallback(
+    async (connectionId: string) => {
+      setClaimModels((current) => ({ ...current, [connectionId]: undefined }));
+      setClaimSteps((current) => ({ ...current, [connectionId]: [] }));
+      await run(`claim-cancel:${connectionId}`, () =>
+        advancedConnectionsApi.cancelTokenClaim(connectionId)
+      );
+      setCatalogStatus((current) => ({
+        ...current,
+        [connectionId]: {
+          ok: true,
+          at: new Date().toISOString(),
+          text: '已取消领取，未写入本地配置。',
+        },
+      }));
+    },
+    [run]
+  );
+
   return {
     connections,
     host,
@@ -306,6 +377,7 @@ function useAdvancedConnectionsState() {
     notice,
     catalogStatus,
     claimSteps,
+    claimModels,
     channelStatus,
     discover,
     addConnection,
@@ -316,6 +388,8 @@ function useAdvancedConnectionsState() {
     setUsageReporting,
     pullRemoteTasks,
     claimAndApplyToken,
+    confirmClaimModel,
+    cancelTokenClaim,
     refresh,
   };
 }

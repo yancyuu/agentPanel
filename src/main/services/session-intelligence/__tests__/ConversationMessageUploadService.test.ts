@@ -1714,8 +1714,9 @@ describe('ConversationMessageUploadService', () => {
     const prefix = `${JSON.stringify({
       timestamp: '2026-07-30T18:00:00.000Z',
       type: 'turn_context',
+      // Real Codex JSONL keeps `turn_context` on the top-level record and does
+      // not include payload.type. Incremental recovery must still retain model.
       payload: {
-        type: 'turn_context',
         cwd: '/tmp/codex-incremental',
         model: 'gpt-5.6-sol',
       },
@@ -1730,6 +1731,8 @@ describe('ConversationMessageUploadService', () => {
       payload: {
         type: 'token_count',
         turn_id: 'turn-incremental',
+        // A provider label must not overwrite the exact recovered model.
+        model: 'openai',
         info: {
           last_token_usage: { input_tokens: 10, output_tokens: 4, total_tokens: 14 },
         },
@@ -1811,6 +1814,112 @@ describe('ConversationMessageUploadService', () => {
 
     expect(result.lastError).toBeUndefined();
     expect(result.attempted).toBe(1);
+  });
+
+  it('allows model-less Codex text but quarantines token usage without an exact model', async () => {
+    const codexHome = path.join(tmpDir, '.codex');
+    process.env.CODEX_HOME = codexHome;
+    const sessionDir = path.join(codexHome, 'sessions', '2026', '08', '03');
+    await mkdir(sessionDir, { recursive: true });
+
+    const textPath = path.join(sessionDir, 'a-model-less-text.jsonl');
+    const usagePath = path.join(sessionDir, 'b-model-less-usage.jsonl');
+    await writeFile(
+      textPath,
+      `${JSON.stringify({
+        timestamp: '2026-08-03T09:40:00.000Z',
+        type: 'event_msg',
+        payload: {
+          type: 'agent_message',
+          id: 'text-without-model',
+          message: 'Plain text does not require pricing metadata.',
+        },
+      })}\n`
+    );
+    await writeFile(
+      usagePath,
+      `${JSON.stringify({
+        timestamp: '2026-08-03T09:41:00.000Z',
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          turn_id: 'usage-without-model',
+          info: {
+            last_token_usage: { input_tokens: 8, output_tokens: 2, total_tokens: 10 },
+          },
+        },
+      })}\n`
+    );
+
+    const textFileKey = createHash('sha256').update(textPath).digest('hex');
+    const usageFileKey = createHash('sha256').update(usagePath).digest('hex');
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/v1/auth/me')) {
+        return Response.json({
+          authenticated: true,
+          status: 'ok',
+          scopes: ['upload:read', 'upload:write'],
+        });
+      }
+      if (url.includes('/api/v1/report/usage/status')) {
+        return Response.json({
+          channels: [
+            {
+              reporter: 'agentcli',
+              client: 'codex',
+              scene: 'coding',
+              status: 'never_reported',
+              inFlight: { count: 0, uploadIds: [] },
+              currentCursor: null,
+            },
+          ],
+        });
+      }
+      if (url.endsWith('/api/v1/report/messages')) {
+        const body = JSON.parse(String(init?.body));
+        expect(body.messages).toHaveLength(1);
+        expect(body.messages[0]).toMatchObject({
+          eventId: 'codex:a-model-less-text:text-without-model',
+        });
+        expect(body.messages[0].message.modelName).toBeUndefined();
+        expect(body.messages[0].message.usage).toBeUndefined();
+        expect(body.clientCursor.files.map((file: { fileKey: string }) => file.fileKey)).toContain(
+          textFileKey
+        );
+        expect(
+          body.clientCursor.files.map((file: { fileKey: string }) => file.fileKey)
+        ).not.toContain(usageFileKey);
+        return Response.json(
+          {
+            ok: true,
+            uploadId: 'upl_model_less_text',
+            status: 'queued',
+            received: 1,
+            acceptedForProcessing: 1,
+            rejectedAtReceive: 0,
+          },
+          { status: 202 }
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    const result = await uploadConversationMessages({
+      telemetry: {
+        enabled: true,
+        platform: 'codex',
+        conversationUploadEnabled: true,
+        uploadProviders: ['codex'],
+      },
+    });
+
+    expect(result.lastError).toBeUndefined();
+    expect(result.attempted).toBe(1);
+    const uploadLog = await readFile(
+      path.join(hermitHome, 'logs', 'conversation-upload.log'),
+      'utf8'
+    );
+    expect(uploadLog).toContain('codex file quarantined: exact model unavailable');
   });
 
   it('uploads per-turn deltas, not cumulative snapshots, for total_token_usage-only Codex logs', async () => {

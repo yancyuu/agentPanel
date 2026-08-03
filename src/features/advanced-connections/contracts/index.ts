@@ -180,6 +180,7 @@ export type AdvancedConnectionTokenClaimStepId =
   | 'provision'
   | 'poll'
   | 'claim'
+  | 'select-model'
   | 'apply';
 
 export interface AdvancedConnectionTokenClaimStepEvent {
@@ -215,6 +216,20 @@ export interface AdvancedConnectionTokenClaimResult {
   appliedAt: string;
   warnings: string[];
 }
+
+/** 领取第一段结果：receipt 含授权模型清单，挂起等待用户单选一个模型 */
+export interface AdvancedConnectionTokenClaimSelectModelStage {
+  ok: true;
+  stage: 'select-model';
+  /** receipt 授权模型清单（版本降序；recommendedModel 为推荐项） */
+  modelIds: string[];
+  recommendedModel?: string;
+  expiresAt?: string;
+}
+
+export type AdvancedConnectionTokenClaimResponse =
+  | AdvancedConnectionTokenClaimResult
+  | AdvancedConnectionTokenClaimSelectModelStage;
 
 export interface AdvancedConnectionLocalSnapshot {
   generatedAt: string;
