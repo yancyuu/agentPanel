@@ -4,7 +4,7 @@ import { api } from '@renderer/api';
 
 import {
   type AdvancedConnectionSummary,
-  type AdvancedConnectionTokenCatalogSummary,
+  type AdvancedConnectionTokenClaimStepEvent,
   type DiscoverAdvancedConnectionResponse,
 } from '../../contracts';
 
@@ -48,12 +48,36 @@ function useAdvancedConnectionsState() {
   const [catalogStatus, setCatalogStatus] = useState<
     Record<string, AdvancedConnectionOperationOutcome>
   >({});
-  const [catalogs, setCatalogs] = useState<
-    Record<string, AdvancedConnectionTokenCatalogSummary | undefined>
+  /** Token 领取链式步骤事件（SSE token-claim-event 累积，按连接分组） */
+  const [claimSteps, setClaimSteps] = useState<
+    Record<string, AdvancedConnectionTokenClaimStepEvent[]>
   >({});
   const [channelStatus, setChannelStatus] = useState<
     Record<string, AdvancedConnectionOperationOutcome>
   >({});
+
+  // 订阅领取步骤进度（进行中步骤高亮、失败停在对应步骤）
+  useEffect(() => {
+    if (typeof EventSource === 'undefined') return;
+    const source = new EventSource('/api/events');
+    const handler = (event: MessageEvent<string>) => {
+      try {
+        const data = JSON.parse(event.data) as AdvancedConnectionTokenClaimStepEvent;
+        if (!data?.connectionId || !data.step) return;
+        setClaimSteps((current) => ({
+          ...current,
+          [data.connectionId]: [...(current[data.connectionId] ?? []), data],
+        }));
+      } catch {
+        /* ignore malformed event */
+      }
+    };
+    source.addEventListener('token-claim-event', handler);
+    return () => {
+      source.removeEventListener('token-claim-event', handler);
+      source.close();
+    };
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -233,50 +257,12 @@ function useAdvancedConnectionsState() {
     [refreshIfAuthExpired, run]
   );
 
-  const checkTokenCatalog = useCallback(
-    async (connectionId: string) => {
-      const result = await run(`catalog:${connectionId}`, () =>
-        advancedConnectionsApi.tokenCatalog(connectionId)
-      );
-      if (!result) return;
-      setCatalogs((current) => ({
-        ...current,
-        [connectionId]: result.ok ? result.catalog : undefined,
-      }));
-      setCatalogStatus((current) => ({
-        ...current,
-        [connectionId]: {
-          ok: result.ok,
-          at: new Date().toISOString(),
-          text: result.ok
-            ? result.available
-              ? `Token 池连接正常，可用模型 ${result.catalog?.modelCount ?? 0} 个${result.catalog?.defaultModelName ? `，默认模型 ${result.catalog.defaultModelName}` : ''}。`
-              : '该服务未提供 Token 池。'
-            : describeConnectionOperationError(result.error || 'Token 池暂不可用。'),
-        },
-      }));
-      if (!result.ok) return;
-    },
-    [run]
-  );
-
   const claimAndApplyToken = useCallback(
     async (connectionId: string) => {
-      const catalog = catalogs[connectionId];
-      if (!catalog?.discoveryId) {
-        setError('请先检测 Token 池并读取最新目录');
-        return;
-      }
-      const modelApiIds =
-        catalog.defaultModelApiIds.length > 0
-          ? catalog.defaultModelApiIds
-          : catalog.models.map((model) => model.id);
+      // 防重入：busy 期间直接忽略（busyAction 已由 run 管理）
+      setClaimSteps((current) => ({ ...current, [connectionId]: [] }));
       const result = await run(`claim:${connectionId}`, () =>
         advancedConnectionsApi.claimAndApplyToken(connectionId, {
-          discoveryId: catalog.discoveryId!,
-          regionId: catalog.regionId,
-          gatewayId: catalog.gatewayId,
-          modelApiIds,
           runtimes: ['claude', 'codex', 'pi'],
         })
       );
@@ -303,7 +289,7 @@ function useAdvancedConnectionsState() {
         },
       }));
     },
-    [catalogs, refreshIfAuthExpired, run]
+    [refreshIfAuthExpired, run]
   );
 
   return {
@@ -319,7 +305,7 @@ function useAdvancedConnectionsState() {
     error,
     notice,
     catalogStatus,
-    catalogs,
+    claimSteps,
     channelStatus,
     discover,
     addConnection,
@@ -329,7 +315,6 @@ function useAdvancedConnectionsState() {
     allowInsecure,
     setUsageReporting,
     pullRemoteTasks,
-    checkTokenCatalog,
     claimAndApplyToken,
     refresh,
   };

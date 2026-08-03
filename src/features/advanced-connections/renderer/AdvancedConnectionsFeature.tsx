@@ -14,7 +14,7 @@ export function AdvancedConnectionsFeature(): React.JSX.Element {
       error={state.error}
       notice={state.notice}
       catalogStatus={state.catalogStatus}
-      catalogs={state.catalogs}
+      claimSteps={state.claimSteps}
       channelStatus={state.channelStatus}
       onHostChange={state.setHost}
       onDiscover={() => void state.discover()}
@@ -31,7 +31,6 @@ export function AdvancedConnectionsFeature(): React.JSX.Element {
         void state.setUsageReporting(connectionId, enabled)
       }
       onPullRemoteTasks={(connectionId) => void state.pullRemoteTasks(connectionId)}
-      onCheckTokenCatalog={(connectionId) => void state.checkTokenCatalog(connectionId)}
       onClaimAndApplyToken={(connectionId) => {
         if (
           window.confirm(

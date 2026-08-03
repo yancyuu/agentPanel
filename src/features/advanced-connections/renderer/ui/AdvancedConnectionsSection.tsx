@@ -16,7 +16,7 @@ import {
 
 import {
   type AdvancedConnectionSummary,
-  type AdvancedConnectionTokenCatalogSummary,
+  type AdvancedConnectionTokenClaimStepEvent,
   type DiscoverAdvancedConnectionResponse,
 } from '../../contracts';
 
@@ -33,7 +33,7 @@ interface AdvancedConnectionsSectionProps {
   error: string | null;
   notice: string | null;
   catalogStatus: Record<string, AdvancedConnectionOperationOutcome>;
-  catalogs: Record<string, AdvancedConnectionTokenCatalogSummary | undefined>;
+  claimSteps: Record<string, AdvancedConnectionTokenClaimStepEvent[]>;
   channelStatus: Record<string, AdvancedConnectionOperationOutcome>;
   onHostChange: (value: string) => void;
   onDiscover: () => void;
@@ -46,7 +46,6 @@ interface AdvancedConnectionsSectionProps {
   /** 用量上报开关（permissions['usage.aggregates'] granted/denied） */
   onSetUsageReporting: (connectionId: string, enabled: boolean) => void;
   onPullRemoteTasks: (connectionId: string) => void;
-  onCheckTokenCatalog: (connectionId: string) => void;
   onClaimAndApplyToken: (connectionId: string) => void;
   onRefresh: () => void;
 }
@@ -75,6 +74,64 @@ function OutcomeLine({
         <span className="shrink-0 text-[var(--color-text-muted)]">{timeLabel}</span>
       ) : null}
     </p>
+  );
+}
+
+const CLAIM_STEP_ORDER = ['discover', 'provision', 'poll', 'claim', 'apply'] as const;
+
+const CLAIM_STEP_LABELS: Record<string, string> = {
+  discover: '读取目录',
+  provision: '发起认领',
+  poll: '等待开通',
+  claim: '领取凭证',
+  apply: '写入本地配置',
+};
+
+/** Token 领取链式步骤进度：进行中高亮、失败停在对应步骤并透出服务端原始错误 */
+function ClaimStepsView({
+  events,
+}: Readonly<{ events: AdvancedConnectionTokenClaimStepEvent[] }>): React.JSX.Element | null {
+  if (events.length === 0) return null;
+  const lastByStep = new Map<string, AdvancedConnectionTokenClaimStepEvent>();
+  for (const event of events) lastByStep.set(event.step, event);
+  return (
+    <ol className="mt-2 space-y-1" data-testid="claim-steps">
+      {CLAIM_STEP_ORDER.map((step) => {
+        const event = lastByStep.get(step);
+        const status = event?.status ?? 'pending';
+        return (
+          <li
+            key={step}
+            className="flex items-center gap-1.5 text-[11px]"
+            data-testid={`claim-step:${step}`}
+            data-status={status}
+          >
+            {status === 'done' ? (
+              <Check className="size-3 shrink-0 text-emerald-500" />
+            ) : status === 'start' || status === 'progress' ? (
+              <Loader2 className="size-3 shrink-0 animate-spin text-[var(--color-accent)]" />
+            ) : status === 'error' ? (
+              <AlertTriangle className="size-3 shrink-0 text-rose-500" />
+            ) : (
+              <span className="size-3 shrink-0 rounded-full border border-[var(--color-border)]" />
+            )}
+            <span
+              className={
+                status === 'pending'
+                  ? 'text-[var(--color-text-muted)] opacity-60'
+                  : status === 'error'
+                    ? 'text-rose-500'
+                    : 'text-[var(--color-text-secondary)]'
+              }
+            >
+              {CLAIM_STEP_LABELS[step]}
+              {event?.text && status !== 'error' ? `（${event.text}）` : ''}
+              {status === 'error' && event?.error ? `：${event.error}` : ''}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -108,7 +165,7 @@ export function AdvancedConnectionsSection({
   error,
   notice,
   catalogStatus,
-  catalogs,
+  claimSteps,
   channelStatus,
   onHostChange,
   onDiscover,
@@ -119,7 +176,6 @@ export function AdvancedConnectionsSection({
   onAllowInsecure,
   onSetUsageReporting,
   onPullRemoteTasks,
-  onCheckTokenCatalog,
   onClaimAndApplyToken,
   onRefresh,
 }: Readonly<AdvancedConnectionsSectionProps>): React.JSX.Element {
@@ -297,7 +353,6 @@ export function AdvancedConnectionsSection({
             // HTTPS 或回环地址直接允许；其余 HTTP 需用户先确认传输风险（per-connection 持久化）
             const transportReady =
               connectionAllowsSecrets(connection) || connection.insecureAllowed;
-            const catalog = catalogs[connection.id];
             return (
               <article
                 key={connection.id}
@@ -474,24 +529,6 @@ export function AdvancedConnectionsSection({
                             disabled={
                               !authenticated ||
                               !transportReady ||
-                              busyAction === `catalog:${connection.id}`
-                            }
-                            onClick={() => onCheckTokenCatalog(connection.id)}
-                            className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 text-xs text-[var(--color-text-secondary)] disabled:opacity-45"
-                          >
-                            {busyAction === `catalog:${connection.id}` ? (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            ) : (
-                              <ShieldCheck className="size-3.5" />
-                            )}
-                            检测 Token 池
-                          </button>
-                          <button
-                            type="button"
-                            disabled={
-                              !authenticated ||
-                              !transportReady ||
-                              !catalog?.discoveryId ||
                               busyAction === `claim:${connection.id}`
                             }
                             onClick={() => onClaimAndApplyToken(connection.id)}
@@ -505,12 +542,7 @@ export function AdvancedConnectionsSection({
                             领取并应用
                           </button>
                         </div>
-                        {catalog?.defaultModelName ? (
-                          <p className="mt-2 text-[11px] leading-4 text-[var(--color-text-muted)]">
-                            默认模型：{catalog.defaultModelName}；将应用到 Claude Code、Codex 和
-                            Pi。
-                          </p>
-                        ) : null}
+                        <ClaimStepsView events={claimSteps[connection.id] ?? []} />
                         {catalogStatus[connection.id] ? (
                           <OutcomeLine outcome={catalogStatus[connection.id]} />
                         ) : null}

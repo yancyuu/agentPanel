@@ -244,8 +244,13 @@ describe('AdvancedConnectionService', () => {
       token: { accessToken: 'app-access-token', refreshToken: 'app-refresh-token' },
     });
 
-    // 2) App 刷新成功 → CLI store token 写穿透一致
-    await service.tokenCatalog(connection.id);
+    // 2) App 刷新成功 → CLI store token 写穿透一致（sync 触发 getValidSecret → refresh）
+    await service.syncAuthorizedData(connection.id, {
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      teams: [],
+      tasks: [],
+      usage: {},
+    });
     expect(refreshCount).toBe(1);
     cliStore = await readCliStore();
     expect(cliStore).toMatchObject({
@@ -575,6 +580,40 @@ describe('AdvancedConnectionService', () => {
         { runtime: 'pi', ok: true, path: '/Users/test/.pi/agent/models.json' },
       ],
     }));
+    // CLI 版 tokenDistribution 注入桩（面板链路与 CLI 同一实现；region 由模块内置）
+    const tokenDistribution = {
+      discoverCatalog: vi.fn(async () => ({
+        modelApis: [],
+        defaultApiName: 'Claude Sonnet',
+        defaultModelApiIds: ['model-1'],
+        discoveryId: 'discovery-1',
+        gatewayId: 'gw-1',
+        regionId: 'cn-shenzhen',
+        raw: {},
+      })),
+      selectModelApiIds: (ids?: string[]) => ids ?? [],
+      provisionRun: vi.fn(async () => ({ runId: 'run-1', raw: {} })),
+      pollRun: vi.fn(
+        async (_runId: string, options?: { onTick?: (status: string) => void }) => {
+          options?.onTick?.('running');
+          return {};
+        }
+      ),
+      claimSecret: vi.fn(async () => ({
+        key: 'sk-secret-token-pool-value',
+        keyId: 'key-1',
+        endpoint: 'https://anthropic.company.test',
+        endpoints: {
+          anthropic: 'https://anthropic.company.test',
+          openai: 'https://openai.company.test',
+        },
+        runtimeProfiles: {},
+        modelsUrl: '',
+        modelIds: ['claude-sonnet-4'],
+        expiresAt: '2027-01-01T00:00:00.000Z',
+        raw: {},
+      })),
+    };
     let service: AdvancedConnectionService;
     const onAuthenticated = vi.fn(async (connectionId: string) => {
       await service.syncAuthorizedData(connectionId, {
@@ -594,6 +633,7 @@ describe('AdvancedConnectionService', () => {
       secretStore,
       runtimeHome: '/Users/test',
       runtimeCredentialApplier,
+      tokenDistribution,
       onAuthenticated,
     });
     const connection = await service.ensureDefaultConnection('https://bus.company.test');
@@ -619,23 +659,13 @@ describe('AdvancedConnectionService', () => {
 
     expect(secretStore.values.get(connection.id)).toContain('secret-access-token');
 
-    const catalog = await service.tokenCatalog(connection.id);
-    expect(catalog).toMatchObject({
-      ok: true,
-      catalog: {
-        modelCount: 1,
-        defaultModelName: 'Claude Sonnet',
-        models: [{ id: 'model-1', name: 'Claude Sonnet', provider: 'anthropic' }],
-      },
-    });
-    expect(JSON.stringify(catalog)).not.toContain('must-not-cross-renderer-boundary');
-    expect(JSON.stringify(catalog)).not.toContain('nested-secret');
-
-    const applied = await service.claimAndApplyToken(connection.id, {
-      discoveryId: catalog.catalog?.discoveryId ?? '',
-      modelApiIds: catalog.catalog?.defaultModelApiIds ?? [],
-      runtimes: ['claude', 'codex', 'pi'],
-    });
+    // 链式领取：discover → provision → poll → claim → apply（步骤事件按序发出）
+    const stepEvents: { step: string; status: string; text?: string; error?: string }[] = [];
+    const applied = await service.claimAndApplyToken(
+      connection.id,
+      { runtimes: ['claude', 'codex', 'pi'] },
+      (event) => stepEvents.push(event)
+    );
     expect(applied).toMatchObject({
       ok: true,
       keyId: 'key-1',
@@ -647,16 +677,29 @@ describe('AdvancedConnectionService', () => {
       ],
     });
     expect(JSON.stringify(applied)).not.toContain('sk-secret-token-pool-value');
+    // 明文 key 只经内存进 runtimeCredentialApplier，不落盘、不出现在返回体
     expect(runtimeCredentialApplier).toHaveBeenCalledWith(
       expect.objectContaining({
         secret: expect.objectContaining({ key: 'sk-secret-token-pool-value' }),
         runtimes: ['claude', 'codex', 'pi'],
       })
     );
-    const provisionCall = fetchImpl.mock.calls.find(([input]) =>
-      requestUrl(input).endsWith('/aliyun/auto-provision')
-    );
-    expect(new Headers(provisionCall?.[1]?.headers).get('Idempotency-Key')).toBeTruthy();
+    expect(tokenDistribution.discoverCatalog).toHaveBeenCalledTimes(1);
+    expect(tokenDistribution.provisionRun).toHaveBeenCalledWith({
+      discoveryId: 'discovery-1',
+      gatewayId: 'gw-1',
+      aliyunModelApiIds: ['model-1'],
+    });
+    expect(tokenDistribution.pollRun).toHaveBeenCalledWith('run-1', expect.anything());
+    expect(tokenDistribution.claimSecret).toHaveBeenCalledWith('run-1');
+    // 步骤顺序与进度（discover/provision/poll/claim/apply 全部 done，poll 有 progress）
+    const doneSteps = stepEvents.filter((e) => e.status === 'done').map((e) => e.step);
+    expect(doneSteps).toEqual(['discover', 'provision', 'poll', 'claim', 'apply']);
+    expect(stepEvents.some((e) => e.step === 'poll' && e.status === 'progress')).toBe(true);
+    // service 代码不再直接请求第二套 /aliyun/* 端点
+    expect(
+      fetchImpl.mock.calls.some(([input]) => requestUrl(input).includes('/aliyun/'))
+    ).toBe(false);
   });
 
   it('keeps aggregate usage denied for a custom standard Provider after login', async () => {
@@ -882,6 +925,119 @@ describe('AdvancedConnectionService', () => {
       ])
     );
     expect(posted.some((url) => url.endsWith('/api/v1/report/usage'))).toBe(false);
+  });
+
+  it('领取链式：provision 失败停在对应步骤并透出服务端原始错误，且防重入', async () => {
+    const secretStore = new MemorySecretStore();
+    let resolvePoll!: (value: unknown) => void;
+    const tokenDistribution = {
+      discoverCatalog: vi.fn(async () => ({
+        modelApis: [],
+        defaultApiName: null,
+        defaultModelApiIds: ['model-1'],
+        discoveryId: 'discovery-1',
+        gatewayId: null,
+        regionId: 'cn-shenzhen',
+        raw: {},
+      })),
+      selectModelApiIds: (ids?: string[]) => ids ?? [],
+      provisionRun: vi.fn(async () => ({ runId: 'run-1', raw: {} })),
+      pollRun: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolvePoll = resolve;
+          })
+      ),
+      claimSecret: vi.fn(),
+    };
+    const service = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: compatibilityFetch(),
+      secretStore,
+      tokenDistribution,
+    });
+    const connection = await service.create({ baseUrl: 'https://bus.company.test' });
+    secretStore.values.set(
+      connection.id,
+      JSON.stringify({
+        schemaVersion: 1,
+        connectionId: connection.id,
+        providerId: 'openhermit-agentbus',
+        issuerOrigin: 'https://bus.company.test',
+        accessToken: 'secret-token',
+        tokenType: 'Bearer',
+        scopes: [],
+        updatedAt: new Date().toISOString(),
+      })
+    );
+
+    // 防重入：第一次停在 poll（不 resolve），第二次直接拒绝
+    const stepEvents: { step: string; status: string; error?: string }[] = [];
+    const first = service.claimAndApplyToken(
+      connection.id,
+      { runtimes: ['claude'] },
+      (event) => stepEvents.push(event)
+    );
+    await vi.waitFor(() => {
+      expect(stepEvents.some((e) => e.step === 'poll' && e.status === 'start')).toBe(true);
+    });
+    await expect(
+      service.claimAndApplyToken(connection.id, { runtimes: ['claude'] })
+    ).rejects.toThrow('正在执行');
+
+    // poll 失败：错误透出服务端原文（error_code: error_message），步骤停在 poll
+    resolvePoll(Promise.reject(new Error('provisioning failed: aliyun_model_api_not_found: 未找到固定生产消费者组 agent-bus')));
+    await expect(first).rejects.toThrow(
+      'Token 池认领失败：provisioning failed: aliyun_model_api_not_found: 未找到固定生产消费者组 agent-bus'
+    );
+    const errorEvents = stepEvents.filter((e) => e.status === 'error');
+    expect(errorEvents).toHaveLength(1);
+    expect(errorEvents[0]?.step).toBe('poll');
+    expect(errorEvents[0]?.error).toContain('未找到固定生产消费者组 agent-bus');
+    expect(tokenDistribution.claimSecret).not.toHaveBeenCalled();
+
+    // 失败后锁已释放，可再次发起
+    tokenDistribution.provisionRun.mockRejectedValueOnce(
+      new Error('422 Unprocessable Entity: {"detail":{"message":"未找到固定生产消费者组 agent-bus"}}')
+    );
+    const secondEvents: { step: string; status: string; error?: string }[] = [];
+    await expect(
+      service.claimAndApplyToken(connection.id, { runtimes: ['claude'] }, (event) =>
+        secondEvents.push(event)
+      )
+    ).rejects.toThrow('Token 池认领启动失败：422 Unprocessable Entity');
+    const provisionError = secondEvents.find((e) => e.status === 'error');
+    expect(provisionError?.step).toBe('provision');
+    expect(provisionError?.error).toContain('未找到固定生产消费者组 agent-bus');
+  });
+
+  it('出站调用写入服务日志（status/duration/无 token 无 query）', async () => {
+    const service = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: compatibilityFetch(),
+      secretStore: new MemorySecretStore(),
+    });
+    await service.create({ baseUrl: 'https://bus.company.test' });
+
+    const raw = await readFile(
+      path.join(hermitHome, 'logs', 'agentbus-http.log'),
+      'utf8'
+    );
+    const entries = raw
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(entries.length).toBeGreaterThan(0);
+    const probe = entries.find((entry) =>
+      String(entry.url).includes('/api/v1/auth/me')
+    )!;
+    expect(probe).toBeDefined();
+    expect(probe.status).toBe(401);
+    expect(typeof probe.durationMs).toBe('number');
+    expect(String(probe.url)).not.toContain('?');
+    // 日志中不出现任何 token/secret 形态
+    expect(raw).not.toContain('Authorization');
+    expect(raw).not.toContain('secret-token');
   });
 
   it('uses the file-based secret store end to end (secretPresent 与授权状态一致)', async () => {

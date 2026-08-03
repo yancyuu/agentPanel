@@ -343,6 +343,7 @@ async function createWorkbenchServerUncached(
   registerAdvancedConnectionRoutes(app, {
     service: advancedConnections,
     localSnapshot: buildAdvancedConnectionLocalSnapshot,
+    onTokenClaimStep: (event) => operations.broadcastSse('token-claim-event', event),
   });
   registerCommentReadStateRoutes(app, { service: commentReadState });
   registerCollaborationRoutes(app, {

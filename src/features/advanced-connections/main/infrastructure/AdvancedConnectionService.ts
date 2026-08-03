@@ -13,10 +13,9 @@ import {
   type AdvancedConnectionState,
   type AdvancedConnectionSummary,
   type AdvancedConnectionSyncResult,
-  type AdvancedConnectionTokenCatalogResponse,
-  type AdvancedConnectionTokenCatalogSummary,
   type AdvancedConnectionTokenClaimRequest,
   type AdvancedConnectionTokenClaimResult,
+  type AdvancedConnectionTokenClaimStepEvent,
   type CreateAdvancedConnectionRequest,
   type DataPermissionId,
   type DiscoverAdvancedConnectionResponse,
@@ -50,10 +49,6 @@ import { createAgentBusHttpLogger } from './agentBusHttpLog';
 const CONNECTION_SCHEMA_VERSION = 1;
 const DISCOVERY_TIMEOUT_MS = 10_000;
 const AUTH_REQUEST_TIMEOUT_MS = 30_000;
-const TOKEN_CATALOG_TIMEOUT_MS = 45_000;
-const TOKEN_PROVISION_TIMEOUT_MS = 120_000;
-const TOKEN_POLL_FALLBACK_MS = 2_000;
-const TOKEN_POLL_MAX_MS = 15_000;
 // eslint-disable-next-line sonarjs/no-hardcoded-ip -- explicit cloud metadata blocklist
 const CLOUD_METADATA_IPV4 = '169.254.169.254';
 
@@ -164,6 +159,64 @@ function loadAikeyRuntime(): Promise<AikeyRuntimeModule> {
   return aikeyRuntimeModule;
 }
 
+/**
+ * CLI 版 Token 池客户端（token-distribution-v3）——面板领取链路与 CLI 共用同一实现，
+ * region 默认 cn-shenzhen 由模块内置，service 代码不再出现 region。
+ */
+interface TokenDistributionRuntime {
+  discoverCatalog(options?: { regionId?: string; gatewayId?: string | null }): Promise<{
+    modelApis: unknown[];
+    defaultApiName: string | null;
+    defaultModelApiIds: string[];
+    discoveryId: string | null;
+    gatewayId: string | null;
+    regionId: string;
+    raw: unknown;
+  }>;
+  selectModelApiIds(defaultModelApiIds?: string[]): string[];
+  provisionRun(options: {
+    discoveryId?: string;
+    regionId?: string;
+    gatewayId?: string | null;
+    aliyunModelApiIds?: string[];
+  }): Promise<{ runId: string; raw: unknown }>;
+  pollRun(
+    runId: string,
+    options?: {
+      timeoutMs?: number;
+      intervalMs?: number;
+      onTick?: ((status: string, body: unknown) => void) | null;
+    }
+  ): Promise<unknown>;
+  claimSecret(runId: string): Promise<{
+    key: string;
+    keyId: string | null;
+    endpoint: string;
+    endpoints: Record<string, unknown>;
+    runtimeProfiles: Record<string, unknown>;
+    modelsUrl: string;
+    modelIds: string[];
+    expiresAt: string | null;
+    raw: unknown;
+  }>;
+}
+
+let tokenDistributionModule: Promise<TokenDistributionRuntime> | undefined;
+
+function loadTokenDistributionRuntime(): Promise<TokenDistributionRuntime> {
+  tokenDistributionModule ??= import(
+    pathToFileURL(
+      path.join(
+        process.env.AGENTCLI_PACKAGE_ROOT?.trim() || process.cwd(),
+        'bin',
+        'lib',
+        'tokenDistribution.mjs'
+      )
+    ).href
+  ) as Promise<TokenDistributionRuntime>;
+  return tokenDistributionModule;
+}
+
 export interface AdvancedConnectionServiceOptions {
   hermitHome: string;
   fetchImpl?: typeof fetch;
@@ -171,6 +224,8 @@ export interface AdvancedConnectionServiceOptions {
   secretStore?: ConnectionSecretStore;
   runtimeHome?: string;
   runtimeCredentialApplier?: RuntimeCredentialApplier;
+  /** 测试注入：替换 CLI 版 tokenDistribution 运行时（默认动态 import bin/lib/tokenDistribution.mjs） */
+  tokenDistribution?: TokenDistributionRuntime;
   onAuthenticated?: (connectionId: string) => Promise<void> | void;
 }
 
@@ -335,73 +390,9 @@ function tokenPayload(value: unknown, nowMs: number): TokenPayload | null {
   };
 }
 
-function tokenCatalogSummary(value: unknown): AdvancedConnectionTokenCatalogSummary {
-  const payload = asRecord(value);
-  const candidates = Array.isArray(payload.model_apis)
-    ? payload.model_apis
-    : Array.isArray(payload.models)
-      ? payload.models
-      : [];
-  const models = candidates.slice(0, 200).flatMap((candidate) => {
-    const item = asRecord(candidate);
-    const id = stringValue(item.model_api_id) ?? stringValue(item.id) ?? stringValue(item.model_id);
-    const name =
-      stringValue(item.api_name) ?? stringValue(item.display_name) ?? stringValue(item.name) ?? id;
-    if (!id || !name) return [];
-    const provider =
-      stringValue(item.provider) ?? stringValue(item.vendor) ?? stringValue(item.upstream_provider);
-    return [{ id, name, provider }];
-  });
-  const defaultModelApiIds = Array.isArray(payload.default_model_api_ids)
-    ? payload.default_model_api_ids
-        .map((id) => stringValue(id))
-        .filter((id): id is string => Boolean(id))
-    : [];
-  return {
-    modelCount: models.length,
-    discoveryId: stringValue(payload.discovery_id) ?? stringValue(payload.discoveryId),
-    regionId: stringValue(payload.region_id) ?? stringValue(payload.regionId),
-    gatewayId: stringValue(payload.gateway_id) ?? stringValue(payload.gatewayId),
-    defaultModelName:
-      stringValue(payload.default_api_name) ?? stringValue(payload.default_model_name),
-    defaultModelApiIds,
-    models,
-  };
-}
-
 function isLoopbackUrl(baseUrl: string): boolean {
   const hostname = new URL(baseUrl).hostname.toLowerCase();
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
-}
-
-function operationEndpoint(
-  baseUrl: string,
-  endpoint: string | undefined,
-  operationId: string
-): string {
-  if (!endpoint) throw new Error('服务未声明 Token 池操作接口');
-  const encoded = encodeURIComponent(operationId);
-  const template = endpoint.includes('{operationId}')
-    ? endpoint.replaceAll('{operationId}', encoded)
-    : `${endpoint.replace(/\/$/u, '')}/${encoded}`;
-  return endpointUrl(baseUrl, template, 'Token 池操作');
-}
-
-function boundedPollDelay(value: unknown): number {
-  const numeric = Number(value);
-  return Number.isFinite(numeric)
-    ? Math.min(TOKEN_POLL_MAX_MS, Math.max(500, numeric))
-    : TOKEN_POLL_FALLBACK_MS;
-}
-
-function providerErrorMessage(payload: Record<string, unknown>, fallback: string): string {
-  return sanitizeRemoteMessage(
-    stringValue(payload.message) ??
-      stringValue(payload.error_description) ??
-      stringValue(payload.error) ??
-      stringValue(payload.status) ??
-      fallback
-  );
 }
 
 export class AdvancedConnectionService {
@@ -413,6 +404,7 @@ export class AdvancedConnectionService {
   private readonly secretStore: ConnectionSecretStore;
   private readonly runtimeHome: string;
   private readonly runtimeCredentialApplier: RuntimeCredentialApplier;
+  private readonly injectedTokenDistribution?: TokenDistributionRuntime;
   private readonly onAuthenticated?: (connectionId: string) => Promise<void> | void;
   private readonly attempts = new Map<string, AuthAttempt>();
   private readonly activeTokenClaims = new Set<string>();
@@ -434,6 +426,7 @@ export class AdvancedConnectionService {
     this.runtimeCredentialApplier =
       options.runtimeCredentialApplier ??
       (async (input) => (await loadAikeyRuntime()).applyClaimedSecret(input));
+    this.injectedTokenDistribution = options.tokenDistribution;
     this.onAuthenticated = options.onAuthenticated;
   }
 
@@ -694,53 +687,10 @@ export class AdvancedConnectionService {
     return this.toSummary(updated);
   }
 
-  async tokenCatalog(connectionId: string): Promise<AdvancedConnectionTokenCatalogResponse> {
-    const record = await this.requireRecord(connectionId);
-    this.assertAuthorizedTransport(record);
-    const secret = await this.getValidSecret(record);
-    if (!record.manifest.capabilities.some((item) => item.id === 'token-pool')) {
-      return { ok: true, available: false };
-    }
-    if (!secret) return { ok: false, available: true, error: '请先完成用户授权' };
-    const url = endpointUrl(record.baseUrl, record.manifest.endpoints.tokenCatalog, 'Token 池目录');
-    try {
-      const response = await this.fetchImpl(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `${secret.tokenType} ${secret.accessToken}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({ region_id: 'cn-shenzhen', include_upstream_models: true }),
-        signal: AbortSignal.timeout(TOKEN_CATALOG_TIMEOUT_MS),
-        redirect: 'error',
-      });
-      const catalog: unknown = await (response.json() as Promise<unknown>).catch(() => null);
-      if (response.ok) {
-        return { ok: true, available: true, catalog: tokenCatalogSummary(catalog) };
-      }
-      // 把服务端的 detail.message 透出来（如「未找到固定生产消费者组 agent-bus」），
-      // 否则只有一个 HTTP 码无法定位是客户端还是服务端配置问题。
-      const serverMessage =
-        stringValue(asRecord(asRecord(catalog)?.detail)?.message) ??
-        stringValue(asRecord(catalog)?.message);
-      return {
-        ok: false,
-        available: true,
-        error: `Token 池查询失败（HTTP ${response.status}）${serverMessage ? `：${serverMessage}` : ''}`,
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        available: true,
-        error: error instanceof Error ? error.message : 'Token 池查询失败',
-      };
-    }
-  }
-
   async claimAndApplyToken(
     connectionId: string,
-    request: AdvancedConnectionTokenClaimRequest
+    request: AdvancedConnectionTokenClaimRequest,
+    onStep?: (event: AdvancedConnectionTokenClaimStepEvent) => void
   ): Promise<AdvancedConnectionTokenClaimResult> {
     const record = await this.requireRecord(connectionId);
     this.assertAuthorizedTransport(record);
@@ -750,148 +700,89 @@ export class AdvancedConnectionService {
     if (this.activeTokenClaims.has(connectionId)) {
       throw new Error('该连接已有 Token 认领任务正在执行');
     }
-    const discoveryId = request.discoveryId?.trim();
-    const modelApiIds = [...new Set(request.modelApiIds.map((id) => id.trim()).filter(Boolean))];
     const runtimes = [...new Set(request.runtimes)].filter(
       (runtime): runtime is AdvancedConnectionRuntimeId =>
         runtime === 'claude' || runtime === 'codex' || runtime === 'pi'
     );
-    if (!discoveryId) throw new Error('缺少 Token 池 discoveryId，请先读取目录');
-    if (modelApiIds.length === 0) throw new Error('请至少选择一个模型');
     if (runtimes.length === 0) throw new Error('请至少选择一个本地运行时');
+
+    // 链式步骤事件（面板进度 + SSE token-claim-event）；失败停在对应步骤并透出服务端原始错误
+    const emit = (
+      step: AdvancedConnectionTokenClaimStepEvent['step'],
+      status: AdvancedConnectionTokenClaimStepEvent['status'],
+      extra: { text?: string; error?: string } = {}
+    ): void => {
+      onStep?.({ connectionId, step, status, ...extra });
+    };
+    const stepError = (step: AdvancedConnectionTokenClaimStepEvent['step'], label: string) => {
+      return (error: unknown): never => {
+        const message = error instanceof Error ? error.message : String(error);
+        emit(step, 'error', { error: message });
+        throw new Error(`${label}：${message}`);
+      };
+    };
 
     this.activeTokenClaims.add(connectionId);
     try {
-      const secret = await this.getValidSecret(record);
-      if (!secret) throw new Error('请先完成用户授权');
-      const authorization = `${secret.tokenType} ${secret.accessToken}`;
-      const provisionUrl = endpointUrl(
-        record.baseUrl,
-        record.manifest.endpoints.tokenProvision,
-        'Token 池认领'
-      );
-      const provisionResponse = await this.fetchImpl(provisionUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: authorization,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'Idempotency-Key': randomUUID(),
-        },
-        body: JSON.stringify({
-          discovery_id: discoveryId,
-          region_id: request.regionId?.trim() || 'cn-shenzhen',
-          ...(request.gatewayId?.trim() ? { gateway_id: request.gatewayId.trim() } : {}),
-          model_api_ids: modelApiIds,
-        }),
-        signal: AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS),
-        redirect: 'error',
+      const tokenDistribution = await (this.injectedTokenDistribution ??
+        loadTokenDistributionRuntime());
+      // 1. 读取目录（region 默认 cn-shenzhen 由 tokenDistribution 模块内置，service 不出现 region）
+      emit('discover', 'start');
+      const catalog = await tokenDistribution
+        .discoverCatalog({})
+        .catch(stepError('discover', '读取 Token 池目录失败'));
+      const discoveryId = catalog.discoveryId;
+      if (!discoveryId) {
+        stepError('discover', '读取 Token 池目录失败')(new Error('目录未返回 discovery_id'));
+      }
+      emit('discover', 'done', {
+        ...(catalog.defaultApiName ? { text: `默认模型 ${catalog.defaultApiName}` } : {}),
       });
-      const provisionPayload = asRecord(await provisionResponse.json().catch(() => null));
-      if (!provisionResponse.ok) {
-        throw new Error(
-          providerErrorMessage(
-            provisionPayload,
-            `Token 池认领启动失败（HTTP ${provisionResponse.status}）`
-          )
-        );
-      }
-      const operationId =
-        stringValue(provisionPayload.run_id) ?? stringValue(provisionPayload.operation_id);
-      if (!operationId) throw new Error('Token 池服务没有返回操作 ID');
-
-      const startedAt = Date.now();
-      let operationPayload: Record<string, unknown> = {};
-      while (Date.now() - startedAt < TOKEN_PROVISION_TIMEOUT_MS) {
-        const pollUrl = operationEndpoint(
-          record.baseUrl,
-          record.manifest.endpoints.tokenOperation,
-          operationId
-        );
-        const pollResponse = await this.fetchImpl(pollUrl, {
-          headers: { Authorization: authorization, Accept: 'application/json' },
-          signal: AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS),
-          redirect: 'error',
-        });
-        operationPayload = asRecord(await pollResponse.json().catch(() => null));
-        if (!pollResponse.ok) {
-          if (pollResponse.status === 429 || pollResponse.status >= 500) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, boundedPollDelay(operationPayload.poll_after_ms))
-            );
-            continue;
-          }
-          throw new Error(
-            providerErrorMessage(
-              operationPayload,
-              `Token 池操作查询失败（HTTP ${pollResponse.status}）`
-            )
-          );
-        }
-        const status = stringValue(operationPayload.status) ?? 'running';
-        if (status === 'succeeded') break;
-        if (status === 'failed') {
-          throw new Error(providerErrorMessage(operationPayload, 'Token 池认领失败'));
-        }
-        if (!['queued', 'running', 'pending', 'provisioning'].includes(status)) {
-          throw new Error(`Token 池返回了不支持的操作状态：${sanitizeRemoteMessage(status)}`);
-        }
-        await new Promise((resolve) =>
-          setTimeout(resolve, boundedPollDelay(operationPayload.poll_after_ms))
-        );
-      }
-      if ((stringValue(operationPayload.status) ?? '') !== 'succeeded') {
-        throw new Error('Token 池认领超时，请稍后重试');
-      }
-
-      const claimUrl = operationEndpoint(
-        record.baseUrl,
-        record.manifest.endpoints.tokenClaim,
-        operationId
-      );
-      const claimResponse = await this.fetchImpl(claimUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: authorization,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'Idempotency-Key': randomUUID(),
-        },
-        body: JSON.stringify({}),
-        signal: AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS),
-        redirect: 'error',
-      });
-      const receipt = asRecord(await claimResponse.json().catch(() => null));
-      if (!claimResponse.ok) {
-        throw new Error(
-          providerErrorMessage(receipt, `Token 领取失败（HTTP ${claimResponse.status}）`)
-        );
-      }
-      const claimedKey =
-        stringValue(receipt.key) ??
-        stringValue(receipt.api_key) ??
-        stringValue(receipt.plaintext_key);
-      if (!claimedKey) throw new Error('Token 领取响应没有返回可用 Key');
+      // 2. 发起认领（模型集缺省用服务端精选 default_model_api_ids）
+      emit('provision', 'start');
+      const modelApiIds = request.modelApiIds?.length
+        ? [...new Set(request.modelApiIds.map((id) => id.trim()).filter(Boolean))]
+        : tokenDistribution.selectModelApiIds(catalog.defaultModelApiIds);
+      const { runId } = await tokenDistribution
+        .provisionRun({
+          discoveryId: discoveryId as string,
+          gatewayId: catalog.gatewayId,
+          aliyunModelApiIds: modelApiIds,
+        })
+        .catch(stepError('provision', 'Token 池认领启动失败'));
+      emit('provision', 'done');
+      // 3. 等待开通（onTick 透传服务端状态做进度）
+      emit('poll', 'start');
+      await tokenDistribution
+        .pollRun(runId, { onTick: (status) => emit('poll', 'progress', { text: status }) })
+        .catch(stepError('poll', 'Token 池认领失败'));
+      emit('poll', 'done');
+      // 4. 领取凭证（明文 key 即焚语义：只经内存传给应用步骤，不落盘）
+      emit('claim', 'start');
+      const receipt = await tokenDistribution
+        .claimSecret(runId)
+        .catch(stepError('claim', 'Token 领取失败'));
+      const claimedKey = receipt.key;
+      emit('claim', 'done');
+      // 5. 写入本地运行时配置（既有 aikey 复用路径）
+      emit('apply', 'start');
       const claimedSecret: Record<string, unknown> = {
         key: claimedKey,
-        keyId: stringValue(receipt.key_id) ?? stringValue(receipt.keyId),
-        endpoint: stringValue(receipt.endpoint),
-        endpoints: asRecord(receipt.endpoints),
-        runtimeProfiles: asRecord(receipt.runtime_profiles ?? receipt.runtimeProfiles),
-        modelsUrl: stringValue(receipt.models_url) ?? stringValue(receipt.modelsUrl),
-        modelIds: Array.isArray(receipt.model_ids)
-          ? receipt.model_ids.filter((id): id is string => typeof id === 'string')
-          : Array.isArray(receipt.modelIds)
-            ? receipt.modelIds.filter((id): id is string => typeof id === 'string')
-            : [],
-        expiresAt: stringValue(receipt.expires_at) ?? stringValue(receipt.expiresAt),
+        keyId: receipt.keyId ?? undefined,
+        endpoint: receipt.endpoint || undefined,
+        endpoints: receipt.endpoints,
+        runtimeProfiles: receipt.runtimeProfiles,
+        modelsUrl: receipt.modelsUrl || undefined,
+        modelIds: receipt.modelIds,
+        expiresAt: receipt.expiresAt ?? undefined,
       };
       const aikeyRuntime = await loadAikeyRuntime();
       const validation = aikeyRuntime.validateClaimedSecret(claimedSecret);
       if (!validation.ok) {
-        throw new Error(
-          `Token 无法应用：${sanitizeRemoteMessage(validation.reason || '返回内容无效')}`
-        );
+        stepError(
+          'apply',
+          'Token 无法应用'
+        )(new Error(sanitizeRemoteMessage(validation.reason || '返回内容无效')));
       }
       let applied: RuntimeCredentialApplyOutput;
       try {
@@ -906,9 +797,10 @@ export class AdvancedConnectionService {
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(
-          `Token 已领取，但本地应用失败：${sanitizeRemoteMessage(message, [claimedKey])}`
-        );
+        stepError(
+          'apply',
+          'Token 已领取，但本地应用失败'
+        )(new Error(sanitizeRemoteMessage(message, [claimedKey])));
       }
       const expectedResultNames: Record<AdvancedConnectionRuntimeId, string[]> = {
         claude: ['claude'],
@@ -943,13 +835,14 @@ export class AdvancedConnectionService {
         .filter((result) => !result.ok)
         .map((result) => `${result.runtime}：${result.error || '本地配置失败'}`);
       if (warnings.length > 0) {
-        throw new Error(`Token 已领取，但本地应用未完成：${warnings.join('；')}`);
+        stepError('apply', 'Token 已领取，但本地应用未完成')(new Error(warnings.join('；')));
       }
+      emit('apply', 'done');
       return {
         ok: true,
-        ...(stringValue(receipt.key_id) ? { keyId: stringValue(receipt.key_id) } : {}),
+        ...(receipt.keyId ? { keyId: receipt.keyId } : {}),
         maskedKey: aikeyRuntime.maskKey(claimedKey),
-        ...(stringValue(receipt.expires_at) ? { expiresAt: stringValue(receipt.expires_at) } : {}),
+        ...(receipt.expiresAt ? { expiresAt: receipt.expiresAt } : {}),
         ...(request.model?.trim() ? { model: request.model.trim() } : {}),
         runtimes: runtimeResults,
         appliedAt: this.now().toISOString(),

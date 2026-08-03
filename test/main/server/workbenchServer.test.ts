@@ -139,13 +139,13 @@ describe('workbench server factory', () => {
     const expectedRoutes = sortedRouteKeys();
     const actualRoutes = [...runtimeRoutes].sort((left, right) => left.localeCompare(right));
 
-    expect(actualRoutes).toHaveLength(273);
-    expect(new Set(actualRoutes).size).toBe(273);
+    expect(actualRoutes).toHaveLength(272);
+    expect(new Set(actualRoutes).size).toBe(272);
     expect(actualRoutes).toEqual(expectedRoutes);
     expect(methodCounts(actualRoutes)).toEqual({
       ALL: 3,
       DELETE: 12,
-      GET: 112,
+      GET: 111,
       PATCH: 14,
       POST: 126,
       PUT: 6,

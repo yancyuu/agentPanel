@@ -44,6 +44,7 @@ function renderSection(props: {
   busyAction?: string | null;
   channelStatus?: Parameters<typeof AdvancedConnectionsSection>[0]['channelStatus'];
   catalogStatus?: Parameters<typeof AdvancedConnectionsSection>[0]['catalogStatus'];
+  claimSteps?: Parameters<typeof AdvancedConnectionsSection>[0]['claimSteps'];
 }): { host: HTMLElement; root: ReturnType<typeof createRoot> } {
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -60,7 +61,7 @@ function renderSection(props: {
         error={null}
         notice={null}
         catalogStatus={props.catalogStatus ?? {}}
-        catalogs={{}}
+        claimSteps={props.claimSteps ?? {}}
         channelStatus={props.channelStatus ?? {}}
         onHostChange={vi.fn()}
         onDiscover={vi.fn()}
@@ -71,7 +72,6 @@ function renderSection(props: {
         onAllowInsecure={props.onAllowInsecure ?? vi.fn()}
         onPullRemoteTasks={vi.fn()}
         onSetUsageReporting={props.onSetUsageReporting ?? vi.fn()}
-        onCheckTokenCatalog={vi.fn()}
         onClaimAndApplyToken={vi.fn()}
         onRefresh={vi.fn()}
       />
@@ -225,6 +225,135 @@ describe('AdvancedConnectionsSection', () => {
     expect(outcomes[1]?.textContent).toContain('授权已失效，请重新登录');
     expect(outcomes[1]?.textContent).toContain('HTTP 401');
     expect(outcomes[1]?.className).toContain('rose');
+  });
+
+  it('Token 池区只有「领取并应用」主按钮（检测按钮已删除）', () => {
+    const connection = makeConnection({
+      state: 'authenticated',
+      secretPresent: true,
+      secure: true,
+      baseUrl: 'https://bus.company.test',
+    });
+    const { host } = renderSection({ connections: [connection] });
+
+    expect(host.textContent).not.toContain('检测 Token 池');
+    const claimButton = buttonByText(host, '领取并应用');
+    expect(claimButton.disabled).toBe(false);
+  });
+
+  it('用量上报开关显示当前状态并切换', () => {
+    const onSetUsageReporting = vi.fn();
+    const granted = makeConnection({
+      id: 'connection_granted',
+      secure: true,
+      baseUrl: 'https://bus.company.test',
+      permissions: { 'usage.aggregates': 'granted' } as AdvancedConnectionSummary['permissions'],
+    });
+    const denied = makeConnection({
+      id: 'connection_denied',
+      permissions: { 'usage.aggregates': 'denied' } as AdvancedConnectionSummary['permissions'],
+    });
+    const { host } = renderSection({
+      connections: [granted, denied],
+      onSetUsageReporting,
+    });
+
+    const grantedToggle = host.querySelector<HTMLButtonElement>(
+      '[data-testid="usage-reporting:connection_granted"]'
+    );
+    const deniedToggle = host.querySelector<HTMLButtonElement>(
+      '[data-testid="usage-reporting:connection_denied"]'
+    );
+    expect(grantedToggle?.textContent).toContain('已开启');
+    expect(grantedToggle?.getAttribute('aria-checked')).toBe('true');
+    expect(deniedToggle?.textContent).toContain('已关闭');
+    expect(deniedToggle?.getAttribute('aria-checked')).toBe('false');
+
+    act(() => {
+      grantedToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      deniedToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(onSetUsageReporting).toHaveBeenCalledWith('connection_granted', false);
+    expect(onSetUsageReporting).toHaveBeenCalledWith('connection_denied', true);
+  });
+
+  it('compat 连接显示「未提供远程任务通道」说明而不渲染检查按钮', () => {
+    const connection = makeConnection({
+      compatibilityMode: true,
+      state: 'authenticated',
+      secretPresent: true,
+      secure: true,
+      baseUrl: 'https://bus.company.test',
+    });
+    const { host } = renderSection({ connections: [connection] });
+
+    expect(host.textContent).toContain('当前 AgentBus 兼容接口未提供远程任务通道');
+    expect(
+      [...host.querySelectorAll('button')].some((button) =>
+        button.textContent?.includes('检查远程任务')
+      )
+    ).toBe(false);
+  });
+
+  it('领取步骤进度：进行中高亮，失败停在对应步骤并透出错误', () => {
+    const connection = makeConnection({
+      state: 'authenticated',
+      secretPresent: true,
+      secure: true,
+      baseUrl: 'https://bus.company.test',
+    });
+    const { host } = renderSection({
+      connections: [connection],
+      claimSteps: {
+        [connection.id]: [
+          { connectionId: connection.id, step: 'discover', status: 'done' },
+          { connectionId: connection.id, step: 'provision', status: 'done' },
+          { connectionId: connection.id, step: 'poll', status: 'progress', text: 'running' },
+        ],
+      },
+    });
+
+    expect(host.querySelector('[data-testid="claim-steps"]')).not.toBeNull();
+    expect(
+      host.querySelector('[data-testid="claim-step:poll"]')?.getAttribute('data-status')
+    ).toBe('progress');
+    expect(host.querySelector('[data-testid="claim-step:apply"]')?.getAttribute('data-status')).toBe(
+      'pending'
+    );
+    expect(host.textContent).toContain('等待开通（running）');
+    // 检测按钮不存在（步骤视图替代了两段式流程）
+    expect(host.textContent).not.toContain('检测 Token 池');
+  });
+
+  it('领取步骤失败：错误步骤显示服务端原始错误', () => {
+    const connection = makeConnection({
+      state: 'authenticated',
+      secretPresent: true,
+      secure: true,
+      baseUrl: 'https://bus.company.test',
+    });
+    const { host } = renderSection({
+      connections: [connection],
+      claimSteps: {
+        [connection.id]: [
+          { connectionId: connection.id, step: 'discover', status: 'done' },
+          {
+            connectionId: connection.id,
+            step: 'provision',
+            status: 'error',
+            error: '422: 未找到固定生产消费者组 agent-bus',
+          },
+        ],
+      },
+    });
+
+    expect(
+      host.querySelector('[data-testid="claim-step:provision"]')?.getAttribute('data-status')
+    ).toBe('error');
+    expect(host.textContent).toContain('未找到固定生产消费者组 agent-bus');
+    expect(host.querySelector('[data-testid="claim-step:claim"]')?.getAttribute('data-status')).toBe(
+      'pending'
+    );
   });
 });
 

@@ -24,9 +24,9 @@ describe('server route manifest baseline', () => {
       ])
     );
 
-    expect(routes).toHaveLength(273);
+    expect(routes).toHaveLength(272);
     expect(methodCounts).toEqual({
-      GET: 112,
+      GET: 111,
       POST: 126,
       PUT: 6,
       PATCH: 14,
@@ -52,7 +52,7 @@ describe('server route manifest baseline', () => {
 
     expect(keys).toEqual(
       expect.objectContaining({
-        size: 273,
+        size: 272,
       })
     );
     expect(keys.has('ALL /api/v1/*')).toBe(true);

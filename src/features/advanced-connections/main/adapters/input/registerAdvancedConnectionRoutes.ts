@@ -1,6 +1,7 @@
 import {
   type AdvancedConnectionLocalSnapshot,
   type AdvancedConnectionTokenClaimRequest,
+  type AdvancedConnectionTokenClaimStepEvent,
   type CreateAdvancedConnectionRequest,
   type DiscoverAdvancedConnectionRequest,
   type StartAdvancedConnectionAuthRequest,
@@ -13,6 +14,8 @@ import type { FastifyInstance } from 'fastify';
 interface AdvancedConnectionRouteDependencies {
   service: AdvancedConnectionService;
   localSnapshot?: () => Promise<AdvancedConnectionLocalSnapshot>;
+  /** Token 领取步骤事件（SSE token-claim-event 广播） */
+  onTokenClaimStep?: (event: AdvancedConnectionTokenClaimStepEvent) => void;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -143,31 +146,23 @@ export function registerAdvancedConnectionRoutes(
     }
   );
 
-  app.get<{ Params: { connectionId: string } }>(
-    '/api/advanced-connections/:connectionId/token-pool/catalog',
-    async (request, reply) => {
-      try {
-        return await dependencies.service.tokenCatalog(request.params.connectionId);
-      } catch (error) {
-        return reply.code(400).send({ ok: false, error: errorMessage(error, 'Token 池查询失败') });
-      }
-    }
-  );
-
   app.post<{
     Params: { connectionId: string };
     Body: AdvancedConnectionTokenClaimRequest;
   }>('/api/advanced-connections/:connectionId/token-pool/claim-apply', async (request, reply) => {
     try {
-      return await dependencies.service.claimAndApplyToken(request.params.connectionId, {
-        discoveryId: request.body?.discoveryId ?? '',
-        regionId: request.body?.regionId,
-        gatewayId: request.body?.gatewayId,
-        modelApiIds: Array.isArray(request.body?.modelApiIds) ? request.body.modelApiIds : [],
-        runtimes: Array.isArray(request.body?.runtimes) ? request.body.runtimes : [],
-        model: request.body?.model,
-        wireApi: request.body?.wireApi,
-      });
+      return await dependencies.service.claimAndApplyToken(
+        request.params.connectionId,
+        {
+          modelApiIds: Array.isArray(request.body?.modelApiIds)
+            ? request.body.modelApiIds
+            : undefined,
+          runtimes: Array.isArray(request.body?.runtimes) ? request.body.runtimes : [],
+          model: request.body?.model,
+          wireApi: request.body?.wireApi,
+        },
+        dependencies.onTokenClaimStep
+      );
     } catch (error) {
       const message = errorMessage(error, 'Token 认领与应用失败');
       const status = message.includes('正在执行') ? 409 : 400;

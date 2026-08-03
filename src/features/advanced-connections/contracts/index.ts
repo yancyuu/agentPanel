@@ -174,11 +174,27 @@ export interface AdvancedConnectionTokenCatalogResponse {
 
 export type AdvancedConnectionRuntimeId = 'claude' | 'codex' | 'pi';
 
+/** Token 领取链式步骤（面板进度展示 + SSE token-claim-event 载荷） */
+export type AdvancedConnectionTokenClaimStepId =
+  | 'discover'
+  | 'provision'
+  | 'poll'
+  | 'claim'
+  | 'apply';
+
+export interface AdvancedConnectionTokenClaimStepEvent {
+  connectionId: string;
+  step: AdvancedConnectionTokenClaimStepId;
+  status: 'start' | 'progress' | 'done' | 'error';
+  /** 进度说明（如 poll 的服务端状态、目录默认模型名） */
+  text?: string;
+  /** 失败步骤的服务端原始错误（detail.message 透出） */
+  error?: string;
+}
+
 export interface AdvancedConnectionTokenClaimRequest {
-  discoveryId: string;
-  regionId?: string;
-  gatewayId?: string;
-  modelApiIds: string[];
+  /** 可选：指定要开通的模型 API id；缺省用服务端精选集（default_model_api_ids） */
+  modelApiIds?: string[];
   runtimes: AdvancedConnectionRuntimeId[];
   model?: string;
   wireApi?: 'responses' | 'chat';
