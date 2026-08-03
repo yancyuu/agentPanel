@@ -10,6 +10,7 @@ vi.mock('@renderer/components/chat/viewers/MarkdownViewer', () => ({
 
 import {
   DeliveryContentView,
+  injectBaseTagIntoHtml,
   isHtmlDeliveryContent,
   isStandaloneUrlContent,
 } from '@renderer/components/team/DeliveryContentView';
@@ -30,8 +31,37 @@ function renderView(content: string): { host: HTMLElement; root: ReturnType<type
   return { host, root };
 }
 
-describe('isHtmlDeliveryContent 嗅探', () => {
-  it('识别完整 HTML 文档', () => {
+describe('injectBaseTagIntoHtml 注入位置', () => {
+  const BASE = '<base href="about:blank" target="_blank">';
+
+  it('含 <head> 时紧随其后，doctype 保持在最前', () => {
+    const input = '<!DOCTYPE html>\n<html lang="zh">\n<head><meta charset="utf-8"></head><body>x</body></html>';
+    const output = injectBaseTagIntoHtml(input);
+    expect(output.startsWith('<!DOCTYPE html>')).toBe(true);
+    expect(output.indexOf('<head>' + BASE)).toBeGreaterThan(-1);
+    expect(output.indexOf(BASE)).toBeLessThan(output.indexOf('<meta'));
+  });
+
+  it('含 <head 属性> 时插在开标签之后', () => {
+    const output = injectBaseTagIntoHtml('<html><head class="a"><title>t</title></head><body>x</body></html>');
+    expect(output).toContain(`<head class="a">${BASE}<title>t</title>`);
+  });
+
+  it('无 head 含 <html> 时紧随 <html> 开标签之后', () => {
+    const output = injectBaseTagIntoHtml('<!DOCTYPE html><html lang="zh"><body>x</body></html>');
+    expect(output.startsWith('<!DOCTYPE html>')).toBe(true);
+    expect(output).toContain(`<html lang="zh">${BASE}<body>`);
+  });
+
+  it('纯片段直接前置；带 doctype 的片段 base 在 doctype 之后', () => {
+    expect(injectBaseTagIntoHtml('<div>片段</div>').startsWith(BASE)).toBe(true);
+    const withDoctype = injectBaseTagIntoHtml('<!DOCTYPE html>\n<div>片段</div>');
+    expect(withDoctype.startsWith('<!DOCTYPE html>')).toBe(true);
+    expect(withDoctype.indexOf(BASE)).toBeLessThan(withDoctype.indexOf('<div>'));
+  });
+});
+
+describe('isHtmlDeliveryContent 嗅探', () => {  it('识别完整 HTML 文档', () => {
     expect(isHtmlDeliveryContent(HTML_DOC)).toBe(true);
     expect(isHtmlDeliveryContent('<html><body>x</body></html>')).toBe(true);
     expect(isHtmlDeliveryContent('  <!-- 注释 -->\n<html><body>x</body></html>')).toBe(true);
@@ -62,7 +92,11 @@ describe('DeliveryContentView', () => {
 
     const iframe = host.querySelector<HTMLIFrameElement>('[data-testid="delivery-html-preview"]');
     expect(iframe).not.toBeNull();
-    expect(iframe?.getAttribute('srcdoc')).toBe(HTML_DOC);
+    // srcDoc 注入 <base href="about:blank" target="_blank">：相对链接不再套娃工作台
+    const srcdoc = iframe?.getAttribute('srcdoc') ?? '';
+    expect(srcdoc).toBe(injectBaseTagIntoHtml(HTML_DOC));
+    expect(srcdoc).toContain('<base href="about:blank" target="_blank">');
+    expect(srcdoc.startsWith('<!DOCTYPE html>')).toBe(true);
     const sandbox = iframe?.getAttribute('sandbox') ?? '';
     // 可交互：允许脚本/表单/弹窗
     expect(sandbox).toContain('allow-scripts');

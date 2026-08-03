@@ -23,6 +23,34 @@ export function isStandaloneUrlContent(content: string): boolean {
   return /^https?:\/\/\S+$/i.test(content.trim());
 }
 
+/** 注入的 base 标签：相对链接/资源解析到 about:blank（点击无害空白，不套娃工作台），所有链接默认新窗口打开 */
+const BLANK_BASE_TAG = '<base href="about:blank" target="_blank">';
+
+/**
+ * 给 srcDoc 成果注入 `<base href="about:blank" target="_blank">`。
+ * srcDoc iframe 的 base URL 继承父页面 origin，不注入时成果里的相对链接
+ * （如 href="#"）会把 iframe 导航到工作台地址（套娃加载启动页）。
+ * 插入位置：<head…> 紧随其后 > <html…> 紧随其后 > 片段直接前置（<!DOCTYPE> 保持在最前）。
+ */
+export function injectBaseTagIntoHtml(content: string): string {
+  const headMatch = /<head(?:\s[^>]*)?>/i.exec(content);
+  if (headMatch) {
+    const at = headMatch.index + headMatch[0].length;
+    return content.slice(0, at) + BLANK_BASE_TAG + content.slice(at);
+  }
+  const htmlMatch = /<html(?:\s[^>]*)?>/i.exec(content);
+  if (htmlMatch) {
+    const at = htmlMatch.index + htmlMatch[0].length;
+    return content.slice(0, at) + BLANK_BASE_TAG + content.slice(at);
+  }
+  const doctypeMatch = /^\s*<!doctype[^>]*>/i.exec(content);
+  if (doctypeMatch) {
+    const at = doctypeMatch.index + doctypeMatch[0].length;
+    return content.slice(0, at) + BLANK_BASE_TAG + content.slice(at);
+  }
+  return BLANK_BASE_TAG + content;
+}
+
 /** 外链预览的可达性等待上限：超时未 load 视为被 X-Frame-Options/CSP 拒绝，降级链接卡片 */
 const URL_PREVIEW_TIMEOUT_MS = 5_000;
 
@@ -147,7 +175,7 @@ export const DeliveryContentView = ({
           // 成果脚本读不到工作台存储/cookie）与 allow-top-navigation（成果不得
           // 把工作台导航走）；弹窗经 allow-popups* 交给浏览器处理。
           sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
-          srcDoc={content}
+          srcDoc={injectBaseTagIntoHtml(content)}
           className="h-96 w-full rounded-md border border-[var(--color-border)] bg-white"
         />
       ) : (
