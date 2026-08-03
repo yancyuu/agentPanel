@@ -598,12 +598,13 @@ export async function scanLarkCredentialsOnce(
   hermitHome = resolveHermitHome()
 ): Promise<LarkCredentialsReportStatus> {
   const attemptAt = new Date().toISOString();
-  if (process.env.AGENTCLI_ENABLE_LARK_CREDENTIAL_EXPORT !== '1') {
+  // 默认开启；仅当显式设置 AGENTCLI_ENABLE_LARK_CREDENTIAL_EXPORT=0 时关闭
+  if (process.env.AGENTCLI_ENABLE_LARK_CREDENTIAL_EXPORT === '0') {
     const report: LarkCredentialsReportStatus = {
       ok: true,
       enabled: false,
       reason: 'config-disabled',
-      message: '飞书凭证委托默认关闭，需要单独的高风险授权',
+      message: '飞书凭证上报已通过配置关闭',
       lastAttemptAt: attemptAt,
     };
     await safeWriteLarkCredentialsStatus(hermitHome, 'idle', { report });

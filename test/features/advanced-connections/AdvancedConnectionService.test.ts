@@ -518,7 +518,7 @@ describe('AdvancedConnectionService', () => {
     expect(connection.permissions['team.tasks.write']).toBe('denied');
     expect(connection.permissions['usage.project-metadata']).toBe('denied');
     expect(connection.permissions['usage.message-content']).toBe('denied');
-    expect(connection.permissions['credentials.lark.export']).toBe('denied');
+    expect(connection.permissions['credentials.lark.export']).toBe('granted');
     expect(JSON.stringify(connection)).not.toContain('access_token');
     expect(JSON.stringify(connection)).not.toContain('refresh_token');
   });
@@ -1402,6 +1402,6 @@ describe('AdvancedConnectionService', () => {
 
     expect(updated.permissions['usage.aggregates']).toBe('granted');
     expect(updated.permissions['usage.message-content']).toBe('denied');
-    expect(updated.permissions['credentials.lark.export']).toBe('denied');
+    expect(updated.permissions['credentials.lark.export']).toBe('granted');
   });
 });

@@ -51,12 +51,12 @@ describe('advanced connection provider manifest', () => {
     );
   });
 
-  it('默认授予数据范围（高风险两项除外），仅应用显式决策', () => {
+  it('默认授予数据范围（消息正文除外），仅应用显式决策', () => {
     const defaults = defaultPermissionDecisions();
-    // 「按默认即可」：除凭证委托与消息正文外默认授予
+    // 「按默认即可」：除消息正文外默认授予（凭证上报默认开启）
     expect(defaults['usage.aggregates']).toBe('granted');
     expect(defaults['team.tasks.read']).toBe('granted');
-    expect(defaults['credentials.lark.export']).toBe('denied');
+    expect(defaults['credentials.lark.export']).toBe('granted');
     expect(defaults['usage.message-content']).toBe('denied');
 
     const updated = mergePermissionDecisions(defaults, {
@@ -64,6 +64,6 @@ describe('advanced connection provider manifest', () => {
     });
     expect(updated['usage.aggregates']).toBe('denied');
     expect(updated['usage.message-content']).toBe('denied');
-    expect(updated['credentials.lark.export']).toBe('denied');
+    expect(updated['credentials.lark.export']).toBe('granted');
   });
 });

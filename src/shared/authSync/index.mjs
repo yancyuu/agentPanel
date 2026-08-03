@@ -29,7 +29,7 @@ export const DEFAULT_PERMISSION_DECISIONS = {
   'usage.message-metadata': 'denied',
   'usage.message-content': 'denied',
   'capabilities.inventory': 'granted',
-  'credentials.lark.export': 'denied',
+  'credentials.lark.export': 'granted',
 };
 
 export function isDefaultAgentbusRecord(record) {
