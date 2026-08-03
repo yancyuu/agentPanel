@@ -186,32 +186,20 @@ function useAdvancedConnectionsState() {
     [run]
   );
 
-  const syncConnection = useCallback(
-    async (connectionId: string) => {
-      const result = await run(`sync:${connectionId}`, () =>
-        advancedConnectionsApi.sync(connectionId)
+  const setUsageReporting = useCallback(
+    async (connectionId: string, enabled: boolean) => {
+      const result = await run(`usage-reporting:${connectionId}`, () =>
+        advancedConnectionsApi.updatePermissions(connectionId, {
+          permissions: { 'usage.aggregates': enabled ? 'granted' : 'denied' },
+        })
       );
-      if (!result) {
-        setChannelStatus((current) => ({ ...current, [connectionId]: lastFailure('同步失败') }));
-        await refreshIfAuthExpired();
-        return;
+      if (result) {
+        setConnections((current) =>
+          current.map((connection) => (connection.id === result.id ? result : connection))
+        );
       }
-      setChannelStatus((current) => ({
-        ...current,
-        [connectionId]: {
-          ok: true,
-          at: new Date().toISOString(),
-          text: result.sent.length
-            ? `已同步 ${result.sent.length} 个数据通道：${result.sent.map((item) => item.channel).join('、')}。`
-            : result.skipped
-                .map((item) => item.reason)
-                .filter(Boolean)
-                .join('；') || '没有需要同步的数据。',
-        },
-      }));
-      await refresh();
     },
-    [refresh, refreshIfAuthExpired, run]
+    [run]
   );
 
   const pullRemoteTasks = useCallback(
@@ -339,7 +327,7 @@ function useAdvancedConnectionsState() {
     startAuth,
     logout,
     allowInsecure,
-    syncConnection,
+    setUsageReporting,
     pullRemoteTasks,
     checkTokenCatalog,
     claimAndApplyToken,

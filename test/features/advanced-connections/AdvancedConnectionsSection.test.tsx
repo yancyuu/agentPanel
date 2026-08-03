@@ -38,6 +38,7 @@ function renderSection(props: {
   connections: AdvancedConnectionSummary[];
   onStartAuth?: (connection: AdvancedConnectionSummary) => void;
   onAllowInsecure?: (connectionId: string) => void;
+  onSetUsageReporting?: (connectionId: string, enabled: boolean) => void;
   busyAction?: string | null;
   channelStatus?: Parameters<typeof AdvancedConnectionsSection>[0]['channelStatus'];
   catalogStatus?: Parameters<typeof AdvancedConnectionsSection>[0]['catalogStatus'];
@@ -65,8 +66,8 @@ function renderSection(props: {
         onStartAuth={props.onStartAuth ?? vi.fn()}
         onLogout={vi.fn()}
         onAllowInsecure={props.onAllowInsecure ?? vi.fn()}
-        onSyncConnection={vi.fn()}
         onPullRemoteTasks={vi.fn()}
+        onSetUsageReporting={props.onSetUsageReporting ?? vi.fn()}
         onCheckTokenCatalog={vi.fn()}
         onClaimAndApplyToken={vi.fn()}
         onRefresh={vi.fn()}
@@ -179,11 +180,10 @@ describe('AdvancedConnectionsSection', () => {
     const pullButtons = [...host.querySelectorAll('button')].filter((button) =>
       button.textContent?.includes('检查远程任务')
     );
-    expect(syncButtons).toHaveLength(2);
+    // 「同步已授权数据」按钮已移除（聚合用量由消息上报通道自动汇总）
+    expect(syncButtons).toHaveLength(0);
     expect(pullButtons).toHaveLength(2);
-    expect(syncButtons[0]?.disabled).toBe(false);
     expect(pullButtons[0]?.disabled).toBe(false);
-    expect(syncButtons[1]?.disabled).toBe(true);
     expect(pullButtons[1]?.disabled).toBe(true);
   });
 

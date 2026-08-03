@@ -56,6 +56,7 @@ import { registerFeishuAssistantRoutes } from './routes/feishuAssistantRoutes';
 import { registerTeamAssetRoutes } from './routes/teamAssetRoutes';
 import { registerTeamDirectoryRoutes } from './routes/teamDirectoryRoutes';
 import { registerTeamMessageRoutes } from './routes/teamMessageRoutes';
+import { registerUsageLogRoutes } from './routes/usageLogRoutes';
 import { CC_AGENT_TYPES } from './routes/teamRouteUtils';
 import { registerTeamRuntimeRoutes } from './routes/teamRuntimeRoutes';
 import { registerTeamSessionRoutes } from './routes/teamSessionRoutes';
@@ -720,6 +721,7 @@ async function createWorkbenchServerUncached(
   registerTeamConfigRoutes(app, teamConfigRouteDependencies, { routes: ['core'] });
   registerTeamProvisioningCompatibilityRoutes(app);
   registerTeamMessageRoutes(app, teamMessageRouteDependencies, { routes: ['send'] });
+  registerUsageLogRoutes(app, { hermitHome: environment.hermitHome });
   registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['review-aliases'] });
   registerTeamConfigRoutes(app, teamConfigRouteDependencies, { routes: ['put'] });
   registerTeamActionCompatibilityRoutes(app, { routes: ['member-skip'] });

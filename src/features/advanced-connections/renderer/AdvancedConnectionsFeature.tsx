@@ -27,7 +27,9 @@ export function AdvancedConnectionsFeature(): React.JSX.Element {
       onStartAuth={(connection) => void state.startAuth(connection)}
       onLogout={(connectionId) => void state.logout(connectionId)}
       onAllowInsecure={(connectionId) => void state.allowInsecure(connectionId)}
-      onSyncConnection={(connectionId) => void state.syncConnection(connectionId)}
+      onSetUsageReporting={(connectionId, enabled) =>
+        void state.setUsageReporting(connectionId, enabled)
+      }
       onPullRemoteTasks={(connectionId) => void state.pullRemoteTasks(connectionId)}
       onCheckTokenCatalog={(connectionId) => void state.checkTokenCatalog(connectionId)}
       onClaimAndApplyToken={(connectionId) => {

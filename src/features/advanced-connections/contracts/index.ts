@@ -102,6 +102,8 @@ export interface AdvancedConnectionSummary {
   providerId: string;
   providerName: string;
   providerDescription?: string;
+  /** AgentBus 兼容模式（无 manifest，走既有专用通道；远程任务等通道不可用） */
+  compatibilityMode?: boolean;
   state: AdvancedConnectionState;
   account?: AdvancedConnectionAccountSummary;
   grantedScopes: string[];

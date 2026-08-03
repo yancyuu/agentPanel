@@ -970,10 +970,14 @@ export class AdvancedConnectionService {
         skipped.push({ channel, reason: '服务未声明对应端点' });
         return;
       }
-      if (record.compatibilityMode && channel !== 'usage') {
+      if (record.compatibilityMode) {
         skipped.push({
           channel,
-          reason: '当前 AgentBus 使用既有专用通道，不发送通用 Provider 载荷',
+          // 新版 AgentBus 的 /report/usage 只读（405）：聚合用量由消息上报通道自动汇总
+          reason:
+            channel === 'usage'
+              ? '聚合用量由消息上报通道自动汇总'
+              : '当前 AgentBus 使用既有专用通道，不发送通用 Provider 载荷',
         });
         return;
       }
@@ -1045,7 +1049,8 @@ export class AdvancedConnectionService {
     );
     await this.updateRecord(connectionId, (current) => ({
       ...current,
-      state: sent.length > 0 ? 'connected' : current.state,
+      // 同步无异常即视为已连接：兼容模式下通道按设计全部跳过（sent 为空）
+      state: 'connected',
       lastError: undefined,
     }));
     return { ok: true, sent, skipped, syncedAt: new Date(this.now()).toISOString() };
@@ -1311,6 +1316,7 @@ export class AdvancedConnectionService {
       providerId: record.manifest.provider.id,
       providerName: record.manifest.provider.displayName,
       providerDescription: record.manifest.provider.description,
+      compatibilityMode: record.compatibilityMode,
       state: record.state,
       account: record.account,
       grantedScopes: record.grantedScopes,

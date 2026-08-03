@@ -548,15 +548,8 @@ describe('AdvancedConnectionService', () => {
     expect(loggedIn?.secretPresent).toBe(true);
     expect(loggedIn?.permissions['usage.aggregates']).toBe('granted');
     expect(onAuthenticated).toHaveBeenCalledWith(connection.id);
-    expect(postedUsage).toEqual({
-      schemaVersion: 1,
-      source: 'agentcli',
-      generatedAt: '2026-01-01T00:00:00.000Z',
-      aggregates: { totalTokens: 42 },
-    });
-    expect(JSON.stringify(postedUsage)).not.toContain('/Users/private');
-    expect(JSON.stringify(postedUsage)).not.toContain('private-project');
-    expect(JSON.stringify(postedUsage)).not.toContain('private-user');
+    // 兼容模式：/report/usage 只读（405），聚合用量由消息上报通道自动汇总，不再 POST
+    expect(postedUsage).toBeUndefined();
     expect(JSON.stringify(loggedIn)).not.toContain('secret-access-token');
     expect(JSON.stringify(loggedIn)).not.toContain('secret-refresh-token');
 
@@ -771,6 +764,60 @@ describe('AdvancedConnectionService', () => {
     expect(pulled.tasks).toEqual([
       { remoteId: 'remote-1', title: '远程任务', description: '待确认' },
     ]);
+  });
+
+  it('compat 模式同步：usage 一并跳过通用 Provider 载荷，不向 /report/usage POST', async () => {
+    const posted: string[] = [];
+    const baseFetch = compatibilityFetch();
+    const fetchImpl = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === 'POST') posted.push(requestUrl(input));
+      return baseFetch(input, init);
+    });
+    const secretStore = new MemorySecretStore();
+    const service = new AdvancedConnectionService({
+      hermitHome,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      secretStore,
+    });
+    const connection = await service.create({ baseUrl: 'https://bus.company.test' });
+    expect(connection.compatibilityMode).toBe(true);
+    secretStore.values.set(
+      connection.id,
+      JSON.stringify({
+        schemaVersion: 1,
+        connectionId: connection.id,
+        providerId: 'openhermit-agentbus',
+        issuerOrigin: 'https://bus.company.test',
+        accessToken: 'secret-token',
+        tokenType: 'Bearer',
+        scopes: [],
+        updatedAt: new Date().toISOString(),
+      })
+    );
+    await service.updatePermissions(connection.id, {
+      permissions: {
+        'team.directory': 'granted',
+        'team.tasks.write': 'granted',
+        'usage.aggregates': 'granted',
+        'capabilities.inventory': 'granted',
+      },
+    });
+
+    const synced = await service.syncAuthorizedData(connection.id, {
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      teams: [],
+      tasks: [],
+      usage: { totalTokens: 42 },
+    });
+
+    expect(synced.sent).toEqual([]);
+    // compat 下 usage 与其他通道一样不 POST：/report/usage 只读（405），聚合由消息上报通道汇总
+    expect(synced.skipped).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channel: 'usage', reason: '聚合用量由消息上报通道自动汇总' }),
+      ])
+    );
+    expect(posted.some((url) => url.endsWith('/api/v1/report/usage'))).toBe(false);
   });
 
   it('uses the file-based secret store end to end (secretPresent 与授权状态一致)', async () => {

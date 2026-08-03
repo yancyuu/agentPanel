@@ -20,6 +20,8 @@ import {
   type DiscoverAdvancedConnectionResponse,
 } from '../../contracts';
 
+import { UsageLogsCard } from './UsageLogsCard';
+
 import type { AdvancedConnectionOperationOutcome } from '../hooks/useAdvancedConnections';
 
 interface AdvancedConnectionsSectionProps {
@@ -41,7 +43,8 @@ interface AdvancedConnectionsSectionProps {
   onLogout: (connectionId: string) => void;
   /** 用户确认 HTTP 传输风险后持久化放行（per-connection） */
   onAllowInsecure: (connectionId: string) => void;
-  onSyncConnection: (connectionId: string) => void;
+  /** 用量上报开关（permissions['usage.aggregates'] granted/denied） */
+  onSetUsageReporting: (connectionId: string, enabled: boolean) => void;
   onPullRemoteTasks: (connectionId: string) => void;
   onCheckTokenCatalog: (connectionId: string) => void;
   onClaimAndApplyToken: (connectionId: string) => void;
@@ -114,7 +117,7 @@ export function AdvancedConnectionsSection({
   onStartAuth,
   onLogout,
   onAllowInsecure,
-  onSyncConnection,
+  onSetUsageReporting,
   onPullRemoteTasks,
   onCheckTokenCatalog,
   onClaimAndApplyToken,
@@ -408,34 +411,55 @@ export function AdvancedConnectionsSection({
                     {connection.capabilities.some(
                       (item) => item.id === 'team-bus' || item.id === 'reporting'
                     ) ? (
-                      <div className="mt-4 flex flex-wrap gap-2">
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        {/* 用量上报开关：复用 permissions['usage.aggregates'] 语义（默认开） */}
                         <button
                           type="button"
-                          disabled={!authenticated || busyAction === `sync:${connection.id}`}
-                          onClick={() => onSyncConnection(connection.id)}
+                          role="switch"
+                          aria-checked={connection.permissions['usage.aggregates'] === 'granted'}
+                          data-testid={`usage-reporting:${connection.id}`}
+                          disabled={busyAction === `usage-reporting:${connection.id}`}
+                          onClick={() =>
+                            onSetUsageReporting(
+                              connection.id,
+                              connection.permissions['usage.aggregates'] !== 'granted'
+                            )
+                          }
                           className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 text-xs text-[var(--color-text-secondary)] disabled:opacity-45"
                         >
-                          {busyAction === `sync:${connection.id}` ? (
+                          {busyAction === `usage-reporting:${connection.id}` ? (
                             <Loader2 className="size-3.5 animate-spin" />
                           ) : (
-                            <RefreshCw className="size-3.5" />
+                            <Cloud className="size-3.5" />
                           )}
-                          同步已授权数据
+                          用量上报：
+                          {connection.permissions['usage.aggregates'] === 'granted'
+                            ? '已开启'
+                            : '已关闭'}
                         </button>
                         {connection.capabilities.some((item) => item.id === 'team-bus') ? (
-                          <button
-                            type="button"
-                            disabled={!authenticated || busyAction === `pull:${connection.id}`}
-                            onClick={() => onPullRemoteTasks(connection.id)}
-                            className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 text-xs text-[var(--color-text-secondary)] disabled:opacity-45"
-                          >
-                            {busyAction === `pull:${connection.id}` ? (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            ) : (
-                              <Server className="size-3.5" />
-                            )}
-                            检查远程任务
-                          </button>
+                          connection.compatibilityMode ? (
+                            <span
+                              className="text-[11px] text-[var(--color-text-muted)]"
+                              data-testid={`pull-disabled:${connection.id}`}
+                            >
+                              当前 AgentBus 兼容接口未提供远程任务通道
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={!authenticated || busyAction === `pull:${connection.id}`}
+                              onClick={() => onPullRemoteTasks(connection.id)}
+                              className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 text-xs text-[var(--color-text-secondary)] disabled:opacity-45"
+                            >
+                              {busyAction === `pull:${connection.id}` ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <Server className="size-3.5" />
+                              )}
+                              检查远程任务
+                            </button>
+                          )
                         ) : null}
                         {channelStatus[connection.id] ? (
                           <OutcomeLine outcome={channelStatus[connection.id]} />
@@ -499,6 +523,8 @@ export function AdvancedConnectionsSection({
           })}
         </div>
       )}
+
+      <UsageLogsCard />
 
       {insecureConfirmConnection ? (
         <div
