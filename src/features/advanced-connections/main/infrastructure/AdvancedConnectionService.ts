@@ -754,6 +754,29 @@ export class AdvancedConnectionService {
     try {
       const tokenDistribution = await (this.injectedTokenDistribution ??
         loadTokenDistributionRuntime());
+      // 目录里真正用于开通的是 defaultModelApiIds（服务端精选集），展示名称也从
+      // 精选集解析（cpamc-cc、cpamc-openai），而不是 defaultApiName——避免误导。
+      const describeDefaultModels = (catalog: {
+        modelApis?: unknown;
+        defaultModelApiIds?: unknown;
+        defaultApiName?: string | null;
+      }): string | undefined => {
+        const ids = new Set(
+          (Array.isArray(catalog.defaultModelApiIds) ? catalog.defaultModelApiIds : []).map(String)
+        );
+        const apis = Array.isArray(catalog.modelApis) ? catalog.modelApis : [];
+        const names = apis
+          .filter((api) => {
+            const record = (api ?? {}) as { id?: unknown; name?: unknown };
+            return record.id != null && ids.has(String(record.id));
+          })
+          .map((api) => {
+            const record = (api ?? {}) as { id?: unknown; name?: unknown };
+            return typeof record.name === 'string' && record.name ? record.name : String(record.id);
+          });
+        if (names.length > 0) return `默认模型 ${names.join('、')}`;
+        return catalog.defaultApiName ? `默认模型 ${catalog.defaultApiName}` : undefined;
+      };
       // 1. 读取目录（region 默认 cn-shenzhen 由模块内置；defaultModelApiIds 即服务端
       // consumer-ready 精选集合，如 cpamc-cc / cpamc-openai——provision 不传全量目录）
       emit('discover', 'start');
@@ -764,7 +787,7 @@ export class AdvancedConnectionService {
         stepError('discover', '读取 Token 池目录失败')(new Error('目录未返回 discovery_id'));
       }
       emit('discover', 'done', {
-        ...(catalog.defaultApiName ? { text: `默认模型 ${catalog.defaultApiName}` } : {}),
+        ...(describeDefaultModels(catalog) ? { text: describeDefaultModels(catalog) } : {}),
       });
       // 2. 发起认领：传同一次 discover 返回的 defaultModelApiIds（服务端精选集）；
       // discovery 过期（aliyun_discovery_stale）时自动重新 discover 一次并重试 provision（仅一次）
@@ -789,7 +812,7 @@ export class AdvancedConnectionService {
           stepError('discover', '重新读取 Token 池目录失败')(new Error('目录未返回 discovery_id'));
         }
         emit('discover', 'done', {
-          ...(catalog.defaultApiName ? { text: `默认模型 ${catalog.defaultApiName}` } : {}),
+          ...(describeDefaultModels(catalog) ? { text: describeDefaultModels(catalog) } : {}),
         });
         ({ runId } = await tokenDistribution
           .provisionRun({
