@@ -77,10 +77,10 @@ import {
   Loader2,
   PackageCheck,
   Pencil,
-  PenLine,
   RefreshCw,
   SquarePen,
   Trash2,
+  UserRound,
   X,
 } from 'lucide-react';
 
@@ -756,7 +756,7 @@ export const TaskDetailPanel = ({
         </div>
         {currentTask.createdBy ? (
           <div className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
-            <PenLine size={12} />
+            <UserRound size={12} />
             <span className="text-[var(--color-text-secondary)]">{currentTask.createdBy}</span>
           </div>
         ) : null}
