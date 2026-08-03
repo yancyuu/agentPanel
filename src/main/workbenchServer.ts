@@ -659,6 +659,17 @@ async function createWorkbenchServerUncached(
       operations.teamRuntimeOperations.resolveDirectCliWorkDir(teamName),
     dispatchDirectCliMessage: (params: DirectCliMessageInput) =>
       operations.teamRuntimeOperations.dispatchDirectCliMessage(params),
+    recordTaskDispatchOutcome: async (teamName: string, taskId: string, delivered: boolean) => {
+      await svc
+        .patchTask(teamName, taskId, {
+          waitingForAgent: !delivered,
+          lastDispatchAt: new Date().toISOString(),
+        })
+        .then(() => {
+          operations.broadcastSse('team-change', { type: 'task', teamName, taskId });
+        })
+        .catch(() => undefined);
+    },
     broadcastSse: operations.broadcastSse,
   };
   registerTeamMessageRoutes(app, teamMessageRouteDependencies, { routes: ['read'] });

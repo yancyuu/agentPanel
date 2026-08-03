@@ -450,6 +450,47 @@ describe('team message routes', () => {
     );
   });
 
+  it('任务线程消息派发成功回写 delivered=true（清除等待标记）', async () => {
+    const recordTaskDispatchOutcome = vi.fn(async () => undefined);
+    const dispatchDirectCliMessage = vi.fn(async () => undefined);
+    const harness = createHarness({ recordTaskDispatchOutcome, dispatchDirectCliMessage });
+
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/send-message',
+      payload: { text: '官网项目在 /path/x', conversationId: 'task:task-1', member: 'alice' },
+    });
+    // dispatch 为 fire-and-forget，flush 微任务让 then/catch 落地
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(recordTaskDispatchOutcome).toHaveBeenCalledWith('team-a', 'task-1', true);
+  });
+
+  it('任务线程消息派发失败回写 delivered=false；非任务线程不回写', async () => {
+    const recordTaskDispatchOutcome = vi.fn(async () => undefined);
+    const dispatchDirectCliMessage = vi.fn(async () => {
+      throw new Error('会话不可用');
+    });
+    const harness = createHarness({ recordTaskDispatchOutcome, dispatchDirectCliMessage });
+
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/send-message',
+      payload: { text: '补充说明', conversationId: 'task:task-2', member: 'alice' },
+    });
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/send-message',
+      payload: { text: '普通讨论消息', member: 'alice' },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(recordTaskDispatchOutcome).toHaveBeenCalledTimes(1);
+    expect(recordTaskDispatchOutcome).toHaveBeenCalledWith('team-a', 'task-2', false);
+  });
+
   it('passes valid attachments to direct CLI by default', async () => {
     const dispatchDirectCliMessage = vi.fn(async () => undefined);
     const harness = createHarness({ dispatchDirectCliMessage });

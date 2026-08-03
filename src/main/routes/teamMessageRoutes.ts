@@ -39,6 +39,8 @@ interface TeamMessageRouteDependencies {
   readEffectiveCcSettings(): Promise<Record<string, unknown>>;
   resolveDirectCliWorkDir(teamName: string): Promise<string>;
   dispatchDirectCliMessage(params: DirectCliMessageInput): Promise<void>;
+  /** 任务线程消息派发结果回写（派发可靠性）：false 置「等待智能体上线」，true 清除 */
+  recordTaskDispatchOutcome?(teamName: string, taskId: string, delivered: boolean): Promise<void>;
   broadcastSse(eventName: string, data: unknown): void;
   createMessageId?: () => string;
 }
@@ -350,6 +352,17 @@ export function registerTeamMessageRoutes(
 
       const memberWorkDir = await dependencies.resolveDirectCliWorkDir(teamName).catch(() => '');
       const dispatchedDirect = Boolean(memberWorkDir);
+      // 任务线程（conversationId=task:<id>）消息的派发结果遵循派发可靠性语义：
+      // 未送达 → 标记任务「等待智能体上线」；送达 → 清除等待标记
+      const threadTaskId = conversationId.startsWith('task:')
+        ? conversationId.slice('task:'.length)
+        : '';
+      const recordThreadDispatchOutcome = (delivered: boolean): void => {
+        if (!threadTaskId) return;
+        void dependencies
+          .recordTaskDispatchOutcome?.(teamName, threadTaskId, delivered)
+          ?.catch(() => undefined);
+      };
       if (dispatchedDirect) {
         void dependencies
           .dispatchDirectCliMessage({
@@ -363,14 +376,17 @@ export function registerTeamMessageRoutes(
             messageId: buildDirectReplyMessageId(sessionKey),
             conversationId,
           })
+          .then(() => recordThreadDispatchOutcome(true))
           .catch((error) => {
             request.log.warn(
               { err: error, teamName, sessionKey },
               'send-message direct-cli delivery failed'
             );
+            recordThreadDispatchOutcome(false);
             dependencies.broadcastSse('team-change', { type: 'inbox', teamName });
           });
       } else {
+        recordThreadDispatchOutcome(false);
         request.log.warn({ teamName }, 'send-message direct-cli skipped: no work_dir resolved');
       }
 

@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   CircleDot,
   Loader2,
+  MessageCircleQuestion,
   MessageSquareX,
   PackageCheck,
   Send,
@@ -40,6 +41,12 @@ interface TaskReviewThreadProps {
   onOpenHunk?: (changeKey: string) => void;
   /** 回复/选中提意见 = request_changes；传入且任务在评审流程中时显示回复框 */
   onRequestChanges?: (text: string, anchor?: FeedbackAnchor) => Promise<void> | void;
+  /** 任务待用户补充标记：'user' 时回复语义切换为补充说明 */
+  needsClarification?: 'lead' | 'user' | null;
+  /** 待补充态突出展示的 agent 澄清问题（任务线程最新 agent 消息） */
+  clarificationQuestion?: { text: string; at?: string } | null;
+  /** 补充说明/普通讨论提交（send-message 讨论语义，不产生反馈条目） */
+  onSubmitDiscussion?: (text: string) => Promise<void> | void;
   /** 归档后的沉淀建议消息（来自 task:<taskId> 线程，轻量提示卡） */
   precipitationSuggestion?: { text: string; at?: string } | null;
 }
@@ -80,6 +87,9 @@ export const TaskReviewThread = ({
   members,
   onOpenHunk,
   onRequestChanges,
+  needsClarification,
+  clarificationQuestion,
+  onSubmitDiscussion,
   precipitationSuggestion,
 }: TaskReviewThreadProps): React.JSX.Element => {
   const colorMap = useMemo(() => buildMemberColorMap(members), [members]);
@@ -109,17 +119,42 @@ export const TaskReviewThread = ({
     return list.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   }, [deliveries, feedbackItems, historyEvents]);
 
-  const canReply =
-    Boolean(onRequestChanges) && (reviewState === 'review' || reviewState === 'needsFix');
+  // 回复语义按任务状态分派：待你补充 → 补充说明；评审态 → 修改意见；其他 → 普通讨论
+  type ReplyMode = 'clarify' | 'review' | 'discussion';
+  const replyMode: ReplyMode | null =
+    needsClarification === 'user' && onSubmitDiscussion
+      ? 'clarify'
+      : onRequestChanges && (reviewState === 'review' || reviewState === 'needsFix')
+        ? 'review'
+        : onSubmitDiscussion
+          ? 'discussion'
+          : null;
+  const canReply = replyMode !== null;
+  const replyHint =
+    replyMode === 'clarify'
+      ? '回复即补充说明'
+      : replyMode === 'review'
+        ? '回复即提出修改意见'
+        : '发送讨论消息';
+  const replyPlaceholder =
+    replyMode === 'clarify'
+      ? '写下要补充的信息…'
+      : replyMode === 'review'
+        ? '写下需要修改的地方…'
+        : '写下想讨论的内容…';
 
   const submitReply = useCallback(
     async (text: string, anchor?: FeedbackAnchor) => {
       const trimmed = text.trim();
-      if (!trimmed || !onRequestChanges) return;
+      if (!trimmed || !replyMode) return;
       setReplySubmitting(true);
       setReplyError(null);
       try {
-        await onRequestChanges(trimmed, anchor);
+        if (replyMode === 'review') {
+          await onRequestChanges?.(trimmed, anchor);
+        } else {
+          await onSubmitDiscussion?.(trimmed);
+        }
         setReplyText('');
       } catch (error) {
         setReplyError(errorMessage(error));
@@ -128,7 +163,7 @@ export const TaskReviewThread = ({
         setReplySubmitting(false);
       }
     },
-    [onRequestChanges]
+    [replyMode, onRequestChanges, onSubmitDiscussion]
   );
 
   const handleReplySubmit = useCallback(async () => {
@@ -220,7 +255,7 @@ export const TaskReviewThread = ({
                   </Tooltip>
                 ) : null}
               </header>
-              {onRequestChanges ? (
+              {replyMode === 'review' ? (
                 <QuoteFeedbackSelection onSubmit={handleQuoteSubmit}>
                   {cardContent}
                 </QuoteFeedbackSelection>
@@ -312,22 +347,45 @@ export const TaskReviewThread = ({
         );
       })}
 
-      {/* 邮件式回复框：回复即提出修改意见 */}
+      {/* 待你补充态：突出展示 agent 的澄清问题（琥珀色，置顶） */}
+      {needsClarification === 'user' ? (
+        <div
+          className="rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2.5"
+          data-testid="clarification-question"
+        >
+          <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+            <MessageCircleQuestion size={12} className="shrink-0" />
+            agent 在等你补充
+            {clarificationQuestion?.at && formatRelativeTime(clarificationQuestion.at) ? (
+              <span className="ml-auto shrink-0 text-[10px] font-normal opacity-60">
+                {formatRelativeTime(clarificationQuestion.at)}
+              </span>
+            ) : null}
+          </div>
+          <div className="whitespace-pre-wrap break-words text-xs text-[var(--color-text-secondary)]">
+            {clarificationQuestion?.text?.trim() ||
+              'agent 需要更多信息才能继续，请在下方回复补充。'}
+          </div>
+        </div>
+      ) : null}
+
+      {/* 邮件式回复框：回复语义随任务状态切换（补充说明/修改意见/讨论） */}
       {canReply ? (
         <div
           className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5"
           data-testid="review-reply-composer"
+          data-reply-mode={replyMode}
         >
           <textarea
             value={replyText}
             onChange={(e) => setReplyText(e.target.value)}
-            placeholder="写下需要修改的地方…"
+            placeholder={replyPlaceholder}
             rows={3}
             className="w-full resize-y rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)] focus:border-indigo-400/50"
           />
           {replyError ? <div className="text-[11px] text-red-400">{replyError}</div> : null}
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-[var(--color-text-muted)]">回复即提出修改意见</span>
+            <span className="text-[10px] text-[var(--color-text-muted)]">{replyHint}</span>
             <button
               type="button"
               disabled={!replyText.trim() || replySubmitting}

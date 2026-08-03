@@ -65,6 +65,9 @@ function renderThread(props: {
   reviewState?: 'none' | 'review' | 'needsFix' | 'approved';
   owner?: string | null;
   onRequestChanges?: (text: string, anchor?: FeedbackAnchor) => Promise<void> | void;
+  needsClarification?: 'lead' | 'user' | null;
+  clarificationQuestion?: { text: string; at?: string } | null;
+  onSubmitDiscussion?: (text: string) => Promise<void> | void;
   precipitationSuggestion?: { text: string; at?: string } | null;
 }): { host: HTMLElement; root: ReturnType<typeof createRoot> } {
   const host = document.createElement('div');
@@ -219,6 +222,55 @@ describe('TaskReviewThread', () => {
       onRequestChanges: vi.fn(),
     });
     expect(host.querySelector('[data-testid="review-reply-composer"]')).not.toBeNull();
+  });
+
+  it('待你补充态：突出展示澄清问题，回复按补充说明分派（优先于评审态）', async () => {
+    const onSubmitDiscussion = vi.fn().mockResolvedValue(undefined);
+    const onRequestChanges = vi.fn().mockResolvedValue(undefined);
+    const { host } = renderThread({
+      needsClarification: 'user',
+      clarificationQuestion: { text: '官网项目在哪个目录？', at: '2026-07-31T09:00:00.000Z' },
+      reviewState: 'review',
+      deliveries: [makeDelivery({})],
+      onRequestChanges,
+      onSubmitDiscussion,
+    });
+
+    expect(host.querySelector('[data-testid="clarification-question"]')).not.toBeNull();
+    expect(host.textContent).toContain('agent 在等你补充');
+    expect(host.textContent).toContain('官网项目在哪个目录？');
+    expect(host.textContent).toContain('回复即补充说明');
+    expect(
+      host.querySelector('[data-testid="review-reply-composer"]')?.getAttribute('data-reply-mode')
+    ).toBe('clarify');
+
+    typeInTextarea(host, '官网项目在 /path/x，改第二屏');
+    await clickButtonByTextAsync(host, '发送');
+    expect(onSubmitDiscussion).toHaveBeenCalledWith('官网项目在 /path/x，改第二屏');
+    expect(onRequestChanges).not.toHaveBeenCalled();
+    expect(host.querySelector('textarea')?.value).toBe('');
+  });
+
+  it('其他状态：回复按普通讨论分派，提示文案为「发送讨论消息」', async () => {
+    const onSubmitDiscussion = vi.fn().mockResolvedValue(undefined);
+    const onRequestChanges = vi.fn().mockResolvedValue(undefined);
+    const { host } = renderThread({
+      reviewState: 'none',
+      deliveries: [makeDelivery({})],
+      onRequestChanges,
+      onSubmitDiscussion,
+    });
+
+    expect(host.querySelector('[data-testid="clarification-question"]')).toBeNull();
+    expect(host.textContent).toContain('发送讨论消息');
+    expect(
+      host.querySelector('[data-testid="review-reply-composer"]')?.getAttribute('data-reply-mode')
+    ).toBe('discussion');
+
+    typeInTextarea(host, '这个方案再聊聊');
+    await clickButtonByTextAsync(host, '发送');
+    expect(onSubmitDiscussion).toHaveBeenCalledWith('这个方案再聊聊');
+    expect(onRequestChanges).not.toHaveBeenCalled();
   });
 
   it('selected text on a delivery card opens the quote popover and submits with the quote anchor', async () => {

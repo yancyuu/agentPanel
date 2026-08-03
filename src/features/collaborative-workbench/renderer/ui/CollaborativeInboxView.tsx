@@ -235,6 +235,8 @@ export function CollaborativeInboxView({
   const teamMessages = useStore(
     (s) => s.teamMessagesByName[selectedTask?.task.teamName ?? '']?.canonicalMessages
   );
+  const sendTeamMessage = useStore((s) => s.sendTeamMessage);
+  const setTaskNeedsClarification = useStore((s) => s.setTaskNeedsClarification);
   const precipitationSuggestion = useMemo(() => {
     if (!detailTask) return null;
     const conversationId = `task:${detailTask.id}`;
@@ -247,6 +249,46 @@ export function CollaborativeInboxView({
       );
     return message ? { text: message.text, at: message.timestamp } : null;
   }, [detailTask, teamMessages]);
+
+  // 待你补充态突出展示的澄清问题：task:<taskId> 线程里最新一条 agent 消息
+  const clarificationQuestion = useMemo(() => {
+    if (!detailTask || detailTask.needsClarification !== 'user') return null;
+    const conversationId = `task:${detailTask.id}`;
+    const message = [...(teamMessages ?? [])]
+      .reverse()
+      .find(
+        (candidate) => candidate.conversationId === conversationId && candidate.from !== 'user'
+      );
+    return message ? { text: message.text, at: message.timestamp } : null;
+  }, [detailTask, teamMessages]);
+
+  // 补充说明/普通讨论提交：讨论消息进任务线程并派发 agent 会话（send-message），
+  // 待你补充态同时清除澄清标记；不创建反馈条目、不改变评审状态
+  const submitThreadDiscussion = async (text: string): Promise<void> => {
+    if (!selectedTask || !detailTask) return;
+    const teamName = selectedTask.task.teamName;
+    const conversationId = `task:${detailTask.id}`;
+    await sendTeamMessage(teamName, {
+      member: detailTask.owner?.trim() || selectedTask.task.teamDisplayName || teamName,
+      text,
+      summary: text,
+      conversationId,
+      replyToConversationId: conversationId,
+      taskRefs: [
+        {
+          taskId: detailTask.id,
+          displayId: detailTask.displayId?.trim() || detailTask.id,
+          teamName,
+        },
+      ],
+      to: detailTask.owner?.trim() || undefined,
+      source: 'user_sent',
+    });
+    if (detailTask.needsClarification === 'user') {
+      await setTaskNeedsClarification(teamName, detailTask.id, null);
+    }
+    taskInbox.refresh();
+  };
 
   const runApprove = async (force: boolean): Promise<void> => {
     if (!selectedTask || reviewSubmitting) return;
@@ -606,6 +648,9 @@ export function CollaborativeInboxView({
                     reviewState={getReviewStateFromTask(detailTask)}
                     owner={detailTask.owner}
                     members={taskModel.members}
+                    needsClarification={detailTask.needsClarification}
+                    clarificationQuestion={clarificationQuestion}
+                    onSubmitDiscussion={submitThreadDiscussion}
                     onOpenHunk={
                       taskModel.isFullTeamLoaded
                         ? (changeKey) =>

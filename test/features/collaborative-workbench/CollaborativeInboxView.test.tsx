@@ -9,7 +9,17 @@ const createTeamTask = vi.fn(() => Promise.resolve({ id: 'task-created' }));
 const refreshTasks = vi.fn(() => Promise.resolve());
 const approveTask = vi.fn(() => Promise.resolve());
 const requestChanges = vi.fn(() => Promise.resolve());
+const { sendTeamMessageMock, setTaskNeedsClarificationMock, teamMessagesState } = vi.hoisted(
+  () => ({
+    sendTeamMessageMock: vi.fn(() =>
+      Promise.resolve({ deliveredToInbox: true, messageId: 'm-new', conversationId: 'task:task-1' })
+    ),
+    setTaskNeedsClarificationMock: vi.fn(() => Promise.resolve()),
+    teamMessagesState: { value: {} as Record<string, unknown> },
+  })
+);
 let selectedReviewState: 'review' | 'needsFix' | 'approved' | undefined;
+let selectedNeedsClarification: 'user' | undefined;
 let detailMembers: { name: string; agentId: string }[] = [
   { name: 'alice', agentId: 'agent-alice' },
 ];
@@ -19,6 +29,15 @@ let requestedRecipient: {
   requestedAt: number;
   initialText?: string;
 } | null = null;
+
+vi.mock('@renderer/store', () => ({
+  useStore: (selector: (state: Record<string, unknown>) => unknown) =>
+    selector({
+      teamMessagesByName: teamMessagesState.value,
+      sendTeamMessage: sendTeamMessageMock,
+      setTaskNeedsClarification: setTaskNeedsClarificationMock,
+    }),
+}));
 
 vi.mock('@features/collaborative-workbench/renderer/hooks/useCollaborativeInbox', () => ({
   useCollaborativeInbox: () => ({
@@ -43,6 +62,7 @@ vi.mock('@features/collaborative-workbench/renderer/hooks/useCollaborativeInbox'
           status: selectedReviewState ? 'completed' : 'pending',
           owner: 'alice',
           reviewState: selectedReviewState,
+          needsClarification: selectedNeedsClarification,
           teamName: 'team-a',
           teamDisplayName: 'Team A',
         },
@@ -66,6 +86,7 @@ vi.mock('@features/collaborative-workbench/renderer/hooks/useCollaborativeInbox'
         status: selectedReviewState ? 'completed' : 'pending',
         owner: 'alice',
         reviewState: selectedReviewState,
+        needsClarification: selectedNeedsClarification,
         teamName: 'team-a',
         teamDisplayName: 'Team A',
       },
@@ -80,6 +101,7 @@ vi.mock('@features/collaborative-workbench/renderer/hooks/useCollaborativeInbox'
         status: selectedReviewState ? 'completed' : 'pending',
         owner: 'alice',
         reviewState: selectedReviewState,
+        needsClarification: selectedNeedsClarification,
         teamName: 'team-a',
         teamDisplayName: 'Team A',
       },
@@ -152,7 +174,21 @@ vi.mock('@features/collaborative-workbench/renderer/ui/InboxTaskList', () => ({
 }));
 
 vi.mock('@features/collaborative-workbench/renderer/ui/TaskReviewThread', () => ({
-  TaskReviewThread: () => <div>REVIEW THREAD</div>,
+  TaskReviewThread: (props: {
+    needsClarification?: 'lead' | 'user' | null;
+    clarificationQuestion?: { text: string; at?: string } | null;
+    onSubmitDiscussion?: (text: string) => Promise<void> | void;
+  }) => (
+    <div>
+      REVIEW THREAD
+      {props.needsClarification === 'user' ? (
+        <span>{`CLARIFY:${props.clarificationQuestion?.text ?? ''}`}</span>
+      ) : null}
+      <button type="button" onClick={() => void props.onSubmitDiscussion?.('官网项目在 /path/x')}>
+        DISCUSS
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('@renderer/components/team/members/AgentTuningDialog', () => ({
@@ -221,7 +257,11 @@ afterEach(() => {
   refreshTasks.mockClear();
   approveTask.mockClear();
   requestChanges.mockClear();
+  sendTeamMessageMock.mockClear();
+  setTaskNeedsClarificationMock.mockClear();
+  teamMessagesState.value = {};
   selectedReviewState = undefined;
+  selectedNeedsClarification = undefined;
   detailMembers = [{ name: 'alice', agentId: 'agent-alice' }];
   requestedRecipient = null;
   vi.unstubAllGlobals();
@@ -421,6 +461,60 @@ describe('CollaborativeInboxView compact navigation', () => {
     });
     expect(host.querySelector('[data-testid="follow-up-dialog"]')).toBeNull();
     expect(host.querySelector('[aria-label="任务反馈列表"]')).not.toBeNull();
+
+    act(() => root.unmount());
+  });
+
+  it('待你补充态：回复按补充说明分派（讨论消息 + 清除澄清标记），不走 request_changes', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    selectedNeedsClarification = 'user';
+    teamMessagesState.value = {
+      'team-a': {
+        canonicalMessages: [
+          {
+            messageId: 'q-1',
+            from: 'alice',
+            text: '官网项目在哪个目录？',
+            timestamp: '2026-01-01T00:05:00.000Z',
+            conversationId: 'task:task-1',
+            read: true,
+          },
+        ],
+      },
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(<CollaborativeInboxView surface="inbox" />);
+      await Promise.resolve();
+    });
+
+    // 澄清问题透传给线程突出展示
+    expect(host.textContent).toContain('CLARIFY:官网项目在哪个目录？');
+
+    await act(async () => {
+      buttonByText(host, 'DISCUSS').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // 讨论消息进任务线程并派发（send-message 语义）
+    expect(sendTeamMessageMock).toHaveBeenCalledWith(
+      'team-a',
+      expect.objectContaining({
+        member: 'alice',
+        text: '官网项目在 /path/x',
+        conversationId: 'task:task-1',
+        replyToConversationId: 'task:task-1',
+        taskRefs: [expect.objectContaining({ taskId: 'task-1', teamName: 'team-a' })],
+        source: 'user_sent',
+      })
+    );
+    // 清除澄清标记；不创建反馈条目（request_changes 未被调用）
+    expect(setTaskNeedsClarificationMock).toHaveBeenCalledWith('team-a', 'task-1', null);
+    expect(requestChanges).not.toHaveBeenCalled();
 
     act(() => root.unmount());
   });
