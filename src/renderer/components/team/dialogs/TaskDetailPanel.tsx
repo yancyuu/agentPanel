@@ -967,7 +967,7 @@ export const TaskDetailPanel = ({
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"
-                  className="h-7 text-xs"
+                  className="hover:bg-[var(--color-accent)]/90 h-7 bg-[var(--color-accent)] text-xs text-white"
                   disabled={savingDescription}
                   onClick={() => void saveDescription()}
                 >

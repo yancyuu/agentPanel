@@ -169,6 +169,7 @@ export const EditTeamDialog = ({
           </Button>
           <Button
             size="sm"
+            className="hover:bg-[var(--color-accent)]/90 bg-[var(--color-accent)] text-white"
             onClick={handleSave}
             disabled={saving || savePhase === 'done' || !name.trim()}
           >
