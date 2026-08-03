@@ -683,19 +683,40 @@ export function CollaborationView(): React.JSX.Element {
                   {detail.members.map((member) => (
                     <span
                       key={member.teamSlug}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-raised)] px-2.5 py-1 text-xs text-[var(--color-text-secondary)]"
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-raised)] px-2.5 py-1 text-xs',
+                        member.deleted
+                          ? 'text-[var(--color-text-muted)]'
+                          : 'text-[var(--color-text-secondary)]'
+                      )}
                     >
                       <img
                         src={agentAvatarUrl(member.displayName, 20)}
                         alt=""
                         className="size-4 rounded-full"
                       />
-                      {member.displayName}
+                      <span className={member.deleted ? 'line-through' : undefined}>
+                        {member.displayName}
+                      </span>
+                      {member.deleted ? (
+                        <span className="rounded bg-rose-500/10 px-1 text-[10px] font-medium text-rose-500">
+                          已删除
+                        </span>
+                      ) : null}
                     </span>
                   ))}
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  aria-label="删除小队"
+                  title="删除小队"
+                  className="rounded-md border border-[var(--color-border)] px-2.5 py-2 text-xs text-[var(--color-text-muted)] transition-colors hover:border-rose-500/30 hover:text-rose-500"
+                >
+                  <Trash2 size={14} />
+                </button>
                 <button
                   type="button"
                   onClick={openInboxTab}

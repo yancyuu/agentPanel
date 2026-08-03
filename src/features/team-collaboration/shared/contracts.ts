@@ -25,6 +25,8 @@ export interface CollaborationMemberSnapshot {
   description?: string;
   harness: string;
   workDir: string;
+  /** 成员团队已删除/目录缺失时的降级占位标记 */
+  deleted?: boolean;
 }
 
 export interface RoundtableBallot {

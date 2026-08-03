@@ -77,14 +77,25 @@ export function registerCollaborationRoutes(
         const team = await dependencies.workspace.readTeam(request.params.slug);
         const members = await Promise.all(
           team.memberTeamSlugs.map(async (teamSlug) => {
-            const manifest = await dependencies.teams.readTeamManifest(teamSlug);
-            return {
-              teamSlug: manifest.slug,
-              displayName: manifest.displayName,
-              description: manifest.description,
-              harness: manifest.harness,
-              workDir: manifest.workDir,
-            };
+            try {
+              const manifest = await dependencies.teams.readTeamManifest(teamSlug);
+              return {
+                teamSlug: manifest.slug,
+                displayName: manifest.displayName,
+                description: manifest.description,
+                harness: manifest.harness,
+                workDir: manifest.workDir,
+              };
+            } catch {
+              // 成员团队已删除/目录缺失：降级为「已删除」占位，不拖垮整个小队详情
+              return {
+                teamSlug,
+                displayName: teamSlug,
+                harness: '',
+                workDir: '',
+                deleted: true as const,
+              };
+            }
           })
         );
         const runs = await Promise.all(
