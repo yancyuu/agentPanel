@@ -53,6 +53,7 @@ interface FollowUpSource {
   displayId: string;
   subject: string;
   teamName: string;
+  ownerName: string;
 }
 
 function recipientKey(
@@ -106,6 +107,11 @@ export function CollaborativeInboxView({
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [followUpSource, setFollowUpSource] = useState<FollowUpSource | null>(null);
+  const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
+  const [followUpTitle, setFollowUpTitle] = useState('');
+  const [followUpDescription, setFollowUpDescription] = useState('');
+  const [followUpSubmitting, setFollowUpSubmitting] = useState(false);
+  const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [tuningOpen, setTuningOpen] = useState(false);
   const [approveConfirmOpen, setApproveConfirmOpen] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
@@ -149,6 +155,7 @@ export function CollaborativeInboxView({
     setMode(surface === 'inbox' ? 'messages' : 'tasks');
     setMobileDetailOpen(false);
     setFollowUpSource(null);
+    setFollowUpDialogOpen(false);
     setTuningOpen(false);
     setApproveConfirmOpen(false);
     setReviewError(null);
@@ -194,18 +201,6 @@ export function CollaborativeInboxView({
         const createRequest = {
           subject: taskTitle,
           description: taskDescription,
-          ...(followUpSource
-            ? {
-                descriptionTaskRefs: [
-                  {
-                    taskId: followUpSource.taskId,
-                    displayId: followUpSource.displayId,
-                    teamName: followUpSource.teamName,
-                  },
-                ],
-                related: [followUpSource.taskId],
-              }
-            : {}),
           owner: selectedRecipient.memberName,
           startImmediately: true,
         };
@@ -223,7 +218,6 @@ export function CollaborativeInboxView({
       setSubject('');
       setDescription('');
       setTaskInputFiles([]);
-      setFollowUpSource(null);
       setMobileDetailOpen(true);
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : '任务创建失败，请稍后重试。');
@@ -277,23 +271,63 @@ export function CollaborativeInboxView({
     void runApprove(false);
   };
 
+  // 打开「新建后续任务」确认表单：预填标题和描述，确认后才创建并开工
   const startFollowUpTask = (): void => {
     if (!selectedTask || !selectedTaskRecipient) return;
     const source = selectedTask.task;
     const displayId = source.displayId?.trim() || source.id;
-    setSelectedRecipientKey(recipientKey(selectedTaskRecipient));
     setFollowUpSource({
       taskId: source.id,
       displayId,
       subject: source.subject,
       teamName: source.teamName,
+      ownerName: selectedTaskRecipient.memberName,
     });
-    setSubject('');
-    setDescription(`基于任务 #${displayId}「${source.subject}」继续：\n`);
-    setTaskInputFiles([]);
-    setCreateError(null);
-    setMode('create');
-    setMobileDetailOpen(true);
+    setFollowUpTitle(`基于「${source.subject}」继续`);
+    setFollowUpDescription(`基于任务 #${displayId}「${source.subject}」继续：\n`);
+    setFollowUpError(null);
+    setFollowUpDialogOpen(true);
+  };
+
+  const closeFollowUpDialog = (): void => {
+    setFollowUpDialogOpen(false);
+    setFollowUpSource(null);
+    setFollowUpError(null);
+  };
+
+  const confirmFollowUpTask = async (): Promise<void> => {
+    if (!followUpSource || !followUpTitle.trim() || followUpSubmitting) return;
+    setFollowUpSubmitting(true);
+    setFollowUpError(null);
+    try {
+      const task = await taskInbox.createTask(followUpSource.teamName, {
+        subject: followUpTitle.trim(),
+        description: followUpDescription.trim() || undefined,
+        descriptionTaskRefs: [
+          {
+            taskId: followUpSource.taskId,
+            displayId: followUpSource.displayId,
+            teamName: followUpSource.teamName,
+          },
+        ],
+        related: [followUpSource.taskId],
+        owner: followUpSource.ownerName,
+        startImmediately: true,
+      });
+      setFollowUpDialogOpen(false);
+      setFollowUpSource(null);
+      if (surface === 'tasks') {
+        taskInbox.selectTask(`${followUpSource.teamName}:${task.id}`);
+        setMode('tasks');
+      } else {
+        setMode('messages');
+      }
+      setMobileDetailOpen(true);
+    } catch (error) {
+      setFollowUpError(error instanceof Error ? error.message : '任务创建失败，请稍后重试。');
+    } finally {
+      setFollowUpSubmitting(false);
+    }
   };
 
   return (
@@ -313,7 +347,6 @@ export function CollaborativeInboxView({
                 role="tab"
                 aria-selected={mode === 'tasks'}
                 onClick={() => {
-                  setFollowUpSource(null);
                   setMode('tasks');
                   setMobileDetailOpen(false);
                 }}
@@ -332,7 +365,6 @@ export function CollaborativeInboxView({
                 role="tab"
                 aria-selected={mode === 'create'}
                 onClick={() => {
-                  setFollowUpSource(null);
                   setSubject('');
                   setDescription('');
                   setTaskInputFiles([]);
@@ -487,42 +519,26 @@ export function CollaborativeInboxView({
                   )}
                   <div className="min-w-0">
                     <h2 className="truncate text-sm font-semibold text-[var(--color-text)]">
-                      {followUpSource
-                        ? `新建后续任务 · ${selectedRecipient.memberName}`
-                        : selectedRecipient.kind === 'squad'
-                          ? `交给小队 · ${selectedRecipient.memberName}`
-                          : `交给 ${selectedRecipient.memberName}`}
+                      {selectedRecipient.kind === 'squad'
+                        ? `交给小队 · ${selectedRecipient.memberName}`
+                        : `交给 ${selectedRecipient.memberName}`}
                     </h2>
                     <p className="truncate text-[11px] text-[var(--color-text-muted)]">
-                      {followUpSource
-                        ? '这是新的长周期目标，不会修改当前任务'
-                        : selectedRecipient.kind === 'squad'
-                          ? '创建后由成员圆桌选出队长、并行执行并统一交付'
-                          : '创建后会立即开始执行'}
+                      {selectedRecipient.kind === 'squad'
+                        ? '创建后由成员圆桌选出队长、并行执行并统一交付'
+                        : '创建后会立即开始执行'}
                     </p>
                   </div>
                 </header>
                 <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 lg:px-8">
                   <div className="mx-auto w-full max-w-3xl">
-                    {followUpSource ? (
-                      <div className="mb-3 flex items-start gap-2 rounded-lg border border-indigo-500/15 bg-indigo-500/[0.04] px-3 py-2.5 text-xs text-[var(--color-text-secondary)]">
-                        <ListPlus size={14} className="mt-0.5 shrink-0 text-indigo-500" />
-                        <span className="min-w-0">
-                          来源任务 #{followUpSource.displayId} · {followUpSource.subject}
-                        </span>
-                      </div>
-                    ) : null}
                     <label className="block border-b border-[var(--color-border-subtle)] py-3">
                       <span className="text-xs text-[var(--color-text-muted)]">要完成什么</span>
                       <input
                         type="text"
                         value={subject}
                         onChange={(event) => setSubject(event.target.value)}
-                        placeholder={
-                          followUpSource
-                            ? '例如：继续补充 Ozon 的站点差异和落地建议'
-                            : '例如：调研 Ozon 的入驻流程、费用和风险'
-                        }
+                        placeholder="例如：调研 Ozon 的入驻流程、费用和风险"
                         className="mt-2 h-10 w-full bg-transparent text-base font-medium text-[var(--color-text)] outline-none placeholder:font-normal placeholder:text-[var(--color-text-muted)]"
                         maxLength={160}
                         autoFocus
@@ -737,6 +753,63 @@ export function CollaborativeInboxView({
         member={selectedTaskOwnerMember}
         onClose={() => setTuningOpen(false)}
       />
+      <Dialog
+        open={followUpDialogOpen && followUpSource !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) closeFollowUpDialog();
+        }}
+      >
+        <DialogContent className="sm:max-w-lg" data-testid="follow-up-dialog">
+          <DialogHeader>
+            <DialogTitle>新建后续任务</DialogTitle>
+            <DialogDescription>
+              基于任务 #{followUpSource?.displayId}「{followUpSource?.subject}」创建新的长周期任务，
+              确认后立即开始执行，不会修改当前任务。
+            </DialogDescription>
+          </DialogHeader>
+          <label className="block">
+            <span className="text-xs text-[var(--color-text-muted)]">标题（必填）</span>
+            <input
+              type="text"
+              value={followUpTitle}
+              onChange={(event) => setFollowUpTitle(event.target.value)}
+              data-testid="follow-up-title"
+              className="mt-1.5 h-10 w-full rounded-md border border-[var(--color-border-subtle)] bg-transparent px-3 text-sm text-[var(--color-text)] outline-none focus:border-indigo-500/50"
+              maxLength={160}
+              autoFocus
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs text-[var(--color-text-muted)]">描述（可选）</span>
+            <textarea
+              value={followUpDescription}
+              onChange={(event) => setFollowUpDescription(event.target.value)}
+              data-testid="follow-up-description"
+              className="mt-1.5 min-h-28 w-full resize-y rounded-md border border-[var(--color-border-subtle)] bg-transparent px-3 py-2 text-sm leading-6 text-[var(--color-text)] outline-none focus:border-indigo-500/50"
+              maxLength={20_000}
+            />
+          </label>
+          {followUpError ? <p className="text-xs text-red-500">{followUpError}</p> : null}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={closeFollowUpDialog}
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)]"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={!followUpTitle.trim() || followUpSubmitting}
+              onClick={() => void confirmFollowUpTask()}
+              className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ListPlus size={13} />
+              {followUpSubmitting ? '正在创建…' : '创建并开始'}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={approveConfirmOpen}
         onOpenChange={(nextOpen) => {

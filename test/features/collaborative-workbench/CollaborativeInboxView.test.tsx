@@ -160,6 +160,21 @@ vi.mock('@renderer/components/team/members/AgentTuningDialog', () => ({
     open ? <div>{`TUNING ${member?.name ?? ''}`}</div> : null,
 }));
 
+// Radix Dialog 走 portal，测试里替换为内联渲染，方便直接用 host 查询表单控件
+vi.mock('@renderer/components/ui/dialog', () => ({
+  Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
+    open ? <div>{children}</div> : null,
+  DialogContent: ({
+    children,
+    ...props
+  }: React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode }) => (
+    <div {...props}>{children}</div>
+  ),
+  DialogDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
+  DialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
+}));
+
 vi.mock('@renderer/components/team/dialogs/TaskDetailPanel', () => ({
   TaskDetailPanel: ({
     headerExtra,
@@ -315,7 +330,7 @@ describe('CollaborativeInboxView compact navigation', () => {
     act(() => root.unmount());
   });
 
-  it('separates tuning the Agent from creating a follow-up long-running task', async () => {
+  it('新建后续任务先弹确认表单：预填标题和描述，取消不创建', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     const host = document.createElement('div');
     document.body.appendChild(host);
@@ -326,6 +341,7 @@ describe('CollaborativeInboxView compact navigation', () => {
       await Promise.resolve();
     });
 
+    // 调教入口不受影响：打开调教对话框且不创建任务
     await act(async () => {
       buttonByText(host, '调教员工').click();
       await Promise.resolve();
@@ -337,25 +353,64 @@ describe('CollaborativeInboxView compact navigation', () => {
       buttonByText(host, '新建后续任务').click();
       await Promise.resolve();
     });
-    expect(host.textContent).toContain('不会修改当前任务');
-
-    const subject = host.querySelector<HTMLInputElement>(
-      '[placeholder="例如：继续补充 Ozon 的站点差异和落地建议"]'
+    const dialog = host.querySelector('[data-testid="follow-up-dialog"]');
+    expect(dialog).not.toBeNull();
+    const title = dialog?.querySelector<HTMLInputElement>('[data-testid="follow-up-title"]');
+    const description = dialog?.querySelector<HTMLTextAreaElement>(
+      '[data-testid="follow-up-description"]'
     );
-    const description = host.querySelector<HTMLTextAreaElement>('textarea');
-    expect(subject).not.toBeNull();
+    expect(title?.value).toBe('基于「Task one」继续');
     expect(description?.value).toContain('基于任务 #task-1「Task one」继续：');
+    expect(dialog?.textContent).toContain('不会修改当前任务');
+    // 停留在收件箱消息列表，不再跳到创建页
+    expect(host.querySelector('[aria-label="任务反馈列表"]')).not.toBeNull();
 
     await act(async () => {
-      if (subject) setInputValue(subject, '继续调研 Ozon');
+      buttonByText(host, '取消').click();
       await Promise.resolve();
     });
+    expect(host.querySelector('[data-testid="follow-up-dialog"]')).toBeNull();
+    expect(createTeamTask).not.toHaveBeenCalled();
+
+    act(() => root.unmount());
+  });
+
+  it('确认后才创建后续任务：空标题禁用创建，创建后回到收件箱', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(<CollaborativeInboxView surface="inbox" />);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      buttonByText(host, '新建后续任务').click();
+      await Promise.resolve();
+    });
+    const dialog = host.querySelector('[data-testid="follow-up-dialog"]');
+    const title = dialog?.querySelector<HTMLInputElement>('[data-testid="follow-up-title"]');
+    expect(title).not.toBeNull();
+
+    // 标题清空（纯空格）→ 创建按钮禁用
+    await act(async () => {
+      if (title) setInputValue(title, '   ');
+      await Promise.resolve();
+    });
+    expect(buttonByText(host, '创建并开始').disabled).toBe(true);
+
+    await act(async () => {
+      if (title) setInputValue(title, '继续调研 Ozon');
+      await Promise.resolve();
+    });
+    expect(buttonByText(host, '创建并开始').disabled).toBe(false);
+
     await act(async () => {
       buttonByText(host, '创建并开始').click();
       await Promise.resolve();
       await Promise.resolve();
     });
-
     expect(createTeamTask).toHaveBeenCalledWith('team-a', {
       subject: '继续调研 Ozon',
       description: '基于任务 #task-1「Task one」继续：',
@@ -364,6 +419,7 @@ describe('CollaborativeInboxView compact navigation', () => {
       owner: 'alice',
       startImmediately: true,
     });
+    expect(host.querySelector('[data-testid="follow-up-dialog"]')).toBeNull();
     expect(host.querySelector('[aria-label="任务反馈列表"]')).not.toBeNull();
 
     act(() => root.unmount());
