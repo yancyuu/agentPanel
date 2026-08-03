@@ -11,6 +11,7 @@ vi.mock('@renderer/components/chat/viewers/MarkdownViewer', () => ({
 import {
   DeliveryContentView,
   isHtmlDeliveryContent,
+  isStandaloneUrlContent,
 } from '@renderer/components/team/DeliveryContentView';
 
 const HTML_DOC = `<!DOCTYPE html>
@@ -92,6 +93,70 @@ describe('DeliveryContentView', () => {
     expect(host.querySelector('[data-testid="markdown-viewer"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="delivery-mode-preview"]')).toBeNull();
     expect(host.querySelector('[data-testid="delivery-html-preview"]')).toBeNull();
+    act(() => root.unmount());
+  });
+});
+
+describe('isStandaloneUrlContent 嗅探', () => {
+  it('整段即 http(s) 链接（允许首尾空白）识别为 URL 成果', () => {
+    expect(isStandaloneUrlContent('https://example.com/page')).toBe(true);
+    expect(isStandaloneUrlContent('  http://192.168.1.10:8080/preview \n')).toBe(true);
+  });
+
+  it('含文字的 URL、markdown 内联链接、非 http 协议不识别', () => {
+    expect(isStandaloneUrlContent('看这里 https://example.com')).toBe(false);
+    expect(isStandaloneUrlContent('[文档](https://example.com)')).toBe(false);
+    expect(isStandaloneUrlContent('ftp://example.com/x')).toBe(false);
+    expect(isStandaloneUrlContent('https://example.com/a https://example.com/b')).toBe(false);
+  });
+});
+
+describe('DeliveryContentView URL 成果', () => {
+  beforeEach(() => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('顶部 iframe 预览（放宽 sandbox）+ 下方原文本链接（新窗口打开）', () => {
+    const { host, root } = renderView('https://example.com/landing');
+
+    const iframe = host.querySelector<HTMLIFrameElement>('[data-testid="delivery-url-preview"]');
+    expect(iframe).not.toBeNull();
+    expect(iframe?.getAttribute('src')).toBe('https://example.com/landing');
+    expect(iframe?.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin');
+
+    const link = host.querySelector<HTMLAnchorElement>('[data-testid="delivery-url-link"]');
+    expect(link?.getAttribute('href')).toBe('https://example.com/landing');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    // 布局：预览在上，文本链接在下
+    expect(
+      iframe!.compareDocumentPosition(link!) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    // URL 模式不走 markdown 渲染
+    expect(host.querySelector('[data-testid="markdown-viewer"]')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('iframe 超时不可达（如被 X-Frame-Options 拒绝）降级为链接卡片（域名 + 打开按钮）', () => {
+    vi.useFakeTimers();
+    const { host, root } = renderView('https://blocked.example.com/page');
+    expect(host.querySelector('[data-testid="delivery-url-preview"]')).not.toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(5_100);
+    });
+    expect(host.querySelector('[data-testid="delivery-url-preview"]')).toBeNull();
+    const fallback = host.querySelector<HTMLAnchorElement>('[data-testid="delivery-url-fallback"]');
+    expect(fallback).not.toBeNull();
+    expect(fallback?.getAttribute('href')).toBe('https://blocked.example.com/page');
+    expect(fallback?.textContent).toContain('blocked.example.com');
+    expect(fallback?.textContent).toContain('在新窗口打开');
     act(() => root.unmount());
   });
 });
