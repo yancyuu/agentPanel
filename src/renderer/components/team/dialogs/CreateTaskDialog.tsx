@@ -89,6 +89,8 @@ export const CreateTaskDialog = ({
   });
   const descChipDraft = useChipDraftPersistence(`createTask:${teamName}:descChips`);
   const [owner, setOwner] = useState<string>(defaultOwner);
+  // 用户手动改动过负责人后，不再用成员列表自动覆盖（清空必须重新选择才能提交）
+  const ownerTouchedRef = useRef(false);
   const [blockedBy, setBlockedBy] = useState<string[]>([]);
   const [related, setRelated] = useState<string[]>([]);
   const [startImmediately, setStartImmediately] = useState(false);
@@ -114,7 +116,8 @@ export const CreateTaskDialog = ({
         descriptionDraft.clearDraft();
         descChipDraft.clearChipDraft();
       }
-      setOwner(defaultOwner);
+      setOwner(defaultOwner || members[0]?.name || '');
+      ownerTouchedRef.current = false;
       setBlockedBy([]);
       setRelated([]);
       setStartImmediately(defaultStartImmediately ?? false);
@@ -132,10 +135,17 @@ export const CreateTaskDialog = ({
     defaultStartImmediately,
     defaultChip,
     isTeamAlive,
+    members,
     descriptionDraft,
     descChipDraft,
     promptDraft,
   ]);
+
+  // 成员列表晚于表单打开到达时补一次预填；用户手动改动过负责人则不再覆盖
+  useEffect(() => {
+    if (!open || owner || ownerTouchedRef.current || members.length === 0) return;
+    setOwner(members[0].name);
+  }, [open, owner, members]);
 
   const mentionSuggestions = useMemo<MentionSuggestion[]>(
     () =>
@@ -148,8 +158,8 @@ export const CreateTaskDialog = ({
     [members, colorMap]
   );
 
-  const requiresOwner = defaultStartImmediately === true;
-  const canSubmit = subject.trim().length > 0 && !submitting && (!requiresOwner || !!owner);
+  // 负责人必选（团队即 agent 语义下预填团队自身；服务端虽有缺省兜底，表单层显式呈现）
+  const canSubmit = subject.trim().length > 0 && !submitting && !!owner;
 
   // Only show non-internal, non-deleted tasks as candidates for blocking
   const availableTasks = tasks.filter(
@@ -201,16 +211,17 @@ export const CreateTaskDialog = ({
 
   const assigneeField = (
     <div className="grid gap-2">
-      <Label className={requiresOwner ? undefined : 'label-optional'}>
-        {requiresOwner ? '负责人' : '负责人（可选）'}
-      </Label>
+      <Label>负责人</Label>
       <MemberSelect
         members={members}
         value={owner || null}
-        onChange={(v) => setOwner(v ?? '')}
-        placeholder={requiresOwner ? '选择成员' : '选择成员...'}
-        allowUnassigned={!requiresOwner}
+        onChange={(v) => {
+          ownerTouchedRef.current = true;
+          setOwner(v ?? '');
+        }}
+        placeholder="选择成员"
       />
+      {!owner ? <p className="text-[11px] text-amber-500">请选择负责人后再创建</p> : null}
     </div>
   );
 
