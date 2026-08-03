@@ -69,6 +69,7 @@ function createHarness() {
     addDelivery,
     addFeedbackItem,
     appendTaskHistoryEvent,
+    readTeamManifest: vi.fn(async (team: string) => ({ displayName: team })),
   });
   return {
     app,

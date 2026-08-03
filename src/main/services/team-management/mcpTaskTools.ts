@@ -36,7 +36,10 @@ type TaskToolService = Pick<
   | 'addDelivery'
   | 'addFeedbackItem'
   | 'appendTaskHistoryEvent'
->;
+> & {
+  /** 只需要 displayName 做缺省 assignee 兜底，宽松结构便于各入口复用 */
+  readTeamManifest(teamSlug: string): Promise<{ displayName?: string }>;
+};
 
 /**
  * 评审邮件线程写入钩子（可选）：交付/退回/通过时把评审事件写进
@@ -135,10 +138,18 @@ export async function executeMcpTool(
   }
 
   if (toolName === 'create_task') {
+    // 与 HTTP 创建一致：assignee 缺省时默认团队自身（v2 团队即 agent）
+    const explicitAssignee = asString(args.assignee);
+    const assignee =
+      explicitAssignee ||
+      (await svc
+        .readTeamManifest(teamSlug)
+        .then((manifest) => manifest.displayName?.trim() || teamSlug)
+        .catch(() => teamSlug));
     const task = await svc.createTask(teamSlug, {
       title: asString(args.title) ?? '',
       description: asString(args.description),
-      assignee: asString(args.assignee) ?? null,
+      assignee,
     });
     return text(task);
   }

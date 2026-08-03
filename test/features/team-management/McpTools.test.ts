@@ -128,6 +128,12 @@ describe('MCP tool: create_task', () => {
     expect(task.status).toBe('todo');
   });
 
+  it('缺省 assignee 时默认团队 displayName（v2 团队即 agent）', async () => {
+    const [result] = await exec('create_task', { team_slug: teamSlug, title: 'unassigned task' });
+    const task = JSON.parse(result.text);
+    expect(task.assignee).toBe('mcp-test');
+  });
+
   it('creates task with description and assignee', async () => {
     // Create target team first so assignee is valid slug
     await svc.createTeam({

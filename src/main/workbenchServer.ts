@@ -577,6 +577,7 @@ async function createWorkbenchServerUncached(
       addFeedbackItem: (teamSlug, taskId, input) => svc.addFeedbackItem(teamSlug, taskId, input),
       appendTaskHistoryEvent: (teamSlug, taskId, event) =>
         svc.appendTaskHistoryEvent(teamSlug, taskId, event),
+      readTeamManifest: (teamSlug) => svc.readTeamManifest(teamSlug),
     },
     {
       appendMessage: (teamSlug, input) => svc.appendMessage(teamSlug, input),

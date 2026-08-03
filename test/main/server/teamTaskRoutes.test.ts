@@ -166,6 +166,44 @@ describe('team task routes', () => {
     expect(invalid.json()).toEqual({ error: 'title/subject required' });
   });
 
+  it('缺省 owner 创建时默认分配给团队 displayName，显式 owner 不被覆盖', async () => {
+    const harness = createHarness({
+      readTeamManifest: vi.fn(async (teamName) => ({
+        slug: teamName,
+        displayName: '阿尔法团队',
+      })),
+    });
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks',
+      payload: { subject: 'smoke task', description: 'no owner' },
+    });
+    const explicit = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks',
+      payload: { subject: 'assigned task', owner: '指定员工' },
+    });
+
+    // 缺省 → 团队自身（displayName），并按既有规则立即开工
+    expect(harness.dependencies.createTask).toHaveBeenNthCalledWith(
+      1,
+      'team-a',
+      expect.objectContaining({ assignee: '阿尔法团队', status: 'doing' })
+    );
+    expect(created.json()).toEqual(
+      expect.objectContaining({ owner: '阿尔法团队', status: 'in_progress' })
+    );
+    // 显式 owner 原样透传
+    expect(harness.dependencies.createTask).toHaveBeenNthCalledWith(
+      2,
+      'team-a',
+      expect.objectContaining({ assignee: '指定员工' })
+    );
+    expect(explicit.json()).toEqual(expect.objectContaining({ owner: '指定员工' }));
+    expect(harness.dependencies.dispatchTask).toHaveBeenCalledTimes(2);
+  });
+
   it('uploads, reads, and deletes task attachments in browser mode', async () => {
     const hermitHome = await mkdtemp(path.join(os.tmpdir(), 'agentcli-task-attachments-'));
     tempDirs.push(hermitHome);

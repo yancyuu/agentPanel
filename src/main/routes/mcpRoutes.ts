@@ -31,6 +31,7 @@ interface McpTaskService {
     input: AddFeedbackItemInput
   ): Promise<FeedbackItem>;
   appendTaskHistoryEvent(teamSlug: string, taskId: string, event: TaskHistoryEvent): Promise<Task>;
+  readTeamManifest(teamSlug: string): Promise<{ displayName?: string }>;
 }
 
 interface McpStreamRequest {

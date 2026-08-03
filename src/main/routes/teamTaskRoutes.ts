@@ -393,7 +393,15 @@ function registerCoreRoutes(app: FastifyInstance, dependencies: TeamTaskRouteDep
       const body = request.body ?? {};
       const title = (body.subject ?? body.title) as string | undefined;
       if (!title) return reply.code(400).send({ error: 'title/subject required' });
-      const assignee = (body.owner ?? body.assignee) as string | null | undefined;
+      const explicitAssignee = (body.owner ?? body.assignee) as string | null | undefined;
+      // v2「团队即 agent」：未指定负责人时默认分配给团队自身（displayName），
+      // 与 roster 合成兜底 buildSelfMemberSnapshot 的语义一致；显式 owner 不受影响。
+      const assignee =
+        explicitAssignee ||
+        (await dependencies
+          .readTeamManifest(request.params.name)
+          .then((manifest) => manifest.displayName?.trim() || request.params.name)
+          .catch(() => request.params.name));
       const shouldStart = Boolean(assignee) && body.startImmediately !== false;
       const task = await dependencies.createTask(request.params.name, {
         title,
