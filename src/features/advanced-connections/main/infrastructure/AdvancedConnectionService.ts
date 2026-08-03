@@ -712,9 +712,19 @@ export class AdvancedConnectionService {
         redirect: 'error',
       });
       const catalog: unknown = await (response.json() as Promise<unknown>).catch(() => null);
-      return response.ok
-        ? { ok: true, available: true, catalog: tokenCatalogSummary(catalog) }
-        : { ok: false, available: true, error: `Token 池查询失败（HTTP ${response.status}）` };
+      if (response.ok) {
+        return { ok: true, available: true, catalog: tokenCatalogSummary(catalog) };
+      }
+      // 把服务端的 detail.message 透出来（如「未找到固定生产消费者组 agent-bus」），
+      // 否则只有一个 HTTP 码无法定位是客户端还是服务端配置问题。
+      const serverMessage =
+        stringValue(asRecord(asRecord(catalog)?.detail)?.message) ??
+        stringValue(asRecord(catalog)?.message);
+      return {
+        ok: false,
+        available: true,
+        error: `Token 池查询失败（HTTP ${response.status}）${serverMessage ? `：${serverMessage}` : ''}`,
+      };
     } catch (error) {
       return {
         ok: false,
