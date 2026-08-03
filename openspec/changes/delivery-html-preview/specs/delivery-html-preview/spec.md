@@ -18,14 +18,19 @@
 - **WHEN** 交付内容为 markdown 文本
 - **THEN** 维持 markdown 渲染，不出现预览/源码切换
 
-### Requirement: 渲染安全约束
+### Requirement: 渲染安全约束与交互性
 
-HTML 成果的 iframe MUST 启用 sandbox 且不允许脚本执行（无 allow-scripts）；成果中的脚本、表单提交与顶层导航 MUST NOT 影响工作台上下文。
+HTML 成果的 iframe MUST 启用 sandbox。为支持成果内组件交互，SHALL 允许 `allow-scripts`（成果内脚本可运行，按钮/链接/组件可交互），但 MUST NOT 允许 `allow-same-origin`（保持 opaque origin，成果脚本无法读取工作台存储、会话与 cookie），且 MUST NOT 允许顶层导航（成果不得将工作台页面导航走）；新窗口打开经 `allow-popups` + `allow-popups-to-escape-sandbox` 交给浏览器处理。
 
-#### Scenario: 成果内脚本不执行
+#### Scenario: 成果内组件可交互
 
-- **WHEN** HTML 成果包含 script 标签或内联事件处理
-- **THEN** 视图渲染时脚本不执行，工作台无对应副作用
+- **WHEN** HTML 成果包含按钮、链接或 JS 驱动的组件
+- **THEN** 视图内组件可点击可交互，脚本在沙盒中运行
+
+#### Scenario: 成果脚本无法触达工作台
+
+- **WHEN** HTML 成果的脚本尝试访问工作台 origin 的存储/cookie 或执行顶层导航
+- **THEN** 因 opaque origin 与导航限制被拒绝，工作台无副作用
 
 ### Requirement: 页面类交付指引
 

@@ -98,7 +98,8 @@ interface DeliveryContentViewProps {
 /**
  * 交付成果按内容类型渲染（delivery-html-preview）：
  * - 整段即 http(s) 链接 → 顶部 iframe 预览（失败降级链接卡片）+ 下方原文本；
- * - 嗅探为完整 HTML 文档 → 沙盒 iframe 渲染页面视图（sandbox 最严：无脚本/同源），
+ * - 嗅探为完整 HTML 文档 → 沙盒 iframe 渲染页面视图（allow-scripts 可交互，
+ *   但 opaque origin + 禁顶层导航，成果脚本触达不到工作台），
  *   提供「预览/源码」切换（默认预览；源码为可选中的纯文本，便于选中提意见）；
  * - 其他内容 → 维持既有 markdown 渲染。
  */
@@ -141,9 +142,11 @@ export const DeliveryContentView = ({
         <iframe
           title="交付成果页面预览"
           data-testid="delivery-html-preview"
-          // 最严沙盒：不含 allow-scripts/allow-same-origin，
-          // 成果内脚本、表单提交与顶层导航都不能影响工作台上下文
-          sandbox=""
+          // 可交互沙盒（spec「渲染安全约束与交互性」）：allow-scripts 让成果内
+          // 按钮/链接/JS 组件可用；刻意不含 allow-same-origin（opaque origin，
+          // 成果脚本读不到工作台存储/cookie）与 allow-top-navigation（成果不得
+          // 把工作台导航走）；弹窗经 allow-popups* 交给浏览器处理。
+          sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
           srcDoc={content}
           className="h-96 w-full rounded-md border border-[var(--color-border)] bg-white"
         />

@@ -57,15 +57,20 @@ describe('DeliveryContentView', () => {
     vi.unstubAllGlobals();
   });
 
-  it('HTML 成果默认渲染沙盒 iframe 预览（无 allow-scripts/allow-same-origin），可切源码', () => {
+  it('HTML 成果默认渲染沙盒 iframe 预览（可交互但 opaque origin、禁顶层导航），可切源码', () => {
     const { host, root } = renderView(HTML_DOC);
 
     const iframe = host.querySelector<HTMLIFrameElement>('[data-testid="delivery-html-preview"]');
     expect(iframe).not.toBeNull();
     expect(iframe?.getAttribute('srcdoc')).toBe(HTML_DOC);
     const sandbox = iframe?.getAttribute('sandbox') ?? '';
-    expect(sandbox).not.toContain('allow-scripts');
+    // 可交互：允许脚本/表单/弹窗
+    expect(sandbox).toContain('allow-scripts');
+    expect(sandbox).toContain('allow-forms');
+    expect(sandbox).toContain('allow-popups');
+    // 安全边界：opaque origin + 禁顶层导航
     expect(sandbox).not.toContain('allow-same-origin');
+    expect(sandbox).not.toContain('allow-top-navigation');
     expect(host.querySelector('[data-testid="markdown-viewer"]')).toBeNull();
 
     // 切到源码：展示原始 HTML 纯文本（可选中），iframe 移除
