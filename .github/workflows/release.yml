@@ -44,60 +44,8 @@ jobs:
   # Docker 镜像发布已移除：仓库内没有 docker/Dockerfile，该 job 一直引用不存在的文件而失败。
   # 需要发布容器镜像时，先编写 docker/Dockerfile，再恢复 release-docker job。
 
-  # Build self-contained portable packages (bundle Node — no Node install for
-  # end users) for each platform and attach them to the Release. The one-line
-  # installers (install.sh / install.ps1 on the Pages site) download these.
-  release-standalone:
-    needs: [create-release]
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-    permissions:
-      contents: write
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-latest
-            asset: agentcli-windows-x64.zip
-          - runner: macos-15-intel
-            asset: agentcli-macos-x64.zip
-          - runner: macos-latest
-            asset: agentcli-macos-arm64.zip
-          - runner: ubuntu-latest
-            asset: agentcli-linux-x64.zip
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ env.RELEASE_TAG }}
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm fetch:vendor
-      - run: pnpm build:web
-      - run: pnpm build:standalone
-      - name: Zip portable folder
-        shell: bash
-        run: |
-          cd dist-standalone
-          if command -v zip >/dev/null 2>&1; then
-            zip -r -q "../${{ matrix.asset }}" .
-          elif command -v 7z >/dev/null 2>&1; then
-            7z a -tzip "../${{ matrix.asset }}" .
-          else
-            echo "no zip/7z available on ${{ matrix.runner }}" >&2; exit 1
-          fi
-      - name: Upload to Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          gh release upload "$RELEASE_TAG" "${{ matrix.asset }}" \
-            --repo "$GITHUB_REPOSITORY" --clobber
+  # 独立 zip 便携包已按产品决策移除：发布物只保留桌面安装包（dmg/exe/AppImage），
+  # CLI 用户走 npm 包（npm install -g @yancyyu/agentcli）。
 
   # Build the Electron desktop installers linked from Pages. Every matrix entry
   # uploads an explicit allowlist so stale files in dist-desktop can never leak
@@ -177,7 +125,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --clobber
 
   publish-release:
-    needs: [release-standalone, release-desktop]
+    needs: [release-desktop]
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
@@ -198,10 +146,6 @@ jobs:
           test "$RELEASE_TAG" = "$VERSION"
           actual="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
           for asset in \
-            agentcli-windows-x64.zip \
-            agentcli-macos-x64.zip \
-            agentcli-macos-arm64.zip \
-            agentcli-linux-x64.zip \
             "AgentCLI-${VERSION}-arm64.dmg" \
             "AgentCLI-${VERSION}-x64.dmg" \
             "AgentCLI-Setup-${VERSION}-x64.exe" \

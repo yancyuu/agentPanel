@@ -15,6 +15,7 @@ import {
   Plus,
   RefreshCcw,
   Sparkles,
+  Trash2,
   UserCheck,
   UsersRound,
   Wrench,
@@ -381,6 +382,8 @@ export function CollaborationView(): React.JSX.Element {
   const [taskComposerOpen, setTaskComposerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const availableDigitalTeams = useMemo(
@@ -514,6 +517,26 @@ export function CollaborationView(): React.JSX.Element {
       setError(retryError instanceof Error ? retryError.message : '继续协作失败');
     } finally {
       setRetrying(false);
+    }
+  };
+
+  const deleteTeam = async (): Promise<void> => {
+    if (!selectedTeamSlug || deleting) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await requestJson(`/api/collaboration/teams/${encodeURIComponent(selectedTeamSlug)}`, {
+        method: 'DELETE',
+      });
+      setDeleteConfirmOpen(false);
+      setDetail(null);
+      setSelectedRunId('');
+      setSelectedTeamSlug('');
+      await loadTeams();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : '删除小队失败');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -866,6 +889,43 @@ export function CollaborationView(): React.JSX.Element {
           </div>
         )}
       </main>
+
+      {deleteConfirmOpen && detail ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => !deleting && setDeleteConfirmOpen(false)}
+        >
+          <div
+            className="mx-4 w-full max-w-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-5 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="text-sm font-semibold text-[var(--color-text)]">删除小队</h3>
+            <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">
+              确定删除小队「{detail.team.displayName}
+              」吗？小队配置将被移除，历史任务记录保留在归档中。
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setDeleteConfirmOpen(false)}
+                className="rounded-md px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => void deleteTeam()}
+                className="inline-flex items-center gap-1.5 rounded-md bg-rose-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-500 disabled:opacity-50"
+              >
+                {deleting ? <Loader2 size={12} className="animate-spin" /> : null}
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
