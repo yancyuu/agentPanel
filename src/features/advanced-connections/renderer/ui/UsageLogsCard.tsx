@@ -24,6 +24,16 @@ interface UsageLogsResponse {
   tail: number;
   httpEntries: AgentBusHttpLogEntry[];
   files: UsageLogFileTail[];
+  larkEntries: LarkAuditEntry[];
+}
+
+interface LarkAuditEntry {
+  timestamp: string;
+  ok: boolean;
+  accountCount?: number;
+  accounts?: { appId?: string; userOpenId?: string; scope?: string }[];
+  error?: string;
+  message?: string;
 }
 
 const TAIL_LINES = 50;
@@ -53,6 +63,7 @@ function statusLabel(entry: AgentBusHttpLogEntry): string {
 export function UsageLogsCard(): React.JSX.Element {
   const [httpEntries, setHttpEntries] = useState<AgentBusHttpLogEntry[]>([]);
   const [files, setFiles] = useState<UsageLogFileTail[]>([]);
+  const [larkEntries, setLarkEntries] = useState<LarkAuditEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +82,7 @@ export function UsageLogsCard(): React.JSX.Element {
       }
       setHttpEntries(payload?.httpEntries ?? []);
       setFiles(payload?.files ?? []);
+      setLarkEntries(payload?.larkEntries ?? []);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : '读取日志失败');
     } finally {
@@ -191,6 +203,44 @@ export function UsageLogsCard(): React.JSX.Element {
             )}
           </div>
         ))}
+
+        <div>
+          <p className="mb-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
+            飞书授权上报（lark-credentials-audit.ndjson）
+          </p>
+          {larkEntries.length === 0 ? (
+            <p className="text-[11px] text-[var(--color-text-muted)]">
+              暂无飞书授权上报记录（或功能未开启）。
+            </p>
+          ) : (
+            <div className="space-y-1" data-testid="usage-log-lark">
+              {larkEntries.map((entry, index) => (
+                <div
+                  key={`${entry.timestamp}-${index}`}
+                  className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px]"
+                >
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                      entry.ok
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-rose-500/10 text-rose-500 dark:text-rose-400'
+                    }`}
+                  >
+                    {entry.ok ? '成功' : '失败'}
+                  </span>
+                  <span className="text-[var(--color-text-muted)]">
+                    {formatTime(entry.timestamp)}
+                  </span>
+                  <span className="text-[var(--color-text-secondary)]">
+                    {entry.ok
+                      ? `已上报 ${entry.accountCount ?? entry.accounts?.length ?? 0} 个账号`
+                      : (entry.error ?? entry.message ?? '上报失败')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
