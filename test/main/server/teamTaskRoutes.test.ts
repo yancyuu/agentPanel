@@ -781,6 +781,84 @@ describe('team task routes', () => {
     );
   });
 
+  it('清除澄清标记后仍有 open 反馈时续派返工（含全部 open 反馈）', async () => {
+    let currentTask = task({
+      status: 'doing',
+      assignee: 'research-assistant',
+      needsClarification: 'user',
+      reviewState: 'needsFix',
+      feedbackItems: [
+        { id: 'f1', text: '意见一', status: 'open', createdAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'f2', text: '意见二', status: 'resolved', createdAt: '2026-01-01T00:01:00.000Z' },
+      ],
+    });
+    const readTasks = vi.fn(async () => [currentTask]);
+    const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
+      currentTask = { ...currentTask, ...patch };
+      return currentTask;
+    });
+    const harness = createHarness({ readTasks, patchTask });
+
+    // 渲染侧 setTaskNeedsClarification 实际走 late-alias 路径
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/task-clarification/task-12345678',
+      payload: { value: null },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(patchTask).toHaveBeenCalledWith('team-a', 'task-12345678', {
+      needsClarification: undefined,
+    });
+    // 续派返工：派发内容携带 open 反馈条目（含 resolved 的历史条目原样保留）
+    expect(harness.dependencies.dispatchTask).toHaveBeenCalledTimes(1);
+    expect(harness.dependencies.dispatchTask).toHaveBeenCalledWith(
+      'team-a',
+      expect.objectContaining({
+        id: 'task-12345678',
+        feedbackItems: expect.arrayContaining([
+          expect.objectContaining({ id: 'f1', status: 'open' }),
+        ]),
+      })
+    );
+    // 派发结果遵循 waitingForAgent 语义（送达 → 清除等待标记并记录时间）
+    expect(patchTask).toHaveBeenCalledWith(
+      'team-a',
+      'task-12345678',
+      expect.objectContaining({ waitingForAgent: false, lastDispatchAt: expect.any(String) })
+    );
+  });
+
+  it('清除澄清标记时无 open 反馈（或仅是设置标记）则不续派', async () => {
+    let currentTask = task({
+      status: 'doing',
+      assignee: 'research-assistant',
+      needsClarification: 'user',
+      feedbackItems: [],
+    });
+    const readTasks = vi.fn(async () => [currentTask]);
+    const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
+      currentTask = { ...currentTask, ...patch };
+      return currentTask;
+    });
+    const harness = createHarness({ readTasks, patchTask });
+
+    const cleared = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/task-clarification/task-12345678',
+      payload: { value: null },
+    });
+    const setLead = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks/task-12345678/clarification',
+      payload: { value: 'lead' },
+    });
+
+    expect(cleared.statusCode).toBe(200);
+    expect(setLead.statusCode).toBe(200);
+    expect(harness.dependencies.dispatchTask).not.toHaveBeenCalled();
+  });
+
   it('resolves leftover open feedback when approval is forced', async () => {
     const hermitHome = await mkdtemp(path.join(os.tmpdir(), 'agentcli-approval-force-'));
     tempDirs.push(hermitHome);

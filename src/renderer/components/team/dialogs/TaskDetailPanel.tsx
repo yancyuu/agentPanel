@@ -33,11 +33,8 @@ import {
   buildMemberAvatarMap,
   buildMemberColorMap,
   displayMemberName,
-  KANBAN_COLUMN_DISPLAY,
-  REVIEW_STATE_DISPLAY,
-  TASK_STATUS_LABELS,
-  TASK_STATUS_STYLES,
 } from '@renderer/utils/memberHelpers';
+import { getTaskStatusChip } from '@renderer/utils/taskStatusChip';
 import { extractFilePathFromChangeKey } from '@renderer/utils/reviewKey';
 import { resolveTaskChangePresenceFromResult } from '@renderer/utils/taskChangePresence';
 import {
@@ -577,17 +574,9 @@ export const TaskDetailPanel = ({
       kanbanColumn: currentTask.kanbanColumn,
     });
   const status = currentTask.status;
-  const statusStyle =
-    kanbanColumn && KANBAN_COLUMN_DISPLAY[kanbanColumn]
-      ? {
-          bg: KANBAN_COLUMN_DISPLAY[kanbanColumn].bg,
-          text: KANBAN_COLUMN_DISPLAY[kanbanColumn].text,
-        }
-      : TASK_STATUS_STYLES[status];
-  const statusLabel =
-    kanbanColumn && KANBAN_COLUMN_DISPLAY[kanbanColumn]
-      ? KANBAN_COLUMN_DISPLAY[kanbanColumn].label
-      : TASK_STATUS_LABELS[status];
+  // 头部状态统一为单一 chip，映射与收件箱任务行一致（含 waitingForAgent/待你补充/待你评审，
+  // needsFix 归入「进行中」），不再并列 status + reviewState 两个徽章
+  const statusChip = getTaskStatusChip(currentTask);
   const blockedByIds = currentTask.blockedBy?.filter((id) => id.length > 0) ?? [];
   const blocksIds = currentTask.blocks?.filter((id) => id.length > 0) ?? [];
   const relatedIds = (currentTask.related ?? []).filter(
@@ -642,9 +631,9 @@ export const TaskDetailPanel = ({
               const badge = (
                 <span className="inline-flex items-stretch">
                   <span
-                    className={`inline-flex items-center rounded-l-full px-2 py-0.5 text-[10px] font-medium ${statusStyle.bg} ${statusStyle.text}`}
+                    className={`inline-flex items-center rounded-l-full px-2 py-0.5 text-[10px] font-medium ${statusChip.className}`}
                   >
-                    {statusLabel}
+                    {statusChip.label}
                   </span>
                   <span
                     className="inline-flex items-center gap-1 rounded-r-full px-1.5 py-0.5 text-[10px] font-medium"
@@ -674,23 +663,11 @@ export const TaskDetailPanel = ({
             })()
           ) : (
             <span
-              className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle.bg} ${statusStyle.text}`}
+              className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${statusChip.className}`}
             >
-              {statusLabel}
+              {statusChip.label}
             </span>
           )}
-          {currentTask.waitingForAgent ? (
-            <span className="inline-flex rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-              等待智能体上线
-            </span>
-          ) : null}
-          {derivedReviewState === 'needsFix' ? (
-            <span
-              className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${REVIEW_STATE_DISPLAY.needsFix.bg} ${REVIEW_STATE_DISPLAY.needsFix.text}`}
-            >
-              {REVIEW_STATE_DISPLAY.needsFix.label}
-            </span>
-          ) : null}
           {headerExtra ? <div className="ml-auto mr-4">{headerExtra}</div> : null}
         </div>
         {editingSubject ? (

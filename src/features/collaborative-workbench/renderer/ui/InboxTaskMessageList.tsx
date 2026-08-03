@@ -1,9 +1,8 @@
 import { cn } from '@renderer/lib/utils';
 import { agentAvatarUrl } from '@renderer/utils/memberHelpers';
+import { getTaskStatusChip } from '@renderer/utils/taskStatusChip';
 import { stripAgentBlocks } from '@shared/constants/agentBlocks';
 import { RefreshCw, Search } from 'lucide-react';
-
-import { getReviewStateFromTask } from '@shared/utils/reviewState';
 
 import type { InboxTaskMessageProjection } from '../utils/inboxProjection';
 
@@ -34,43 +33,8 @@ function getTaskFeedbackState(entry: InboxTaskMessageProjection): {
   label: string;
   className: string;
 } {
-  // 派发未送达的等待态优先级最高：区别于「进行中」，避免误导用户以为 agent 在干活
-  if (entry.task.waitingForAgent) {
-    return {
-      label: '等待智能体上线',
-      className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-    };
-  }
-  if (entry.task.needsClarification === 'user') {
-    return {
-      label: '待你补充',
-      className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-    };
-  }
-  // 只有「等用户评审」是用户的行动项，优先级高于任务状态；
-  // needsFix（返工中）按任务状态归入「进行中」，approved 归入「已完成」。
-  if (getReviewStateFromTask(entry.task) === 'review') {
-    return {
-      label: '待你评审',
-      className: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
-    };
-  }
-  if (entry.task.status === 'completed') {
-    return {
-      label: '已完成',
-      className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    };
-  }
-  if (entry.task.status === 'pending') {
-    return {
-      label: '待处理',
-      className: 'bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]',
-    };
-  }
-  return {
-    label: '进行中',
-    className: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-  };
+  // 状态映射与任务详情头部共用同一事实源（@renderer/utils/taskStatusChip）
+  return getTaskStatusChip(entry.task);
 }
 
 export function InboxTaskMessageList({

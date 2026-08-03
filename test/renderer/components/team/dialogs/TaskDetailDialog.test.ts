@@ -353,6 +353,92 @@ describe('TaskDetailPanel presentations', () => {
       await Promise.resolve();
     });
   });
+
+  it('头部状态为单一 chip：needsFix 归入「进行中」（橙橘），不再并列「需修改」徽章', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const task = makeTask('task-needsfix');
+    task.status = 'in_progress';
+    task.reviewState = 'needsFix';
+    task.historyEvents = [
+      {
+        id: 'e1',
+        type: 'review_changes_requested',
+        from: 'review',
+        to: 'needsFix',
+        timestamp: '2026-04-20T10:01:00.000Z',
+        actor: 'reviewer',
+      },
+    ];
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(
+        React.createElement(TaskDetailPanel, {
+          presentation: 'inline',
+          variant: 'team',
+          teamName: 'team-a',
+          task,
+          taskMap: new Map([[task.id, task]]),
+          members: [],
+          onClose: vi.fn(),
+        })
+      );
+      await Promise.resolve();
+    });
+
+    const chips = [...host.querySelectorAll('span')].filter(
+      (el) => el.textContent?.trim() === '进行中'
+    );
+    expect(chips.length).toBeGreaterThan(0);
+    expect(chips[0]?.className).toContain('orange');
+    expect(host.textContent).not.toContain('需修改');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('头部单 chip：waitingForAgent 显示「等待智能体上线」，不再并列「进行中」', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const task = makeTask('task-waiting');
+    task.status = 'in_progress';
+    task.waitingForAgent = true;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(
+        React.createElement(TaskDetailPanel, {
+          presentation: 'inline',
+          variant: 'team',
+          teamName: 'team-a',
+          task,
+          taskMap: new Map([[task.id, task]]),
+          members: [],
+          onClose: vi.fn(),
+        })
+      );
+      await Promise.resolve();
+    });
+
+    const waitingChips = [...host.querySelectorAll('span')].filter(
+      (el) => el.textContent?.trim() === '等待智能体上线'
+    );
+    expect(waitingChips).toHaveLength(1);
+    expect(waitingChips[0]?.className).toContain('amber');
+    expect(
+      [...host.querySelectorAll('span')].filter((el) => el.textContent?.trim() === '进行中')
+    ).toHaveLength(0);
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
 });
 
 describe('TaskDetailDialog changes summary loading', () => {

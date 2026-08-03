@@ -1290,20 +1290,10 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
   app.post<{
     Params: { name: string; id: string };
     Body: { value?: 'lead' | 'user' | null };
-  }>('/api/teams/:name/tasks/:id/clarification', async (request, reply) => {
-    const value = request.body?.value;
-    if (!isClarificationValue(value)) {
-      return reply.code(400).send({ error: 'value must be lead, user, or null' });
-    }
-    try {
-      await dependencies.patchTask(request.params.name, request.params.id, {
-        needsClarification: value ?? undefined,
-      });
-      return { ok: true };
-    } catch (error) {
-      return reply.code(404).send(dependencies.reply500(error));
-    }
-  });
+  }>(
+    '/api/teams/:name/tasks/:id/clarification',
+    createClarificationHandler(dependencies, (params) => params.id)
+  );
 
   app.post<{
     Params: { name: string; id: string };
@@ -1328,6 +1318,54 @@ function registerActionRoutes(app: FastifyInstance, dependencies: TeamTaskRouteD
       return reply.code(404).send(dependencies.reply500(error));
     }
   });
+}
+
+/**
+ * 设置/清除任务澄清标记。清除（value=null）且任务仍有 open 反馈条目时续派返工
+ * （派发可靠性语义：含全部 open 反馈、recordDispatchOutcome 落 waitingForAgent），
+ * 让 agent 答完澄清问题后继续改交付；不创建反馈条目、不改变评审状态。
+ */
+function createClarificationHandler(
+  dependencies: TeamTaskRouteDependencies,
+  resolveTaskId: (params: Record<string, string>) => string
+): (
+  request: { params: Record<string, string>; body?: { value?: 'lead' | 'user' | null } },
+  reply: { code(statusCode: number): { send(payload: unknown): unknown } }
+) => Promise<unknown> {
+  return async (request, reply) => {
+    const value = request.body?.value;
+    if (!isClarificationValue(value)) {
+      return reply.code(400).send({ error: 'value must be lead, user, or null' });
+    }
+    const teamName = request.params.name;
+    const taskId = resolveTaskId(request.params);
+    try {
+      const patched = await dependencies.patchTask(teamName, taskId, {
+        needsClarification: value ?? undefined,
+      });
+      if (
+        value === null &&
+        patched.assignee &&
+        !patched.collaborationRunId &&
+        (patched.feedbackItems ?? []).some((item) => item.status === 'open')
+      ) {
+        const dispatched = await dependencies
+          .dispatchTask(teamName, patched)
+          .catch(() => ({ delivered: false }));
+        await recordDispatchOutcome(
+          dependencies,
+          teamName,
+          taskId,
+          dispatched,
+          new Date().toISOString()
+        );
+        dependencies.broadcastTaskChange?.(teamName, taskId);
+      }
+      return { ok: true };
+    } catch (error) {
+      return reply.code(404).send(dependencies.reply500(error));
+    }
+  };
 }
 
 function registerReviewAliasRoutes(
@@ -1356,20 +1394,10 @@ function registerLateAliasRoutes(
   app.post<{
     Params: { name: string; taskId: string };
     Body: { value?: 'lead' | 'user' | null };
-  }>('/api/teams/:name/task-clarification/:taskId', async (request, reply) => {
-    const value = request.body?.value;
-    if (!isClarificationValue(value)) {
-      return reply.code(400).send({ error: 'value must be lead, user, or null' });
-    }
-    try {
-      await dependencies.patchTask(request.params.name, request.params.taskId, {
-        needsClarification: value ?? undefined,
-      });
-      return { ok: true };
-    } catch (error) {
-      return reply.code(404).send(dependencies.reply500(error));
-    }
-  });
+  }>(
+    '/api/teams/:name/task-clarification/:taskId',
+    createClarificationHandler(dependencies, (params) => params.taskId)
+  );
 
   app.delete<{
     Params: { name: string; id: string };
