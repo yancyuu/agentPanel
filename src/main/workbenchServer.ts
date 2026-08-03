@@ -59,7 +59,7 @@ import { registerTeamMessageRoutes } from './routes/teamMessageRoutes';
 import { CC_AGENT_TYPES } from './routes/teamRouteUtils';
 import { registerTeamRuntimeRoutes } from './routes/teamRuntimeRoutes';
 import { registerTeamSessionRoutes } from './routes/teamSessionRoutes';
-import { registerTeamTaskRoutes } from './routes/teamTaskRoutes';
+import { redispatchWaitingAgentTasks, registerTeamTaskRoutes } from './routes/teamTaskRoutes';
 import { registerTerminalRoutes } from './routes/terminalRoutes';
 import { registerToolApprovalRoutes } from './routes/toolApprovalRoutes';
 import { createUsageTelemetryPresenter } from './routes/usageTelemetryPresenter';
@@ -109,6 +109,7 @@ import type { ServerContext } from './serverContext';
 import type { ServerOperations } from './serverOperations';
 import type { TeamProvisioningService } from './services/team-management';
 import type { AppendGroupMessageInput } from './services/team-management/TeamWorkspaceService';
+import type { DirectCliEvent } from './services/direct-cli';
 import type { FastifyInstance, FastifyServerOptions } from 'fastify';
 
 export interface WorkbenchServerOptions {
@@ -442,15 +443,26 @@ async function createWorkbenchServerUncached(
     dispatchTask: async (
       teamName: string,
       task: Parameters<TeamProvisioningService['dispatchTask']>[1]
-    ) => {
-      if (!task.assignee) return;
+    ): Promise<{ delivered: boolean }> => {
+      if (!task.assignee) return { delivered: false };
       const targetTeamName = task.assigneeAgentId?.trim() || teamName;
       const workDir = await operations.teamRuntimeOperations
         .resolveDirectCliWorkDir(targetTeamName)
         .catch(() => '');
       if (!workDir) {
+        // bridge 兜底路径：sendUserMessage 是 fire-and-forget，目标 project 离线时消息
+        // 会静默蒸发——先探活，离线则按未送达处理（等待上线/操作路径补发）。
+        const manifest = await svc.readTeamManifest(targetTeamName).catch(() => null);
+        const bindProject = manifest?.bindProject?.trim() || targetTeamName;
+        const project = await cc.getProject(bindProject).catch(() => null);
+        const online = Boolean(
+          project &&
+          Array.isArray(project.platforms) &&
+          project.platforms.some((platform) => platform.connected)
+        );
+        if (!online) return { delivered: false };
         await svc.dispatchTask(teamName, task);
-        return;
+        return { delivered: true };
       }
       const inputs = await materializeTaskInputs(task, workDir);
       const inputSummary = inputs.map((input) => `- ${input.filename}: ${input.path}`).join('\n');
@@ -480,16 +492,22 @@ async function createWorkbenchServerUncached(
       ]
         .filter((line): line is string => line !== null)
         .join('\n');
-      await operations.teamRuntimeOperations.dispatchDirectCliMessage({
-        teamName: targetTeamName,
-        sessionKey: `${targetTeamName}:task:${task.id}`,
-        workDir,
-        from: task.assignee,
-        to: 'user',
-        text,
-        messageId: `task-${task.id}-${Date.now()}`,
-        conversationId: `task:${task.id}`,
-      });
+      try {
+        await operations.teamRuntimeOperations.dispatchDirectCliMessage({
+          teamName: targetTeamName,
+          sessionKey: `${targetTeamName}:task:${task.id}`,
+          workDir,
+          from: task.assignee,
+          to: 'user',
+          text,
+          messageId: `task-${task.id}-${Date.now()}`,
+          conversationId: `task:${task.id}`,
+        });
+        return { delivered: true };
+      } catch {
+        // 会话不可用（如本地 CLI 缺失/spawn 失败）→ 未送达，由路由标记等待上线
+        return { delivered: false };
+      }
     },
     listProjects: () => cc.listProjects(),
     listTeams: () => svc.listTeams(),
@@ -501,6 +519,7 @@ async function createWorkbenchServerUncached(
     readInboxMessages: async (teamName: string) => svc.readMessages(teamName, { limit: 5000 }),
     broadcastInboxChange: (teamName: string) =>
       operations.broadcastSse('team-change', { type: 'inbox', teamName }),
+    hasLiveAgentSession: (teamName: string) => services.directCli.hasAnyWithPrefix(`${teamName}:`),
     requestCollaborationChanges: (
       runId: string,
       feedback: string,
@@ -509,6 +528,22 @@ async function createWorkbenchServerUncached(
     reply500: operations.reply500,
   };
   registerTeamTaskRoutes(app, teamTaskRouteDependencies, { routes: ['core'] });
+
+  // 派发可靠性 D3：direct-cli 会话建立（init = 会话真正可用）后，
+  // 补发该团队所有「等待智能体上线」的任务并刷新等待标记。
+  const redispatchOnSessionReady = (event: DirectCliEvent): void => {
+    if (event.kind !== 'init') return;
+    const separator = event.sessionKey.indexOf(':');
+    if (separator <= 0) return;
+    void redispatchWaitingAgentTasks(
+      teamTaskRouteDependencies,
+      event.sessionKey.slice(0, separator)
+    );
+  };
+  services.directCli.on('event', redispatchOnSessionReady);
+  context.lifecycle.listenerDisposers.push(() =>
+    services.directCli.off('event', redispatchOnSessionReady)
+  );
 
   registerFeishuAssistantRoutes(app);
 

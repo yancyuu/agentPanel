@@ -614,6 +614,10 @@ export interface TeamTask {
   revisionCount?: number;
   /** 退回次数达到上限，需要人工介入 */
   needsHumanIntervention?: boolean;
+  /** 最近一次派发未送达存活会话，任务在等待智能体上线（区别于「进行中」） */
+  waitingForAgent?: boolean;
+  /** 最近一次派发尝试时间（ISO） */
+  lastDispatchAt?: string;
   /** Signals that the agent is blocked and needs clarification. "lead" = ask team lead, "user" = escalated to human. */
   needsClarification?: 'lead' | 'user';
   /** ISO timestamp — when the task was soft-deleted. Only set for status === 'deleted'. */

@@ -174,7 +174,8 @@ describe('workbench server factory', () => {
       harness.composition.context.services.bridgeConnection.listenerCount('reply_stream')
     ).toBe(1);
     expect(harness.composition.context.services.bridgeConnection.listenerCount('message')).toBe(1);
-    expect(harness.composition.context.lifecycle.listenerDisposers).toHaveLength(4);
+    // 4 个既有监听器 + 派发可靠性补发钩子（direct-cli init → 补发等待任务）
+    expect(harness.composition.context.lifecycle.listenerDisposers).toHaveLength(5);
     await first.shutdown();
   });
 

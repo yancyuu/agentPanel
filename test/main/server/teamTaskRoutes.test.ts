@@ -7,7 +7,11 @@ import path from 'node:path';
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { registerTeamTaskRoutes, toTeamTask } from '../../../src/main/routes/teamTaskRoutes';
+import {
+  redispatchWaitingAgentTasks,
+  registerTeamTaskRoutes,
+  toTeamTask,
+} from '../../../src/main/routes/teamTaskRoutes';
 import type { Task } from '../../../src/main/services/team-management/TeamWorkspaceService';
 
 const apps: ReturnType<typeof Fastify>[] = [];
@@ -63,7 +67,7 @@ function createHarness(overrides: Partial<Dependencies> = {}) {
     appendTaskHistoryEvent: vi.fn(async (_teamName, _taskId, event) =>
       task({ historyEvents: [event] })
     ),
-    dispatchTask: vi.fn(async () => undefined),
+    dispatchTask: vi.fn(async () => ({ delivered: true })),
     listProjects: vi.fn(async () => [{ name: 'project-a' }, { name: 'project-b' }]),
     readTeamManifest: vi.fn(async (teamName) => ({
       slug: teamName === 'project-a' ? 'team-a' : teamName,
@@ -559,6 +563,222 @@ describe('team task routes', () => {
       actor: 'reviewer',
     });
     expect(event).not.toHaveProperty('note');
+  });
+
+  // ---------------------------------------------------------------------------
+  // 派发可靠性（dispatch-reliability）
+  // ---------------------------------------------------------------------------
+
+  function needsFixTask(overrides: Partial<Task> = {}): Task {
+    return task({
+      status: 'doing',
+      assignee: 'research-assistant',
+      reviewState: 'needsFix',
+      revisionCount: 1,
+      feedbackItems: [
+        { id: 'f1', text: '第一条意见', status: 'open', createdAt: '2026-01-01T00:00:00.000Z' },
+      ],
+      historyEvents: [
+        {
+          id: 'e_needsfix',
+          type: 'review_changes_requested',
+          from: 'review',
+          to: 'needsFix',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          actor: 'reviewer',
+        },
+      ],
+      ...overrides,
+    });
+  }
+
+  const requestChanges = (harness: ReturnType<typeof createHarness>, comment: string) =>
+    harness.app.inject({
+      method: 'PATCH',
+      url: '/api/teams/team-a/kanban/task-12345678',
+      payload: { op: 'request_changes', comment },
+    });
+
+  it('needsFix 态下 agent 无活动时新反馈触发重派（携带全部 open 反馈），revisionCount 不变', async () => {
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [needsFixTask()]),
+      hasLiveAgentSession: vi.fn(() => false),
+      readInboxMessages: vi.fn(async () => [
+        // needsFix 之后只有用户自己的反馈消息，不算 agent 活动
+        {
+          from: 'user',
+          ts: '2026-01-01T00:10:00.000Z',
+          meta: { conversationId: 'task:task-12345678', source: 'user_sent' },
+        },
+      ]),
+    });
+
+    const response = await requestChanges(harness, '再补一条。');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(expect.objectContaining({ ok: true, revisionCount: 1 }));
+    expect(harness.dependencies.dispatchTask).toHaveBeenCalledTimes(1);
+    expect(harness.dependencies.dispatchTask).toHaveBeenCalledWith(
+      'team-a',
+      expect.objectContaining({
+        id: 'task-12345678',
+        feedbackItems: [expect.objectContaining({ text: '第一条意见' })],
+      })
+    );
+    // 同轮退回不重复累计退回次数
+    expect(harness.dependencies.patchTask).not.toHaveBeenCalledWith(
+      'team-a',
+      'task-12345678',
+      expect.objectContaining({ revisionCount: 2 })
+    );
+  });
+
+  it('needsFix 态下会话存活（agent 有活动）时只追加反馈不重派', async () => {
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [needsFixTask()]),
+      hasLiveAgentSession: vi.fn(() => true),
+    });
+
+    const response = await requestChanges(harness, '补充第二条。');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(expect.objectContaining({ ok: true, revisionCount: 1 }));
+    expect(harness.dependencies.dispatchTask).not.toHaveBeenCalled();
+    // 反馈条目照记
+    expect(harness.dependencies.addFeedbackItem).toHaveBeenCalledWith('team-a', 'task-12345678', {
+      text: '补充第二条。',
+    });
+  });
+
+  it('活动判定看任务线程 agent 消息时间：needsFix 后有 agent 消息不重派，之前则重派', async () => {
+    const staleThreadHarness = createHarness({
+      readTasks: vi.fn(async () => [needsFixTask()]),
+      hasLiveAgentSession: vi.fn(() => false),
+      readInboxMessages: vi.fn(async () => [
+        // agent 消息早于进入 needsFix 的时间 → 不算活动
+        {
+          from: 'research-assistant',
+          ts: '2025-12-31T23:00:00.000Z',
+          meta: { conversationId: 'task:task-12345678', source: 'runtime_delivery' },
+        },
+      ]),
+    });
+    const activeThreadHarness = createHarness({
+      readTasks: vi.fn(async () => [needsFixTask()]),
+      hasLiveAgentSession: vi.fn(() => false),
+      readInboxMessages: vi.fn(async () => [
+        // agent 消息晚于进入 needsFix 的时间 → 有活动
+        {
+          from: 'research-assistant',
+          ts: '2026-01-01T01:00:00.000Z',
+          meta: { conversationId: 'task:task-12345678', source: 'runtime_delivery' },
+        },
+      ]),
+    });
+
+    await requestChanges(staleThreadHarness, '再来一条。');
+    await requestChanges(activeThreadHarness, '再来一条。');
+
+    expect(staleThreadHarness.dependencies.dispatchTask).toHaveBeenCalledTimes(1);
+    expect(activeThreadHarness.dependencies.dispatchTask).not.toHaveBeenCalled();
+  });
+
+  it('创建任务派发未送达时标记等待智能体上线（waitingForAgent + lastDispatchAt）', async () => {
+    const dispatchTask = vi.fn(async () => ({ delivered: false }));
+    const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) =>
+      task({ ...patch })
+    );
+    const harness = createHarness({ dispatchTask, patchTask });
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/teams/team-a/tasks',
+      payload: { subject: '离线任务', owner: 'team-a' },
+    });
+
+    expect(dispatchTask).toHaveBeenCalledTimes(1);
+    expect(patchTask).toHaveBeenCalledWith(
+      'team-a',
+      'task-12345678',
+      expect.objectContaining({ waitingForAgent: true, lastDispatchAt: expect.any(String) })
+    );
+    expect(response.json()).toEqual(expect.objectContaining({ waitingForAgent: true }));
+  });
+
+  it('request_changes 派发未送达置等待标记，补发送达后清除', async () => {
+    let currentTask = task({
+      status: 'done',
+      assignee: 'research-assistant',
+      reviewState: 'review',
+    });
+    const readTasks = vi.fn(async () => [currentTask]);
+    const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) => {
+      currentTask = { ...currentTask, ...patch };
+      return currentTask;
+    });
+    const dispatchTask = vi.fn(async () => ({ delivered: false }));
+    const harness = createHarness({
+      readTasks,
+      patchTask,
+      dispatchTask,
+      hasLiveAgentSession: vi.fn(() => false),
+      readInboxMessages: vi.fn(async () => []),
+    });
+
+    const first = await requestChanges(harness, '请补充英国站费用。');
+    expect(first.json().task).toEqual(expect.objectContaining({ waitingForAgent: true }));
+    expect(currentTask).toMatchObject({ waitingForAgent: true });
+    expect(typeof currentTask.lastDispatchAt).toBe('string');
+
+    // 用户再次反馈（needsFix 轮内、仍无 agent 活动）→ 触发补发；送达后清除等待标记
+    currentTask = {
+      ...currentTask,
+      historyEvents: [
+        {
+          id: 'e_needsfix',
+          type: 'review_changes_requested',
+          from: 'review',
+          to: 'needsFix',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          actor: 'reviewer',
+        },
+      ],
+    };
+    dispatchTask.mockResolvedValue({ delivered: true });
+    const second = await requestChanges(harness, '再补一条。');
+    expect(second.statusCode).toBe(200);
+    expect(dispatchTask).toHaveBeenCalledTimes(2);
+    expect(currentTask).toMatchObject({ waitingForAgent: false });
+    expect(second.json().task).toEqual(expect.objectContaining({ waitingForAgent: false }));
+  });
+
+  it('redispatchWaitingAgentTasks 只补发等待中的任务并按结果刷新标记', async () => {
+    const waiting = task({
+      id: 'task-wait',
+      assignee: 'research-assistant',
+      status: 'doing',
+      waitingForAgent: true,
+    });
+    const normal = task({ id: 'task-ok', assignee: 'research-assistant', status: 'doing' });
+    const patchTask = vi.fn(async (_teamName: string, _taskId: string, patch: Partial<Task>) =>
+      task({ ...patch })
+    );
+    const dispatchTask = vi.fn(async () => ({ delivered: true }));
+    const harness = createHarness({
+      readTasks: vi.fn(async () => [waiting, normal]),
+      patchTask,
+      dispatchTask,
+    });
+
+    await redispatchWaitingAgentTasks(harness.dependencies, 'team-a');
+
+    expect(dispatchTask).toHaveBeenCalledTimes(1);
+    expect(dispatchTask).toHaveBeenCalledWith('team-a', expect.objectContaining({ id: 'task-wait' }));
+    expect(patchTask).toHaveBeenCalledWith(
+      'team-a',
+      'task-wait',
+      expect.objectContaining({ waitingForAgent: false, lastDispatchAt: expect.any(String) })
+    );
   });
 
   it('resolves leftover open feedback when approval is forced', async () => {

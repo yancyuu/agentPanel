@@ -679,6 +679,11 @@ export const TaskDetailPanel = ({
               {statusLabel}
             </span>
           )}
+          {currentTask.waitingForAgent ? (
+            <span className="inline-flex rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+              等待智能体上线
+            </span>
+          ) : null}
           {derivedReviewState === 'needsFix' ? (
             <span
               className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${REVIEW_STATE_DISPLAY.needsFix.bg} ${REVIEW_STATE_DISPLAY.needsFix.text}`}

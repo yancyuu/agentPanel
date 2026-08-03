@@ -244,4 +244,63 @@ describe('InboxTaskMessageList', () => {
     expect(host.textContent).toContain('已完成');
     act(() => root.unmount());
   });
+
+  it('waitingForAgent 显示「等待智能体上线」（amber），优先级高于待评审/待补充', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const waiting: InboxTaskMessageProjection = {
+      key: 'team-a:task-waiting',
+      task: {
+        id: 'task-waiting',
+        displayId: 'task-waiting',
+        subject: '离线任务',
+        status: 'completed',
+        reviewState: 'review',
+        needsClarification: 'user',
+        waitingForAgent: true,
+        teamName: 'team-a',
+        teamDisplayName: '测试',
+        owner: 'alice',
+      },
+      latestMessage: {
+        id: 'delivery:waiting',
+        author: 'alice',
+        text: '交付 第 1 版',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      unreadCount: 0,
+      updatedAtMs: Date.parse('2026-01-01T00:00:00.000Z'),
+    };
+
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <InboxTaskMessageList
+          messages={[waiting]}
+          selectedKey={null}
+          query=""
+          onQueryChange={vi.fn()}
+          teamFilter="all"
+          onTeamFilterChange={vi.fn()}
+          teamOptions={[]}
+          onSelect={vi.fn()}
+          onRefresh={vi.fn()}
+          loading={false}
+        />
+      );
+      await Promise.resolve();
+    });
+
+    // 最高优先级：即使同时是 review + needsClarification，也只显示等待上线
+    expect(host.textContent).toContain('等待智能体上线');
+    expect(host.textContent).not.toContain('待你评审');
+    expect(host.textContent).not.toContain('待你补充');
+    const chip = [...host.querySelectorAll('span')].find(
+      (el) => el.textContent?.trim() === '等待智能体上线'
+    );
+    expect(chip?.className).toContain('amber');
+
+    act(() => root.unmount());
+  });
 });

@@ -374,6 +374,17 @@ export class DirectCliSessionManager extends EventEmitter {
     return this.sessions.has(sessionKey) || this.oneShotSessions.has(sessionKey);
   }
 
+  /** 是否存在 key 以 `prefix` 开头的存活会话（持久或一次性），用于按团队探活 */
+  hasAnyWithPrefix(prefix: string): boolean {
+    for (const key of this.sessions.keys()) {
+      if (key.startsWith(prefix)) return true;
+    }
+    for (const key of this.oneShotSessions.keys()) {
+      if (key.startsWith(prefix)) return true;
+    }
+    return false;
+  }
+
   getSessionId(sessionKey: string): string | undefined {
     return this.sessions.get(sessionKey)?.sessionId ?? this.store.get(sessionKey);
   }

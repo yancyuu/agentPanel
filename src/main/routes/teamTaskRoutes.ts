@@ -69,11 +69,15 @@ interface TeamTaskRouteDependencies {
   appendTaskHistoryEvent(teamName: string, taskId: string, event: TaskHistoryEvent): Promise<Task>;
   /** 评审邮件线程：把评审事件写进 messages/group.jsonl（展示层镜像，失败不影响任务操作） */
   appendInboxMessage?(teamName: string, input: AppendGroupMessageInput): Promise<unknown>;
-  /** 读团队消息（沉淀建议判重用，可选；缺失时建议消息直接写入） */
-  readInboxMessages?(teamName: string): Promise<Array<{ meta?: Record<string, unknown> | null }>>;
+  /** 读团队消息（沉淀建议判重/派发活动判定用，可选；缺失时建议消息直接写入、活动判定只看会话存活） */
+  readInboxMessages?(
+    teamName: string
+  ): Promise<Array<{ from?: string; ts?: string; meta?: Record<string, unknown> | null }>>;
   /** 评审线程写入后广播 inbox SSE */
   broadcastInboxChange?(teamName: string): void;
-  dispatchTask(teamName: string, task: Task): Promise<void>;
+  /** 该团队是否有存活的执行会话（direct-cli 持久或一次性会话），用于派发活动判定 */
+  hasLiveAgentSession?(teamName: string): boolean;
+  dispatchTask(teamName: string, task: Task): Promise<{ delivered: boolean }>;
   listProjects(): Promise<{ name: string }[]>;
   listTeams?(): Promise<{ slug: string }[]>;
   readTeamManifest(teamName: string): Promise<{
@@ -167,6 +171,8 @@ export function toTeamTask(task: Task): TeamTaskResponse {
     feedbackItems: task.feedbackItems,
     revisionCount: task.revisionCount,
     needsHumanIntervention: task.needsHumanIntervention,
+    waitingForAgent: task.waitingForAgent,
+    lastDispatchAt: task.lastDispatchAt,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   };
@@ -200,6 +206,74 @@ async function appendReviewThreadMessage(
   } catch (error) {
     // 评审线程只是展示补充，失败记 warn 即可
     console.warn('[review-thread] 评审线程消息写入失败（不影响评审状态）:', error);
+  }
+}
+
+/**
+ * 活动判定（派发可靠性 D1）：自最近一次进入 needsFix 以来，该任务是否已有 agent 活动。
+ * 任一命中即视为有活动：任务线程（conversationId=`task:<id>`）出现非 user 消息且时间晚于
+ * 最新 review_changes_requested 事件；或该团队当前有存活的执行会话。
+ * 无法判定时保守返回 true（不重派，避免放大派发）。
+ */
+async function hasAgentActivitySinceNeedsFix(
+  dependencies: TeamTaskRouteDependencies,
+  teamName: string,
+  task: Task
+): Promise<boolean> {
+  const lastNeedsFixAt = [...(task.historyEvents ?? [])]
+    .reverse()
+    .find((event) => event.type === 'review_changes_requested')?.timestamp;
+  const sinceMs = lastNeedsFixAt ? Date.parse(lastNeedsFixAt) : Number.NaN;
+  if (!Number.isFinite(sinceMs)) return true;
+  if (dependencies.hasLiveAgentSession?.(teamName)) return true;
+  const messages = (await dependencies.readInboxMessages?.(teamName).catch(() => [])) ?? [];
+  const conversationId = reviewThreadConversationId(task.id);
+  return messages.some((message) => {
+    if (message.meta?.conversationId !== conversationId) return false;
+    if (message.from === 'user') return false;
+    const ts = Date.parse(message.ts ?? '');
+    return Number.isFinite(ts) && ts > sinceMs;
+  });
+}
+
+/** 派发结果落盘（D2）：送达清除等待标记，未送达置位；两种情形都记录最近派发时间 */
+async function recordDispatchOutcome(
+  dependencies: TeamTaskRouteDependencies,
+  teamName: string,
+  taskId: string,
+  dispatched: { delivered: boolean },
+  attemptedAt: string
+): Promise<Task | null> {
+  return dependencies
+    .patchTask(teamName, taskId, {
+      waitingForAgent: !dispatched.delivered,
+      lastDispatchAt: attemptedAt,
+    })
+    .catch(() => null);
+}
+
+/**
+ * 补发触发点（D3）：会话建立钩子/用户操作路径调用——把该团队所有
+ * 「等待智能体上线」的任务重新派发一次，并按结果刷新等待标记。
+ */
+export async function redispatchWaitingAgentTasks(
+  dependencies: TeamTaskRouteDependencies,
+  teamName: string
+): Promise<void> {
+  const tasks = await dependencies.readTasks(teamName).catch(() => [] as Task[]);
+  for (const task of tasks) {
+    if (!task.waitingForAgent || !task.assignee) continue;
+    const dispatched = await dependencies
+      .dispatchTask(teamName, task)
+      .catch(() => ({ delivered: false }));
+    await recordDispatchOutcome(
+      dependencies,
+      teamName,
+      task.id,
+      dispatched,
+      new Date().toISOString()
+    );
+    dependencies.broadcastTaskChange?.(teamName, task.id);
   }
 }
 
@@ -419,9 +493,26 @@ function registerCoreRoutes(app: FastifyInstance, dependencies: TeamTaskRouteDep
           : undefined,
         createdBy: 'user',
       });
-      if (shouldStart) await dependencies.dispatchTask(request.params.name, task).catch(() => {});
+      let resultTask = task;
+      if (shouldStart) {
+        const dispatched = await dependencies
+          .dispatchTask(request.params.name, task)
+          .catch(() => ({ delivered: false }));
+        // 派发未送达 → 标记「等待智能体上线」，上线或下次操作时补发（D2）；
+        // 新任务送达时无需落盘（waitingForAgent 缺省即否）
+        if (!dispatched.delivered) {
+          const marked = await recordDispatchOutcome(
+            dependencies,
+            request.params.name,
+            task.id,
+            dispatched,
+            new Date().toISOString()
+          );
+          if (marked) resultTask = marked;
+        }
+      }
       dependencies.broadcastTaskChange?.(request.params.name, task.id);
-      return toTeamTask(task);
+      return toTeamTask(resultTask);
     }
   );
 
@@ -685,13 +776,37 @@ function createUpdateKanbanHandler(dependencies: TeamTaskRouteDependencies): Upd
         buildFeedbackThreadMessage(request.params.name, existingTask, comment, anchor)
       );
     }
-    // 任务已处于 needsFix：同一轮退回中追加意见，只补反馈条目，
-    // 不重复翻转状态/累计退回次数/追加历史事件/派发返工。
+    // 任务已处于 needsFix：同一轮退回中追加意见，默认只补反馈条目，
+    // 不重复翻转状态/累计退回次数/追加历史事件。
+    // 例外（派发可靠性）：自进入 needsFix 以来 agent 无任何活动（此前派发已蒸发），
+    // 则重新派发返工——fresh task 携带全部 open 反馈；revisionCount 语义不变。
     if (currentReviewState(existingTask) === 'needsFix') {
+      let task = existingTask;
+      if (
+        !existingTask.collaborationRunId &&
+        existingTask.assignee &&
+        !(await hasAgentActivitySinceNeedsFix(dependencies, request.params.name, existingTask))
+      ) {
+        const freshTask =
+          (await dependencies.readTasks(request.params.name).catch(() => [] as Task[])).find(
+            (candidate) => candidate.id === existingTask.id
+          ) ?? existingTask;
+        const dispatched = await dependencies
+          .dispatchTask(request.params.name, freshTask)
+          .catch(() => ({ delivered: false }));
+        task =
+          (await recordDispatchOutcome(
+            dependencies,
+            request.params.name,
+            existingTask.id,
+            dispatched,
+            timestamp
+          )) ?? freshTask;
+      }
       dependencies.broadcastTaskChange?.(request.params.name, existingTask.id);
       return {
         ok: true,
-        task: toTeamTask(existingTask),
+        task: toTeamTask(task),
         revisionCount: existingTask.revisionCount ?? 0,
         needsHumanIntervention: existingTask.needsHumanIntervention ?? false,
       };
@@ -732,7 +847,17 @@ function createUpdateKanbanHandler(dependencies: TeamTaskRouteDependencies): Upd
     };
     await dependencies.appendTaskHistoryEvent(request.params.name, existingTask.id, event);
     if (!task.collaborationRunId && task.assignee) {
-      await dependencies.dispatchTask(request.params.name, task);
+      const dispatched = await dependencies
+        .dispatchTask(request.params.name, task)
+        .catch(() => ({ delivered: false }));
+      task =
+        (await recordDispatchOutcome(
+          dependencies,
+          request.params.name,
+          task.id,
+          dispatched,
+          timestamp
+        )) ?? task;
     }
     dependencies.broadcastTaskChange?.(request.params.name, existingTask.id);
     return {

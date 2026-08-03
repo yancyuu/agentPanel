@@ -34,6 +34,13 @@ function getTaskFeedbackState(entry: InboxTaskMessageProjection): {
   label: string;
   className: string;
 } {
+  // 派发未送达的等待态优先级最高：区别于「进行中」，避免误导用户以为 agent 在干活
+  if (entry.task.waitingForAgent) {
+    return {
+      label: '等待智能体上线',
+      className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    };
+  }
   if (entry.task.needsClarification === 'user') {
     return {
       label: '待你补充',

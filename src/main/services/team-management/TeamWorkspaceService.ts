@@ -172,6 +172,10 @@ export interface Task {
   revisionCount?: number;
   /** 退回次数达到上限，需要人工介入 */
   needsHumanIntervention?: boolean;
+  /** 最近一次派发未能送达存活会话，任务在等待智能体上线（派发可靠性 D2） */
+  waitingForAgent?: boolean;
+  /** 最近一次派发尝试时间（ISO），供无活动判定与 UI 展示 */
+  lastDispatchAt?: string;
   createdAt: string;
   updatedAt: string;
   order: number;
