@@ -496,6 +496,7 @@ interface LarkCredentialsAuditEntry {
   timestamp: string;
   ok: boolean;
   reason?: LarkCredentialsReportStatus['reason'];
+  message?: string;
   httpStatus?: number;
   accountCount?: number;
   accounts?: LarkCredentialsReportStatus['accounts'];
@@ -508,6 +509,8 @@ function buildLarkCredentialsAuditEntry(
     timestamp: report.lastAttemptAt,
     ok: report.ok,
     ...(report.reason ? { reason: report.reason } : {}),
+    // message 携带可读的失败/未开启原因，进审计日志前统一过 redactLarkError 脱敏
+    ...(report.message ? { message: redactLarkError(report.message) } : {}),
     ...(report.lastHttpStatus ? { httpStatus: report.lastHttpStatus } : {}),
     ...(report.accountCount ? { accountCount: report.accountCount } : {}),
     ...(report.accounts ? { accounts: report.accounts } : {}),
@@ -604,6 +607,8 @@ export async function scanLarkCredentialsOnce(
       lastAttemptAt: attemptAt,
     };
     await safeWriteLarkCredentialsStatus(hermitHome, 'idle', { report });
+    // 未开启也要留痕——否则日志区一片静默，用户无法区分「功能关闭」与「出错漏报」
+    await appendLarkCredentialsAuditLog(hermitHome, report);
     return report;
   }
   await safeWriteLarkCredentialsStatus(hermitHome, 'reporting', { attemptAt });

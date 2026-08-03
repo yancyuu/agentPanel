@@ -66,6 +66,7 @@ describe('Lark credential loop', () => {
       timestamp: '2026-07-15T00:00:00.000Z',
       ok: false,
       reason: 'http-error',
+      message: 'Bearer [hidden] secret=[hidden]',
       httpStatus: 503,
       accountCount: 1,
       accounts: [
