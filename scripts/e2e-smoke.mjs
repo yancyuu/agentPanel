@@ -14,9 +14,10 @@ const TEAM = `e2e-${STAMP}`;
 const results = [];
 
 async function api(method, url, body) {
+  const headers = body === undefined ? {} : { 'Content-Type': 'application/json' };
   const res = await fetch(`${BASE}${url}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   let payload = null;
@@ -205,8 +206,9 @@ async function main() {
   const list = Array.isArray(connections.body) ? connections.body : (connections.body?.connections ?? []);
   check('高级连接列表可读取', connections.status === 200, `connections=${list.length}`);
 
-  // 9. 清理：软删 E2E 团队
-  await api('DELETE', `/api/teams/${TEAM}`).catch(() => undefined);
+  // 9. 清理：软删 E2E 团队（断言真的删掉——此前因 DELETE 带空 json body 被 400 静默跳过）
+  const cleanup = await api('DELETE', `/api/teams/${TEAM}`);
+  check('E2E 团队已清理', cleanup.body?.ok === true, `resp=${JSON.stringify(cleanup.body)}`);
   fs.rmSync(workDir, { recursive: true, force: true });
 
   const failed = results.filter((r) => !r.ok);
