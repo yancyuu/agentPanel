@@ -488,6 +488,7 @@ async function createWorkbenchServerUncached(
         `${taskCommand} clarify --team ${targetTeamName} --id ${task.id} --target user`,
         `${taskCommand} complete --team ${targetTeamName} --id ${task.id} --result "交付结果"`,
         '',
+        '如果交付物是页面/设计类成果：交付内容必须是自包含 HTML（内联样式、不依赖外部脚本），不要只给文字描述。',
         '如果信息不足：先标记等待用户回复（clarify --target user）并停止执行，说明还需要什么信息。收到用户回复后继续。完成后必须提交交付结果。',
       ]
         .filter((line): line is string => line !== null)

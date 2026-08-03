@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 
-import { MarkdownViewer } from '@renderer/components/chat/viewers/MarkdownViewer';
 import { FeedbackAnchorView } from '@renderer/components/team/dialogs/FeedbackAnchorView';
 import { QuoteFeedbackSelection } from '@renderer/components/team/dialogs/QuoteFeedbackSelection';
+import { DeliveryContentView } from '@renderer/components/team/DeliveryContentView';
 import { MemberBadge } from '@renderer/components/team/MemberBadge';
 import { ExpandableContent } from '@renderer/components/ui/ExpandableContent';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
@@ -281,7 +281,7 @@ export const TaskReviewThread = ({
                 </div>
               ) : null}
               <ExpandableContent collapsedHeight={200} className="text-xs">
-                <MarkdownViewer content={delivery.result} maxHeight="max-h-none" bare />
+                <DeliveryContentView content={delivery.result} />
               </ExpandableContent>
             </>
           );

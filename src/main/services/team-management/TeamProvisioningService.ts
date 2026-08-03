@@ -276,6 +276,7 @@ export class TeamProvisioningService {
       `  ${cli} comment --team ${targetSlug} --id ${task.id} --text "进度说明"`,
       `  ${cli} clarify --team ${targetSlug} --id ${task.id} --target user`,
       `  ${cli} complete --team ${targetSlug} --id ${task.id} --result "交付结果"`,
+      `如果交付物是页面/设计类成果：交付内容必须是自包含 HTML（内联样式、不依赖外部脚本），不要只给文字描述。`,
     ]
       .filter((l) => l !== null)
       .join('\n');

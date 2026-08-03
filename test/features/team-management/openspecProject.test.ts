@@ -50,6 +50,9 @@ describe('ensureOpenspecProject', () => {
     expect(agents).toContain('Trigger');
     expect(agents).toContain('checkpoint');
     expect(agents).toContain('开工先读产物');
+    // 页面/设计类交付物指引（delivery-html-preview）
+    expect(agents).toContain('自包含 HTML');
+    expect(agents).toContain('内联样式');
 
     const claude = fs.readFileSync(path.join(workDir, 'CLAUDE.md'), 'utf8');
     expect(claude).toContain('AGENTS.md');

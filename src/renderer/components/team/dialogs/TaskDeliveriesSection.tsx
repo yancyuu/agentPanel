@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import { MarkdownViewer } from '@renderer/components/chat/viewers/MarkdownViewer';
+import { DeliveryContentView } from '@renderer/components/team/DeliveryContentView';
 import { ExpandableContent } from '@renderer/components/ui/ExpandableContent';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -207,9 +207,9 @@ export const TaskDeliveriesSection = ({
             </div>
           ) : null}
 
-          {/* 成果内容 */}
+          {/* 成果内容（按类型渲染：HTML 文档 → 沙盒预览/源码切换） */}
           <ExpandableContent collapsedHeight={200} className="text-xs">
-            <MarkdownViewer content={currentDelivery.result} maxHeight="max-h-none" bare />
+            <DeliveryContentView content={currentDelivery.result} />
           </ExpandableContent>
 
           {/* 本版处理的反馈 */}
