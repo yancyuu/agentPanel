@@ -1,7 +1,7 @@
 {
-  "productName": "AgentCLI",
-  "productNameShort": "AgentCLI",
-  "stylizedName": "AgentCLI",
+  "productName": "AgentPanel",
+  "productNameShort": "AgentPanel",
+  "stylizedName": "AgentPanel",
   "cliCommand": "agentcli",
   "npmPackage": "@yancyyu/agentcli",
   "runtimeBridgeName": "hermit-bridge",

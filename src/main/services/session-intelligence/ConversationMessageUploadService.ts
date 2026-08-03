@@ -1066,7 +1066,8 @@ async function collectCodexMessages(
 
       const key = fileKey(filePath);
       const pathHash = `sha256-${sha(filePath)}`;
-      const fromOffset = startOffsetFromServerCursor(offsets.get(key), fileStat);
+      const remoteState = offsets.get(key);
+      const fromOffset = startOffsetFromServerCursor(remoteState, fileStat);
       const scanEndOffset = fileStat.size;
       if (fromOffset >= scanEndOffset) {
         files.push({
@@ -1172,15 +1173,17 @@ async function collectCodexMessages(
           if (!startedAt && typeof payload.timestamp === 'string') startedAt = payload.timestamp;
         }
         const payloadType = String(payload?.type ?? '');
-        // Exact model is a pricing requirement only for records carrying token
-        // usage. Plain user/assistant text remains valid without model metadata.
-        if (payloadType === 'token_count' && !codexModel) {
-          missingModelAtOffset = consumedOffset;
-          break;
-        }
         if (payloadType === 'token_count') {
           const usage: CodexUsage | null = usageAccumulator.consume(obj);
+          // Codex emits heartbeat-like token_count rows with info:null. They do
+          // not carry billable usage and therefore do not require model context.
           if (!usage) continue;
+          // Exact model is a pricing requirement only for records carrying token
+          // usage. Plain user/assistant text remains valid without model metadata.
+          if (!codexModel) {
+            missingModelAtOffset = consumedOffset;
+            break;
+          }
           const occurredAt = codexEventTimestamp(obj, generatedAt);
           if (!shouldIncludeOccurredAt(occurredAt, sinceMs, untilMs)) continue;
           startedAt ||= occurredAt;
@@ -1229,6 +1232,17 @@ async function collectCodexMessages(
 
       if (missingModelAtOffset !== null) {
         messages.splice(fileMessageStart);
+        // Keep this file in the target cursor at its previous committed offset.
+        // Omitting it would delete the server-side file entry when another file
+        // succeeds, causing the quarantined file to restart from offset 0.
+        files.push({
+          fileKey: key,
+          pathHash,
+          size: fileStat.size,
+          mtimeMs: Math.trunc(fileStat.mtimeMs),
+          fromOffset,
+          toOffset: fromOffset,
+        });
         await appendUploadLog(hermitHome(), 'codex file quarantined: exact model unavailable', {
           fileKey: key,
           pathHash,

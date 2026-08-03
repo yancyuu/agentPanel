@@ -49,7 +49,7 @@ describe('AgentCLI postinstall', () => {
     const files = fs.readdirSync(targetDir).filter((name) => name.endsWith('.md') || name.endsWith('.js')).sort();
 
     expect(files).toEqual(bundledWorkflowFiles());
-    expect(stdout).toContain('[AgentCLI] Installed');
+    expect(stdout).toContain('[AgentPanel] Installed');
     expect(stdout).toContain('workflow(s)');
     for (const filename of files) {
       expect(fs.readFileSync(path.join(targetDir, filename), 'utf8')).toContain('hermit-builtin-workflow:v2-loop');
