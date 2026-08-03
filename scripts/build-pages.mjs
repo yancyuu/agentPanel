@@ -1,11 +1,12 @@
-import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, '_site');
 
-const DESKTOP_VERSION = '1.9.80';
+// 版本号跟随 package.json，发版不用改这里
+const { version: DESKTOP_VERSION } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const RELEASE_BASE = `https://github.com/yancyuu/agentcli/releases/download/${DESKTOP_VERSION}`;
 const DOWNLOADS = {
   macArm: {
