@@ -185,6 +185,63 @@ export const TaskReviewThread = ({
 
   return (
     <div className="space-y-3" data-testid="review-thread">
+      {/* 待你补充态：突出展示 agent 的澄清问题（琥珀色，置顶） */}
+      {needsClarification === 'user' ? (
+        <div
+          className="rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2.5"
+          data-testid="clarification-question"
+        >
+          <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+            <MessageCircleQuestion size={12} className="shrink-0" />
+            agent 在等你补充
+            {clarificationQuestion?.at && formatRelativeTime(clarificationQuestion.at) ? (
+              <span className="ml-auto shrink-0 text-[10px] font-normal opacity-60">
+                {formatRelativeTime(clarificationQuestion.at)}
+              </span>
+            ) : null}
+          </div>
+          <div className="whitespace-pre-wrap break-words text-xs text-[var(--color-text-secondary)]">
+            {clarificationQuestion?.text?.trim() ||
+              'agent 需要更多信息才能继续，请在下方回复补充。'}
+          </div>
+        </div>
+      ) : null}
+
+      {/* 邮件式回复框：回复语义随任务状态切换（补充说明/修改意见/讨论）。
+          线程最新在前，回复框置顶靠近最新内容 */}
+      {canReply ? (
+        <div
+          className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5"
+          data-testid="review-reply-composer"
+          data-reply-mode={replyMode}
+        >
+          <textarea
+            value={replyText}
+            onChange={(e) => setReplyText(e.target.value)}
+            placeholder={replyPlaceholder}
+            rows={3}
+            className="w-full resize-y rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)] focus:border-indigo-400/50"
+          />
+          {replyError ? <div className="text-[11px] text-red-400">{replyError}</div> : null}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-[var(--color-text-muted)]">{replyHint}</span>
+            <button
+              type="button"
+              disabled={!replyText.trim() || replySubmitting}
+              onClick={() => void handleReplySubmit()}
+              className="ml-auto inline-flex items-center gap-1 rounded-full bg-indigo-600 px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {replySubmitting ? (
+                <Loader2 size={11} className="animate-spin" />
+              ) : (
+                <Send size={11} />
+              )}
+              发送
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {entries.length === 0 ? (
         <p className="text-xs text-[var(--color-text-muted)]">还没有评审往来记录</p>
       ) : null}
@@ -346,62 +403,6 @@ export const TaskReviewThread = ({
           </div>
         );
       })}
-
-      {/* 待你补充态：突出展示 agent 的澄清问题（琥珀色，置顶） */}
-      {needsClarification === 'user' ? (
-        <div
-          className="rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2.5"
-          data-testid="clarification-question"
-        >
-          <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-            <MessageCircleQuestion size={12} className="shrink-0" />
-            agent 在等你补充
-            {clarificationQuestion?.at && formatRelativeTime(clarificationQuestion.at) ? (
-              <span className="ml-auto shrink-0 text-[10px] font-normal opacity-60">
-                {formatRelativeTime(clarificationQuestion.at)}
-              </span>
-            ) : null}
-          </div>
-          <div className="whitespace-pre-wrap break-words text-xs text-[var(--color-text-secondary)]">
-            {clarificationQuestion?.text?.trim() ||
-              'agent 需要更多信息才能继续，请在下方回复补充。'}
-          </div>
-        </div>
-      ) : null}
-
-      {/* 邮件式回复框：回复语义随任务状态切换（补充说明/修改意见/讨论） */}
-      {canReply ? (
-        <div
-          className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5"
-          data-testid="review-reply-composer"
-          data-reply-mode={replyMode}
-        >
-          <textarea
-            value={replyText}
-            onChange={(e) => setReplyText(e.target.value)}
-            placeholder={replyPlaceholder}
-            rows={3}
-            className="w-full resize-y rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)] focus:border-indigo-400/50"
-          />
-          {replyError ? <div className="text-[11px] text-red-400">{replyError}</div> : null}
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-[var(--color-text-muted)]">{replyHint}</span>
-            <button
-              type="button"
-              disabled={!replyText.trim() || replySubmitting}
-              onClick={() => void handleReplySubmit()}
-              className="ml-auto inline-flex items-center gap-1 rounded-full bg-indigo-600 px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {replySubmitting ? (
-                <Loader2 size={11} className="animate-spin" />
-              ) : (
-                <Send size={11} />
-              )}
-              发送
-            </button>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 };

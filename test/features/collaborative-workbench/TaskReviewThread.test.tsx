@@ -100,8 +100,8 @@ async function clickButtonByTextAsync(host: HTMLElement, text: string): Promise<
   });
 }
 
-function typeInTextarea(host: HTMLElement, value: string): void {
-  const textarea = host.querySelector('textarea');
+function typeInTextarea(host: HTMLElement, value: string, container?: Element): void {
+  const textarea = (container ?? host).querySelector('textarea');
   if (!textarea) throw new Error('textarea not found');
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
   if (!setter) throw new Error('textarea value setter not found');
@@ -195,6 +195,11 @@ describe('TaskReviewThread', () => {
     });
 
     expect(host.textContent).toContain('回复即提出修改意见');
+    // 布局顺序：回复框在条目流之前
+    const threadText = host.textContent ?? '';
+    expect(threadText.indexOf('回复即提出修改意见')).toBeLessThan(
+      threadText.indexOf('交付 第 1 版')
+    );
     typeInTextarea(host, '请补充数据来源');
     await clickButtonByTextAsync(host, '发送');
     expect(onRequestChanges).toHaveBeenCalledWith('请补充数据来源', undefined);
@@ -249,6 +254,15 @@ describe('TaskReviewThread', () => {
     expect(onSubmitDiscussion).toHaveBeenCalledWith('官网项目在 /path/x，改第二屏');
     expect(onRequestChanges).not.toHaveBeenCalled();
     expect(host.querySelector('textarea')?.value).toBe('');
+
+    // 布局顺序：澄清问题卡 → 回复框 → 条目流（回复框置顶靠近最新内容）
+    const text = host.textContent ?? '';
+    const clarifyAt = text.indexOf('agent 在等你补充');
+    const composerAt = text.indexOf('回复即补充说明');
+    const entryAt = text.indexOf('交付 第 1 版');
+    expect(clarifyAt).toBeGreaterThanOrEqual(0);
+    expect(clarifyAt).toBeLessThan(composerAt);
+    expect(composerAt).toBeLessThan(entryAt);
   });
 
   it('其他状态：回复按普通讨论分派，提示文案为「发送讨论消息」', async () => {
@@ -271,6 +285,10 @@ describe('TaskReviewThread', () => {
     await clickButtonByTextAsync(host, '发送');
     expect(onSubmitDiscussion).toHaveBeenCalledWith('这个方案再聊聊');
     expect(onRequestChanges).not.toHaveBeenCalled();
+
+    // 布局顺序：回复框在条目流之前
+    const text = host.textContent ?? '';
+    expect(text.indexOf('发送讨论消息')).toBeLessThan(text.indexOf('交付 第 1 版'));
   });
 
   it('selected text on a delivery card opens the quote popover and submits with the quote anchor', async () => {
@@ -293,7 +311,7 @@ describe('TaskReviewThread', () => {
     expect(popover!.textContent).toContain('引用');
     expect(popover!.textContent).toContain('第一版成果');
 
-    typeInTextarea(host, '这里要改');
+    typeInTextarea(host, '这里要改', popover!);
     await clickButtonByTextAsync(host, '提交');
     expect(onRequestChanges).toHaveBeenCalledWith('这里要改', {
       kind: 'quote',
@@ -370,7 +388,9 @@ describe('TaskReviewThread', () => {
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    typeInTextarea(host, '这段有问题');
+    const popover = host.querySelector('[data-testid="quote-feedback-popover"]');
+    expect(popover).not.toBeNull();
+    typeInTextarea(host, '这段有问题', popover!);
     await clickButtonByTextAsync(host, '提交');
     const anchor = onRequestChanges.mock.calls[0][1] as FeedbackAnchor;
     expect(anchor.kind).toBe('quote');
