@@ -70,6 +70,7 @@ function spawnCcConnect(args, opts = {}) {
   return spawn(launcher.cmd, [...launcher.args, ...args], {
     encoding: 'utf-8',
     shell: launcher.via === 'global' && process.platform === 'win32',
+    windowsHide: true,
     ...opts,
   });
 }

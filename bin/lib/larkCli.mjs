@@ -17,7 +17,7 @@ const BINARY = 'lark-cli';
 
 function spawnLarkCli(cmd, args, options) {
   const spawn = globalThis.__larkCli_test_spawn || spawnSync;
-  return spawn(cmd, args, options);
+  return spawn(cmd, args, { windowsHide: true, ...options });
 }
 
 function findBinary() {

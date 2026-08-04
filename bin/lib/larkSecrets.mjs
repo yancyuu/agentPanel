@@ -52,6 +52,7 @@ export async function reportAllLarkCredentials({ spawnImpl, repoRoot: cwd = repo
       cwd,
       env: { ...env, HERMIT_HOME: env.HERMIT_HOME || join(homedir(), '.hermit') },
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     });
     const stdout = await readChildStdout(child);
     let parsed;

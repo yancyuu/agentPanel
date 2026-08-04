@@ -821,6 +821,7 @@ async function runStartupOnceWorker() {
     cwd: repoRoot,
     env: { ...process.env, HERMIT_HOME: hermitHome },
     stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
   });
   let stdout = '';
   let stderr = '';

@@ -1202,6 +1202,7 @@ function applyWindowsUserEnv({ vars, spawnImpl }) {
     const res = spawnImpl('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], {
       encoding: 'utf-8',
       shell: false,
+      windowsHide: true,
       input: JSON.stringify(vars),
     });
     if (res?.error) throw res.error;
