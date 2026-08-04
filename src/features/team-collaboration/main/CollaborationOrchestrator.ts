@@ -320,24 +320,50 @@ export class CollaborationOrchestrator {
     request: CreateCollaborationRunRequest
   ): Promise<CollaborationRun> {
     const team = await this.dependencies.workspace.readTeam(collaborationTeamSlug);
-    const members = await Promise.all(
-      team.memberTeamSlugs.map(async (teamSlug): Promise<CollaborationMemberSnapshot> => {
-        const manifest = await this.dependencies.teams.readTeamManifest(teamSlug);
-        if (manifest.deletedAt) throw new Error(`数字员工 ${manifest.displayName} 已删除`);
-        if (!['claudecode', 'codex', 'pi'].includes(manifest.harness)) {
-          throw new Error(`数字员工 ${manifest.displayName} 的运行方式暂不支持圆桌协作`);
-        }
-        if (!manifest.workDir.trim())
-          throw new Error(`数字员工 ${manifest.displayName} 没有工作目录`);
-        return {
-          teamSlug: manifest.slug,
-          displayName: manifest.displayName,
-          description: manifest.description,
-          harness: manifest.harness,
-          workDir: manifest.workDir,
-        };
-      })
-    );
+    // 成员缺失/已删除不再硬报错：跳过并记录，剩余成员不足 2 人才判小队不可用
+    const skippedMembers: { teamSlug: string; reason: string }[] = [];
+    const members: CollaborationMemberSnapshot[] = [];
+    for (const teamSlug of team.memberTeamSlugs) {
+      let manifest;
+      try {
+        manifest = await this.dependencies.teams.readTeamManifest(teamSlug);
+      } catch {
+        skippedMembers.push({ teamSlug, reason: '团队已不存在' });
+        continue;
+      }
+      if (manifest.deletedAt) {
+        skippedMembers.push({ teamSlug, reason: `数字员工 ${manifest.displayName} 已删除` });
+        continue;
+      }
+      if (!['claudecode', 'codex', 'pi'].includes(manifest.harness)) {
+        skippedMembers.push({
+          teamSlug,
+          reason: `数字员工 ${manifest.displayName} 的运行方式暂不支持圆桌协作`,
+        });
+        continue;
+      }
+      if (!manifest.workDir.trim()) {
+        skippedMembers.push({ teamSlug, reason: `数字员工 ${manifest.displayName} 没有工作目录` });
+        continue;
+      }
+      members.push({
+        teamSlug: manifest.slug,
+        displayName: manifest.displayName,
+        description: manifest.description,
+        harness: manifest.harness,
+        workDir: manifest.workDir,
+      });
+    }
+    if (members.length < 2) {
+      throw new Error(
+        `小队「${team.displayName}」当前不可用：有效成员不足 2 人（${skippedMembers.map((m) => m.reason).join('；') || '请检查成员状态'}）`
+      );
+    }
+    if (skippedMembers.length > 0) {
+      console.warn(
+        `[collaboration] 小队「${team.displayName}」有 ${skippedMembers.length} 名成员被跳过：${skippedMembers.map((m) => `${m.teamSlug}(${m.reason})`).join('、')}`
+      );
+    }
     const now = new Date().toISOString();
     const runId = `cr_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
     const inputFiles = await materializeRunInputs(runId, members, request.attachments);
