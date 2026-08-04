@@ -78,9 +78,9 @@ const html = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AgentCLI — 让智能体真正把工作做完</title>
-  <meta name="description" content="AgentCLI 是面向普通用户的本地 AI 助手客户端。管理智能体、任务、小队、定时任务与交付成果，安装 App 即可使用。" />
-  <meta property="og:title" content="AgentCLI — 本地 AI 助手客户端" />
+  <title>AgentPanel — 让智能体真正把工作做完</title>
+  <meta name="description" content="AgentPanel 是面向普通用户的本地 AI 助手客户端。管理智能体、任务、小队、定时任务与交付成果，安装 App 即可使用。" />
+  <meta property="og:title" content="AgentPanel — 本地 AI 助手客户端" />
   <meta property="og:description" content="不需要学习命令行。把任务交给智能体，跟进过程，审核成果。" />
   <meta property="og:type" content="website" />
   <meta name="theme-color" content="#1769aa" />
@@ -388,7 +388,7 @@ const html = `<!DOCTYPE html>
     <nav class="nav" aria-label="主导航">
       <a class="brand" href="#top">
         <img class="brand-mark" src="icon.png" alt="" />
-        <span>AgentCLI</span>
+        <span>AgentPanel</span>
       </a>
       <div class="nav-links">
         <a href="#product">产品</a>
@@ -419,9 +419,9 @@ const html = `<!DOCTYPE html>
           <strong>OpenCode</strong>
         </div>
       </div>
-      <div class="product-shot" aria-label="AgentCLI 工作台预览">
+      <div class="product-shot" aria-label="AgentPanel 工作台预览">
         <div class="window-bar"><span class="window-dot red"></span><span class="window-dot yellow"></span><span class="window-dot green"></span></div>
-        <img src="images/workbench-inbox.png" alt="AgentCLI 收件箱与任务交付界面" />
+        <img src="images/workbench-inbox.png" alt="AgentPanel 收件箱与任务交付界面" />
       </div>
     </section>
 
@@ -429,7 +429,7 @@ const html = `<!DOCTYPE html>
       <div class="trust-grid">
         <div class="trust-item"><strong>安装一个 App</strong><span>无需预装 Node.js 或 pnpm</span></div>
         <div class="trust-item"><strong>数据保存在本机</strong><span>默认写入 ~/.hermit/</span></div>
-        <div class="trust-item"><strong>内置 AgentCLI</strong><span>客户端与命令行共用数据</span></div>
+        <div class="trust-item"><strong>内置 AgentPanel</strong><span>客户端与命令行共用数据</span></div>
         <div class="trust-item"><strong>交付结果优先</strong><span>成果直接阅读、审核与归档</span></div>
       </div>
     </section>
@@ -445,7 +445,7 @@ const html = `<!DOCTYPE html>
           <div class="feature-point"><span class="feature-icon">3</span><div><strong>返工不丢上下文</strong><p>直接回复当前任务要求修改，智能体在原任务上继续完成。</p></div></div>
         </div>
       </div>
-      <div class="feature-visual"><img src="images/workbench-tasks.png" alt="AgentCLI 任务管理页面" loading="lazy" /></div>
+      <div class="feature-visual"><img src="images/workbench-tasks.png" alt="AgentPanel 任务管理页面" loading="lazy" /></div>
     </section>
 
     <section class="section feature-split reverse">
@@ -459,14 +459,14 @@ const html = `<!DOCTYPE html>
           <div class="feature-point"><span class="feature-icon">◎</span><div><strong>重启后继续运行</strong><p>协作状态持久化，客户端刷新或服务重启不会永久卡住。</p></div></div>
         </div>
       </div>
-      <div class="feature-visual"><img src="images/workbench-agents.png" alt="AgentCLI 智能体与小队界面" loading="lazy" /></div>
+      <div class="feature-visual"><img src="images/workbench-agents.png" alt="AgentPanel 智能体与小队界面" loading="lazy" /></div>
     </section>
 
     <section id="workflow" class="section workflow-section">
       <div class="workflow-head">
         <span class="section-kicker">完整工作闭环</span>
         <h2>从一句需求，到一份正式成果。</h2>
-        <p class="section-intro">AgentCLI 把执行过程藏到合适的位置，让普通用户只关注目标、反馈和最终交付。</p>
+        <p class="section-intro">AgentPanel 把执行过程藏到合适的位置，让普通用户只关注目标、反馈和最终交付。</p>
       </div>
       <div class="workflow-grid">
         <article class="workflow-card"><div class="workflow-number">01</div><h3>创建任务</h3><p>写下目标，添加输入文件，选择单个智能体或小队。</p></article>
@@ -482,7 +482,7 @@ const html = `<!DOCTYPE html>
           <span class="section-kicker" style="color:#a9ead9">立即开始</span>
           <h2>下载最适合你电脑的版本。</h2>
           <p>页面会根据当前系统自动推荐。Apple Silicon Mac 优先使用桌面 DMG；其他系统会显示当前可用的独立安装包。</p>
-          <p>桌面客户端已内置 AgentCLI、cc-connect 与 Pi 运行时，不需要再通过 npm 安装。</p>
+          <p>桌面客户端已内置 AgentPanel、cc-connect 与 Pi 运行时，不需要再通过 npm 安装。</p>
         </div>
         <div class="download-card">
           <div class="detected-label">已为你推荐</div>
@@ -495,7 +495,7 @@ const html = `<!DOCTYPE html>
             <option value="windows">Windows x64</option>
             <option value="linux">Linux x64</option>
           </select>
-          <p id="downloadNote" class="download-note">下载后打开 DMG，将 AgentCLI 拖入“应用程序”。</p>
+          <p id="downloadNote" class="download-note">下载后打开 DMG，将 AgentPanel 拖入“应用程序”。</p>
         </div>
       </div>
       <div class="all-downloads">
@@ -514,7 +514,7 @@ const html = `<!DOCTYPE html>
         </summary>
         <div class="advanced-body">
           <h3>安装 App 后可以使用 CLI 吗？</h3>
-          <p>可以。客户端本身已经内置 AgentCLI，首次启动后会创建 <code>~/.hermit/bin/agentcli</code>，App 和终端共用同一份任务与配置数据，不需要再次执行 npm 安装。</p>
+          <p>可以。客户端本身已经内置 AgentPanel，首次启动后会创建 <code>~/.hermit/bin/agentcli</code>，App 和终端共用同一份任务与配置数据，不需要再次执行 npm 安装。</p>
           <div class="command-box"><code>~/.hermit/bin/agentcli --version</code><button class="copy-button" data-copy="~/.hermit/bin/agentcli --version">复制</button></div>
           <p><strong>直接输入 <code>agentcli</code>：</strong>客户端首次启动会在现有 PATH 中寻找可写的标准命令目录，并安全创建指向内置 CLI 的命令链接；不会覆盖同名用户命令，也不会修改 Shell 配置。若系统目录不可写，仍可使用上面的完整路径。</p>
 
@@ -539,7 +539,7 @@ const html = `<!DOCTYPE html>
       <h2>常见问题</h2>
       <details open><summary>我完全不会编程，也能使用吗？</summary><p>可以。桌面客户端的默认界面只使用“任务、收件箱、智能体、小队、交付成果”等普通工作语言，CLI、端口、Session 和内部日志默认隐藏。</p></details>
       <details><summary>数据和任务文件会上传到云端吗？</summary><p>默认本地运行，任务与配置存放在本机 <code>~/.hermit/</code> 和智能体项目目录。只有你主动配置企业团队总线及对应授权范围后，指定的数据才会进行上报。</p></details>
-      <details><summary>安装 App 后是否还需要 Node.js 或 npm？</summary><p>不需要。桌面安装包包含 AgentCLI、Node 运行能力、cc-connect 和 Pi。没有 Claude Code 或 Codex 时，客户端会优先使用内置 Pi。</p></details>
+      <details><summary>安装 App 后是否还需要 Node.js 或 npm？</summary><p>不需要。桌面安装包包含 AgentPanel、Node 运行能力、cc-connect 和 Pi。没有 Claude Code 或 Codex 时，客户端会优先使用内置 Pi。</p></details>
       <details><summary>为什么终端里暂时找不到 agentcli？</summary><p>客户端会创建 <code>~/.hermit/bin/agentcli</code>，并在已有 PATH 的可写标准目录中创建安全链接。如果系统没有可写目录或已有同名用户命令，客户端不会覆盖；此时可直接运行完整路径。</p></details>
       <details><summary>当前有哪些桌面版本？</summary><p>当前正式桌面客户端首先提供 macOS Apple Silicon DMG；macOS Intel、Windows 和 Linux 目前提供独立 ZIP 包。后续会继续补齐对应桌面安装器。</p></details>
     </section>
@@ -547,8 +547,8 @@ const html = `<!DOCTYPE html>
 
   <footer class="footer">
     <div class="footer-inner">
-      <a class="brand" href="#top"><img class="brand-mark" src="icon.png" alt="" /><span>AgentCLI</span></a>
-      <div class="footer-links"><a href="#download">下载</a><a href="#advanced">高级用户</a><a href="https://github.com/yancyuu/agentcli">GitHub</a><span>© 2026 AgentCLI</span></div>
+      <a class="brand" href="#top"><img class="brand-mark" src="icon.png" alt="" /><span>AgentPanel</span></a>
+      <div class="footer-links"><a href="#download">下载</a><a href="#advanced">高级用户</a><a href="https://github.com/yancyuu/agentcli">GitHub</a><span>© 2026 AgentPanel</span></div>
     </div>
   </footer>
 
@@ -564,7 +564,7 @@ const html = `<!DOCTYPE html>
       document.getElementById('recommendedDownload').textContent = '下载' + item.label;
       document.getElementById('platformSelect').value = key;
       document.getElementById('downloadNote').textContent = isDesktop
-        ? '下载后打开 DMG，将 AgentCLI 拖入“应用程序”。'
+        ? '下载后打开 DMG，将 AgentPanel 拖入“应用程序”。'
         : '当前系统提供免 Node.js 的独立 ZIP 包；解压后按包内说明运行。';
       document.getElementById('heroDownload').href = item.href;
       document.getElementById('heroDownloadText').textContent = '下载' + item.label;
