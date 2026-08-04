@@ -3,7 +3,7 @@
   "desktopName": "AgentCLI.desktop",
   "type": "module",
   "main": "dist-desktop-main/main.cjs",
-  "version": "1.10.3",
+  "version": "1.10.4",
   "description": "AgentCLI：本地优先的 AI Agent 工作台与团队协作运行时。",
   "license": "AGPL-3.0",
   "publishConfig": {
