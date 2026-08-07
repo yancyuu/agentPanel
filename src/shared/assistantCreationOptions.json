@@ -1,0 +1,460 @@
+{
+  "agentTypes": [
+    { "key": "claudecode", "label": "Claude Code" },
+    { "key": "codex", "label": "Codex" },
+    { "key": "cursor", "label": "Cursor" },
+    { "key": "gemini", "label": "Gemini" },
+    { "key": "iflow", "label": "iFlow" },
+    { "key": "kimi", "label": "Kimi" },
+    { "key": "devin", "label": "Devin" },
+    { "key": "opencode", "label": "OpenCode" },
+    { "key": "qoder", "label": "Qoder" },
+    { "key": "pi", "label": "Pi" },
+    { "key": "acp", "label": "ACP" },
+    { "key": "tmux", "label": "Tmux" }
+  ],
+  "platformOptions": [
+    { "key": "feishu", "label": "飞书 / Lark", "icon": "qr" },
+    { "key": "weixin", "label": "微信", "icon": "qr" },
+    { "key": "telegram", "label": "Telegram", "icon": "settings" },
+    { "key": "discord", "label": "Discord", "icon": "settings" },
+    { "key": "slack", "label": "Slack", "icon": "settings" },
+    { "key": "dingtalk", "label": "钉钉", "icon": "settings" },
+    { "key": "wecom_im", "label": "企业微信 / IM", "icon": "settings" },
+    { "key": "qq", "label": "QQ (OneBot)", "icon": "settings" },
+    { "key": "qqbot", "label": "QQ Bot (官方)", "icon": "settings" },
+    { "key": "line", "label": "LINE", "icon": "settings" },
+    { "key": "weibo", "label": "微博", "icon": "settings" }
+  ],
+  "wecomModeOptions": [
+    {
+      "key": "wecom_ws",
+      "label": "企业微信智能机器人",
+      "description": "使用 Bot ID / Bot Secret，通过 WebSocket 长连接接入。"
+    },
+    {
+      "key": "wecom",
+      "label": "企业微信自建应用（Callback）",
+      "description": "使用 Corp ID / Agent ID / Callback Token，通过 HTTPS 回调接入。"
+    }
+  ],
+  "qrPlatforms": ["feishu", "lark", "weixin"],
+  "platformMeta": {
+    "telegram": {
+      "label": "Telegram",
+      "fields": [
+        {
+          "key": "token",
+          "label": "Bot Token",
+          "required": true,
+          "type": "password",
+          "placeholder": "123456:ABC-DEF..."
+        },
+        {
+          "key": "allow_from",
+          "label": "私聊权限（允许的用户 ID）",
+          "placeholder": "* 或 user_id",
+          "group": "advanced",
+          "hint": "控制哪些用户可以私聊机器人，* 表示所有"
+        },
+        {
+          "key": "allow_chat",
+          "label": "群聊权限（允许的群聊 ID）",
+          "placeholder": "* 或 chat_id",
+          "group": "advanced",
+          "hint": "控制哪些群聊可以 @机器人，* 表示所有群聊"
+        },
+        {
+          "key": "group_reply_all",
+          "label": "群聊回复全部",
+          "type": "boolean",
+          "group": "advanced"
+        },
+        {
+          "key": "share_session_in_channel",
+          "label": "共享群会话",
+          "type": "boolean",
+          "group": "advanced"
+        }
+      ]
+    },
+    "discord": {
+      "label": "Discord",
+      "fields": [
+        { "key": "token", "label": "Bot Token", "required": true, "type": "password" },
+        {
+          "key": "allow_from",
+          "label": "私聊权限（允许的用户 ID）",
+          "placeholder": "* 或 user_id",
+          "group": "advanced",
+          "hint": "控制哪些用户可以私聊机器人"
+        },
+        {
+          "key": "allow_chat",
+          "label": "群聊权限（允许的频道 ID）",
+          "placeholder": "* 或 channel_id",
+          "group": "advanced",
+          "hint": "控制哪些频道可以 @机器人"
+        },
+        {
+          "key": "guild_id",
+          "label": "Guild ID",
+          "placeholder": "",
+          "group": "advanced",
+          "hint": "限定特定服务器"
+        },
+        {
+          "key": "group_reply_all",
+          "label": "群聊回复全部",
+          "type": "boolean",
+          "group": "advanced"
+        },
+        {
+          "key": "share_session_in_channel",
+          "label": "共享频道会话",
+          "type": "boolean",
+          "group": "advanced"
+        },
+        {
+          "key": "thread_isolation",
+          "label": "Thread 隔离",
+          "type": "boolean",
+          "group": "advanced"
+        }
+      ]
+    },
+    "slack": {
+      "label": "Slack",
+      "fields": [
+        {
+          "key": "bot_token",
+          "label": "Bot Token",
+          "required": true,
+          "type": "password",
+          "placeholder": "xoxb-..."
+        },
+        {
+          "key": "app_token",
+          "label": "App Token",
+          "required": true,
+          "type": "password",
+          "placeholder": "xapp-..."
+        },
+        {
+          "key": "allow_from",
+          "label": "私聊权限（允许的用户 ID）",
+          "placeholder": "* 或 user_id",
+          "group": "advanced",
+          "hint": "控制哪些用户可以私聊机器人"
+        },
+        {
+          "key": "allow_chat",
+          "label": "群聊权限（允许的频道 ID）",
+          "placeholder": "* 或 channel_id",
+          "group": "advanced",
+          "hint": "控制哪些频道可以 @机器人"
+        },
+        {
+          "key": "session_scope",
+          "label": "会话绑定范围",
+          "placeholder": "user / channel / thread",
+          "group": "advanced",
+          "hint": "user=每用户独立会话（默认），channel=频道共享，thread=按 thread 隔离"
+        },
+        {
+          "key": "share_session_in_channel",
+          "label": "共享频道会话（旧版）",
+          "type": "boolean",
+          "group": "advanced",
+          "hint": "等同于 session_scope=channel，推荐使用 session_scope 代替"
+        }
+      ]
+    },
+    "dingtalk": {
+      "label": "DingTalk",
+      "fields": [
+        { "key": "client_id", "label": "Client ID", "required": true },
+        { "key": "client_secret", "label": "Client Secret", "required": true, "type": "password" },
+        {
+          "key": "allow_from",
+          "label": "私聊权限（允许的用户 ID）",
+          "placeholder": "* 或 user_id",
+          "group": "advanced",
+          "hint": "控制哪些用户可以私聊机器人"
+        },
+        {
+          "key": "allow_chat",
+          "label": "群聊权限（允许的群聊 ID）",
+          "placeholder": "* 或 chat_id",
+          "group": "advanced",
+          "hint": "控制哪些群聊可以 @机器人"
+        },
+        {
+          "key": "share_session_in_channel",
+          "label": "共享群会话",
+          "type": "boolean",
+          "group": "advanced"
+        },
+        {
+          "key": "group_reply_all",
+          "label": "群聊回复全部",
+          "type": "boolean",
+          "group": "advanced"
+        }
+      ]
+    },
+    "wecom_ws": {
+      "label": "企业微信智能机器人",
+      "submitType": "wecom",
+      "defaultOptions": { "mode": "websocket" },
+      "fields": [
+        {
+          "key": "bot_id",
+          "label": "Bot ID",
+          "required": true,
+          "placeholder": "企业微信智能机器人 BotID"
+        },
+        { "key": "bot_secret", "label": "Bot Secret", "required": true, "type": "password" },
+        {
+          "key": "allow_from",
+          "label": "私聊权限（允许的用户 ID）",
+          "placeholder": "* 或 user_id",
+          "group": "advanced",
+          "hint": "控制哪些用户可以私聊机器人，* 表示所有"
+        }
+      ]
+    },
+    "wecom": {
+      "label": "企业微信自建应用（Callback）",
+      "fields": [
+        { "key": "corp_id", "label": "Corp ID", "required": true },
+        { "key": "corp_secret", "label": "Corp Secret", "required": true, "type": "password" },
+        { "key": "agent_id", "label": "Agent ID", "required": true, "placeholder": "1000002" },
+        { "key": "callback_token", "label": "Callback Token", "required": true },
+        {
+          "key": "callback_aes_key",
+          "label": "Callback AES Key",
+          "required": true,
+          "hint": "43 位 AES 密钥"
+        },
+        { "key": "port", "label": "端口", "required": true, "placeholder": "8081" },
+        {
+          "key": "callback_path",
+          "label": "Callback Path",
+          "placeholder": "/wecom/callback",
+          "group": "advanced"
+        },
+        {
+          "key": "api_base_url",
+          "label": "API Base URL",
+          "placeholder": "https://qyapi.weixin.qq.com",
+          "group": "advanced"
+        },
+        {
+          "key": "allow_from",
+          "label": "私聊权限（允许的用户 ID）",
+          "placeholder": "* 或 user_id",
+          "group": "advanced",
+          "hint": "控制哪些用户可以私聊机器人"
+        },
+        {
+          "key": "allow_chat",
+          "label": "群聊权限（允许的群聊 ID）",
+          "placeholder": "* 或 chat_id",
+          "group": "advanced",
+          "hint": "控制哪些群聊可以 @机器人"
+        }
+      ]
+    },
+    "qq": {
+      "label": "QQ (OneBot v11)",
+      "fields": [
+        {
+          "key": "ws_url",
+          "label": "WebSocket URL",
+          "required": true,
+          "placeholder": "ws://127.0.0.1:3001"
+        },
+        { "key": "token", "label": "Access Token", "type": "password", "group": "advanced" },
+        {
+          "key": "allow_from",
+          "label": "私聊权限（允许的用户 ID）",
+          "placeholder": "* 或 user_id",
+          "group": "advanced",
+          "hint": "控制哪些用户可以私聊机器人"
+        },
+        {
+          "key": "allow_chat",
+          "label": "群聊权限（允许的群聊 ID）",
+          "placeholder": "* 或 group_id",
+          "group": "advanced",
+          "hint": "控制哪些群聊可以 @机器人"
+        },
+        {
+          "key": "share_session_in_channel",
+          "label": "共享群会话",
+          "type": "boolean",
+          "group": "advanced"
+        }
+      ]
+    },
+    "qqbot": {
+      "label": "QQ Bot (官方)",
+      "fields": [
+        { "key": "app_id", "label": "App ID", "required": true },
+        { "key": "app_secret", "label": "App Secret", "required": true, "type": "password" },
+        { "key": "sandbox", "label": "沙盒模式", "type": "boolean", "group": "advanced" },
+        {
+          "key": "allow_from",
+          "label": "私聊权限（允许的用户 ID）",
+          "placeholder": "* 或 user_id",
+          "group": "advanced",
+          "hint": "控制哪些用户可以私聊机器人"
+        },
+        {
+          "key": "allow_chat",
+          "label": "群聊权限（允许的群聊 ID）",
+          "placeholder": "* 或 group_id",
+          "group": "advanced",
+          "hint": "控制哪些群聊可以 @机器人"
+        },
+        {
+          "key": "share_session_in_channel",
+          "label": "共享群会话",
+          "type": "boolean",
+          "group": "advanced"
+        }
+      ]
+    },
+    "line": {
+      "label": "LINE",
+      "fields": [
+        {
+          "key": "channel_secret",
+          "label": "Channel Secret",
+          "required": true,
+          "type": "password"
+        },
+        { "key": "channel_token", "label": "Channel Token", "required": true, "type": "password" },
+        { "key": "port", "label": "端口", "required": true, "placeholder": "8080" },
+        {
+          "key": "callback_path",
+          "label": "Callback Path",
+          "placeholder": "/callback",
+          "group": "advanced"
+        },
+        {
+          "key": "allow_from",
+          "label": "私聊权限（允许的用户 ID）",
+          "placeholder": "* 或 user_id",
+          "group": "advanced",
+          "hint": "控制哪些用户可以私聊机器人"
+        },
+        {
+          "key": "allow_chat",
+          "label": "群聊权限（允许的群聊 ID）",
+          "placeholder": "* 或 room_id",
+          "group": "advanced",
+          "hint": "控制哪些群聊可以 @机器人"
+        }
+      ]
+    },
+    "weibo": {
+      "label": "微博",
+      "fields": [
+        { "key": "app_id", "label": "App ID", "required": true, "placeholder": "1234567890" },
+        { "key": "app_secret", "label": "App Secret", "required": true, "type": "password" },
+        {
+          "key": "allow_from",
+          "label": "私聊权限（允许的用户 ID）",
+          "placeholder": "* 或 user_id",
+          "group": "advanced",
+          "hint": "控制哪些用户可以私聊机器人"
+        },
+        {
+          "key": "allow_chat",
+          "label": "群聊权限（允许的群聊 ID）",
+          "placeholder": "* 或 chat_id",
+          "group": "advanced",
+          "hint": "控制哪些群聊可以 @机器人"
+        }
+      ]
+    },
+    "feishu": {
+      "label": "飞书",
+      "fields": [
+        {
+          "key": "allow_from",
+          "label": "私聊权限（允许的用户 ID）",
+          "placeholder": "* 或 user_id",
+          "group": "advanced",
+          "hint": "控制哪些用户可以私聊机器人"
+        },
+        {
+          "key": "allow_chat",
+          "label": "群聊权限（允许的群聊 ID）",
+          "placeholder": "* 或 chat_id",
+          "group": "advanced",
+          "hint": "控制哪些群聊可以 @机器人"
+        },
+        {
+          "key": "thread_isolation",
+          "label": "Thread 隔离",
+          "type": "boolean",
+          "group": "advanced",
+          "hint": "群聊中按回复 thread 隔离会话"
+        },
+        {
+          "key": "share_session_in_channel",
+          "label": "共享群会话",
+          "type": "boolean",
+          "group": "advanced"
+        },
+        {
+          "key": "group_reply_all",
+          "label": "群聊回复全部",
+          "type": "boolean",
+          "group": "advanced"
+        }
+      ]
+    },
+    "lark": {
+      "label": "Lark",
+      "fields": [
+        {
+          "key": "allow_from",
+          "label": "私聊权限（允许的用户 ID）",
+          "placeholder": "* 或 user_id",
+          "group": "advanced",
+          "hint": "控制哪些用户可以私聊机器人"
+        },
+        {
+          "key": "allow_chat",
+          "label": "群聊权限（允许的群聊 ID）",
+          "placeholder": "* 或 chat_id",
+          "group": "advanced",
+          "hint": "控制哪些群聊可以 @机器人"
+        },
+        {
+          "key": "thread_isolation",
+          "label": "Thread 隔离",
+          "type": "boolean",
+          "group": "advanced",
+          "hint": "群聊中按回复 thread 隔离会话"
+        },
+        {
+          "key": "share_session_in_channel",
+          "label": "共享群会话",
+          "type": "boolean",
+          "group": "advanced"
+        },
+        {
+          "key": "group_reply_all",
+          "label": "群聊回复全部",
+          "type": "boolean",
+          "group": "advanced"
+        }
+      ]
+    }
+  }
+}

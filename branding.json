@@ -1,0 +1,13 @@
+{
+  "productName": "AgentPanel",
+  "productNameShort": "AgentPanel",
+  "stylizedName": "AgentPanel",
+  "cliCommand": "agentpanel",
+  "npmPackage": "@yancyyu/agentpanel",
+  "runtimeBridgeName": "hermit-bridge",
+  "authAccountLabel": "AgentPanel 用户",
+  "authProviderName": "AgentPanel",
+  "defaultLocalHomeName": ".hermit",
+  "githubRepo": "yancyyu/agentpanel",
+  "publicDocsUrl": "https://yancyyu.github.io/agentpanel/"
+}

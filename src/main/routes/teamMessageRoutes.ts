@@ -1,0 +1,405 @@
+import { buildDirectReplyMessageId } from '../services/direct-cli/directCliMessageId';
+
+import type {
+  AppendGroupMessageInput,
+  GroupMessage,
+} from '../services/team-management/TeamWorkspaceService';
+import type { HermitBridgeSessionListItem } from '@shared/types/hermitBridge';
+import type { AttachmentFileData, AttachmentMeta, AttachmentPayload } from '@shared/types/team';
+import type { FastifyInstance } from 'fastify';
+
+interface DirectCliMessageInput {
+  teamName: string;
+  sessionKey: string;
+  workDir: string;
+  from: string;
+  to: string;
+  text: string;
+  attachments?: AttachmentPayload[];
+  messageId: string;
+  conversationId?: string;
+}
+
+interface TeamMessageRouteRegistrationOptions {
+  routes?: readonly ('read' | 'process' | 'send')[];
+}
+
+interface TeamMessageRouteDependencies {
+  readMessages(teamName: string, options: { limit?: number }): Promise<GroupMessage[]>;
+  appendMessage(teamName: string, message: AppendGroupMessageInput): Promise<GroupMessage>;
+  resolveProjectName(teamName: string): Promise<string>;
+  listSessions(projectName: string): Promise<HermitBridgeSessionListItem[]>;
+  buildFallbackSessionKey(teamName: string): string;
+  sendHarnessMessageViaBridge(params: {
+    teamName: string;
+    text: string;
+    sessionKey?: string;
+    msgId?: string;
+  }): Promise<string>;
+  readEffectiveCcSettings(): Promise<Record<string, unknown>>;
+  resolveDirectCliWorkDir(teamName: string): Promise<string>;
+  dispatchDirectCliMessage(params: DirectCliMessageInput): Promise<void>;
+  /** 任务线程消息派发结果回写（派发可靠性）：false 置「等待智能体上线」，true 清除 */
+  recordTaskDispatchOutcome?(teamName: string, taskId: string, delivered: boolean): Promise<void>;
+  broadcastSse(eventName: string, data: unknown): void;
+  createMessageId?: () => string;
+}
+
+function isAttachmentPayload(value: unknown): value is AttachmentPayload {
+  if (!value || typeof value !== 'object') return false;
+  const attachment = value as Partial<AttachmentPayload>;
+  return (
+    typeof attachment.id === 'string' &&
+    typeof attachment.filename === 'string' &&
+    typeof attachment.mimeType === 'string' &&
+    typeof attachment.size === 'number' &&
+    typeof attachment.data === 'string'
+  );
+}
+
+function toAttachmentMeta(attachment: AttachmentPayload): AttachmentMeta {
+  return {
+    id: attachment.id,
+    filename: attachment.filename,
+    mimeType: attachment.mimeType,
+    size: attachment.size,
+    filePath: attachment.filePath,
+  };
+}
+
+function toAttachmentFileData(attachment: AttachmentPayload): AttachmentFileData {
+  return {
+    id: attachment.id,
+    data: attachment.data,
+    mimeType: attachment.mimeType,
+  };
+}
+
+function shouldSendAttachmentsToAgent(settings: Record<string, unknown>): boolean {
+  return settings.attachment_send !== 'off';
+}
+
+function createDefaultMessageId(): string {
+  // eslint-disable-next-line sonarjs/pseudo-random -- suffix only avoids local UI collisions; it is not a security token.
+  return `hermit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function registerTeamMessageRoutes(
+  app: FastifyInstance,
+  dependencies: TeamMessageRouteDependencies,
+  options: TeamMessageRouteRegistrationOptions = {}
+): void {
+  const createMessageId = dependencies.createMessageId ?? createDefaultMessageId;
+  const routes = new Set(options.routes ?? ['read', 'process', 'send']);
+
+  if (routes.has('read')) {
+    app.get<{ Params: { name: string; messageId: string } }>(
+      '/api/teams/:name/messages/:messageId/attachments',
+      async (request) => {
+        const messages = await dependencies.readMessages(request.params.name, { limit: 5000 });
+        const message = messages.find((entry) => entry.id === request.params.messageId);
+        const attachments = Array.isArray(message?.meta?.attachmentData)
+          ? (message.meta.attachmentData as AttachmentFileData[])
+          : [];
+        return attachments.filter(
+          (attachment): attachment is AttachmentFileData =>
+            typeof attachment?.id === 'string' &&
+            typeof attachment.data === 'string' &&
+            typeof attachment.mimeType === 'string'
+        );
+      }
+    );
+
+    app.get<{ Params: { name: string }; Querystring: { cursor?: string; limit?: string } }>(
+      '/api/teams/:name/messages',
+      async (request) => {
+        const { name } = request.params;
+        const requestedLimit = Number(request.query.limit ?? 50);
+        const limit = Math.min(
+          Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50),
+          100
+        );
+        const rawCursor = request.query.cursor;
+        const offset = Math.max(
+          0,
+          Number.isFinite(Number(rawCursor)) ? Math.floor(Number(rawCursor)) : 0
+        );
+        try {
+          const bindProject = await dependencies.resolveProjectName(name);
+          const messages = await dependencies.readMessages(name, { limit: 5000 });
+          const sessions = await dependencies.listSessions(bindProject).catch(() => []);
+          const sessionByKey = new Map(sessions.map((session) => [session.session_key, session]));
+          const newestFirstMessages = [...messages].reverse();
+          const pageSlice = newestFirstMessages.slice(offset, offset + limit);
+          const page = pageSlice.map((message) => {
+            const explicitSessionKey =
+              typeof message.meta?.sessionKey === 'string'
+                ? message.meta.sessionKey
+                : typeof message.meta?.session_key === 'string'
+                  ? message.meta.session_key
+                  : undefined;
+            const sessionKey = explicitSessionKey ?? dependencies.buildFallbackSessionKey(name);
+            const session = sessionKey ? sessionByKey.get(sessionKey) : undefined;
+            return {
+              messageId: message.id,
+              from: message.from,
+              to: message.to,
+              text: message.content,
+              timestamp: message.ts,
+              read: true,
+              source:
+                typeof message.meta?.source === 'string'
+                  ? message.meta.source
+                  : ((message.role === 'user' ? 'user_sent' : 'inbox') as string),
+              taskRefs: Array.isArray(message.meta?.taskRefs) ? message.meta.taskRefs : undefined,
+              summary: typeof message.meta?.summary === 'string' ? message.meta.summary : undefined,
+              conversationId:
+                typeof message.meta?.conversationId === 'string'
+                  ? message.meta.conversationId
+                  : undefined,
+              replyToConversationId:
+                typeof message.meta?.replyToConversationId === 'string'
+                  ? message.meta.replyToConversationId
+                  : undefined,
+              attachments: Array.isArray(message.meta?.attachments)
+                ? (message.meta.attachments as AttachmentMeta[])
+                : undefined,
+              session: sessionKey
+                ? {
+                    id: session?.id,
+                    key: sessionKey,
+                    platform: session?.platform,
+                    title: session?.name || session?.user_name || session?.chat_name || sessionKey,
+                    chatName: session?.chat_name,
+                    userName: session?.user_name,
+                  }
+                : undefined,
+            };
+          });
+          const lastMessage = messages[messages.length - 1];
+          const firstMessage = messages[0];
+          const feedRevision = `${messages.length}:${firstMessage?.id ?? '0'}:${lastMessage?.id ?? '0'}`;
+          const nextOffset = offset + page.length;
+          const hasMore = nextOffset < newestFirstMessages.length;
+          return {
+            messages: page,
+            nextCursor: hasMore ? String(nextOffset) : null,
+            hasMore,
+            feedRevision,
+          };
+        } catch {
+          return { messages: [], nextCursor: null, hasMore: false, feedRevision: '0' };
+        }
+      }
+    );
+  }
+
+  if (routes.has('process')) {
+    app.post<{ Params: { name: string }; Body: { text?: string; message?: string } }>(
+      '/api/teams/:name/process-send',
+      async (request, reply) => {
+        try {
+          const text = request.body?.text ?? request.body?.message ?? '';
+          if (text) {
+            await dependencies.sendHarnessMessageViaBridge({
+              teamName: request.params.name,
+              text,
+            });
+          }
+          return { ok: true };
+        } catch (error) {
+          return reply.code(502).send({
+            ok: false,
+            error: error instanceof Error ? error.message : '发送到 harness 失败',
+          });
+        }
+      }
+    );
+  }
+
+  if (routes.has('send')) {
+    app.post<{
+      Params: { name: string };
+      Body: {
+        member?: string;
+        text?: string;
+        content?: string;
+        summary?: string;
+        sessionKey?: string;
+        messageId?: string;
+        attachments?: unknown;
+        from?: string;
+        to?: string;
+        source?: string;
+        conversationId?: string;
+        replyToConversationId?: string;
+        taskRefs?: unknown;
+        actionMode?: string;
+        commentId?: string;
+        leadSessionId?: string;
+        relayOfMessageId?: string;
+      };
+    }>('/api/teams/:name/send-message', async (request) => {
+      const teamName = request.params.name;
+      const text = request.body?.text ?? request.body?.content ?? '';
+      if (!text.trim()) return { ok: true, messageId: null };
+
+      const requestedMessageId =
+        typeof request.body?.messageId === 'string' ? request.body.messageId.trim() : '';
+      const messageId = requestedMessageId || createMessageId();
+      const member = typeof request.body?.member === 'string' ? request.body.member.trim() : '';
+      const requestedSessionKey =
+        typeof request.body?.sessionKey === 'string' ? request.body.sessionKey.trim() : '';
+      const sessionKey = requestedSessionKey || `${teamName}:member:${member || 'lead'}`;
+      const requestedConversationId =
+        typeof request.body?.conversationId === 'string' ? request.body.conversationId.trim() : '';
+      const conversationId = requestedConversationId || messageId;
+      const from =
+        typeof request.body?.from === 'string' && request.body.from.trim()
+          ? request.body.from.trim()
+          : 'user';
+      const to =
+        typeof request.body?.to === 'string' && request.body.to.trim()
+          ? request.body.to.trim()
+          : member || teamName;
+      // 幂等：同一 messageId 已存在 → 返回既有结果不重复 append（客户端重试同 id）
+      if (requestedMessageId) {
+        const existing = (await dependencies.readMessages(teamName, { limit: 200 })).find(
+          (entry) => entry.id === requestedMessageId
+        );
+        if (existing) {
+          return {
+            ok: true,
+            deliveredToInbox: true,
+            messageId: existing.id,
+            conversationId:
+              typeof existing.meta?.conversationId === 'string'
+                ? existing.meta.conversationId
+                : conversationId,
+            deduplicated: true,
+            runtimeDelivery: { attempted: false, delivered: false },
+          };
+        }
+      }
+      // 双重提交拦截：同 conversationId+from+text 且 2s 内的请求视为重复（双击/回车连发，
+      // 客户端生成了不同 optimistic id）。选择返回既有消息并标 deduplicated（不 409，
+      // 与 messageId 重试语义一致）。
+      const DUPLICATE_WINDOW_MS = 2_000;
+      const nowMs = Date.now();
+      const recentDuplicate = (await dependencies.readMessages(teamName, { limit: 20 })).find(
+        (entry) => {
+          if (entry.content.trim() !== text.trim() || entry.from !== from) return false;
+          if ((entry.meta?.conversationId ?? '') !== conversationId) return false;
+          const ts = Date.parse(entry.ts);
+          return Number.isFinite(ts) && nowMs - ts < DUPLICATE_WINDOW_MS && nowMs - ts >= 0;
+        }
+      );
+      if (recentDuplicate) {
+        return {
+          ok: true,
+          deliveredToInbox: true,
+          messageId: recentDuplicate.id,
+          conversationId,
+          deduplicated: true,
+          runtimeDelivery: { attempted: false, delivered: false },
+        };
+      }
+
+      const attachments = Array.isArray(request.body?.attachments)
+        ? request.body.attachments.filter(isAttachmentPayload)
+        : [];
+      const attachmentMeta = attachments.map(toAttachmentMeta);
+      const attachmentData = attachments.map(toAttachmentFileData);
+      const ccSettings = await dependencies.readEffectiveCcSettings();
+      const attachmentsForAgent = shouldSendAttachmentsToAgent(ccSettings) ? attachments : [];
+
+      const userMessage = await dependencies
+        .appendMessage(teamName, {
+          id: messageId,
+          from,
+          to,
+          role: from === 'user' ? 'user' : 'agent',
+          content: text,
+          meta: {
+            sessionKey,
+            conversationId,
+            replyToConversationId:
+              typeof request.body?.replyToConversationId === 'string'
+                ? request.body.replyToConversationId
+                : undefined,
+            source: typeof request.body?.source === 'string' ? request.body.source : 'user_sent',
+            summary: typeof request.body?.summary === 'string' ? request.body.summary : undefined,
+            taskRefs: Array.isArray(request.body?.taskRefs) ? request.body.taskRefs : undefined,
+            actionMode:
+              typeof request.body?.actionMode === 'string' ? request.body.actionMode : undefined,
+            commentId:
+              typeof request.body?.commentId === 'string' ? request.body.commentId : undefined,
+            leadSessionId:
+              typeof request.body?.leadSessionId === 'string'
+                ? request.body.leadSessionId
+                : undefined,
+            relayOfMessageId:
+              typeof request.body?.relayOfMessageId === 'string'
+                ? request.body.relayOfMessageId
+                : undefined,
+            attachments: attachmentMeta.length > 0 ? attachmentMeta : undefined,
+            attachmentData: attachmentData.length > 0 ? attachmentData : undefined,
+          },
+        })
+        .catch(() => null);
+
+      dependencies.broadcastSse('team-change', { type: 'inbox', teamName });
+
+      const memberWorkDir = await dependencies.resolveDirectCliWorkDir(teamName).catch(() => '');
+      const dispatchedDirect = Boolean(memberWorkDir);
+      // 任务线程（conversationId=task:<id>）消息的派发结果遵循派发可靠性语义：
+      // 未送达 → 标记任务「等待智能体上线」；送达 → 清除等待标记
+      const threadTaskId = conversationId.startsWith('task:')
+        ? conversationId.slice('task:'.length)
+        : '';
+      const recordThreadDispatchOutcome = (delivered: boolean): void => {
+        if (!threadTaskId) return;
+        void dependencies
+          .recordTaskDispatchOutcome?.(teamName, threadTaskId, delivered)
+          ?.catch(() => undefined);
+      };
+      if (dispatchedDirect) {
+        void dependencies
+          .dispatchDirectCliMessage({
+            teamName,
+            sessionKey,
+            workDir: memberWorkDir,
+            from: member || teamName,
+            to: 'user',
+            text,
+            attachments: attachmentsForAgent,
+            messageId: buildDirectReplyMessageId(sessionKey),
+            conversationId,
+          })
+          .then(() => recordThreadDispatchOutcome(true))
+          .catch((error) => {
+            request.log.warn(
+              { err: error, teamName, sessionKey },
+              'send-message direct-cli delivery failed'
+            );
+            recordThreadDispatchOutcome(false);
+            dependencies.broadcastSse('team-change', { type: 'inbox', teamName });
+          });
+      } else {
+        recordThreadDispatchOutcome(false);
+        request.log.warn({ teamName }, 'send-message direct-cli skipped: no work_dir resolved');
+      }
+
+      return {
+        ok: true,
+        deliveredToInbox: true,
+        messageId: userMessage?.id ?? messageId,
+        conversationId,
+        runtimeDelivery: {
+          attempted: true,
+          delivered: dispatchedDirect,
+        },
+      };
+    });
+  }
+}

@@ -1,0 +1,171 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'agent-teams-controller/**'
+      - 'mcp-server/**'
+      - 'packages/**'
+      - 'test/**'
+      - '.github/workflows/**'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'tsconfig*.json'
+      - 'vite*.config.*'
+      - 'vitest*.config.*'
+      - 'tailwind.config.*'
+      - 'eslint.config.*'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'agent-teams-controller/**'
+      - 'mcp-server/**'
+      - 'packages/**'
+      - 'test/**'
+      - '.github/workflows/**'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'tsconfig*.json'
+      - 'vite*.config.*'
+      - 'vitest*.config.*'
+      - 'tailwind.config.*'
+      - 'eslint.config.*'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Restore ESLint cache
+        uses: actions/cache@v4
+        with:
+          path: .eslintcache
+          key: eslint-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Auto-fix import sort (Node version parity)
+        run: npx eslint src/ --fix --no-cache || true
+
+      - name: Validate workspace truth gate
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+        run: pnpm check:ci
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Test
+        run: pnpm test:workspace:ci
+
+  windows-desktop-package:
+    name: Windows desktop package (${{ matrix.arch }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Enable Windows long paths
+        shell: pwsh
+        run: git config --global core.longpaths true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Prepare optional channel payloads
+        run: pnpm fetch:vendor
+
+      - name: Build Windows installer and portable executable
+        run: >-
+          pnpm desktop:build && pnpm desktop:stage &&
+          pnpm exec electron-builder --win nsis portable --${{ matrix.arch }}
+          --publish never
+
+      - name: Upload Windows package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentpanel-windows-${{ matrix.arch }}
+          path: |
+            dist-desktop/*${{ matrix.arch }}*.exe
+            dist-desktop/*.blockmap
+          if-no-files-found: error
+
+  task-change-ledger-windows:
+    name: Task change ledger Windows smoke
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Enable Windows long paths
+        shell: pwsh
+        run: git config --global core.longpaths true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Test task change ledger
+        run: pnpm test:task-change-ledger

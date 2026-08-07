@@ -1,0 +1,29 @@
+diff --git a/install.js b/install.js
+index 6b1b828d8c14d892267a984122806023c15d1f7a..0ead62cf2976fa2c870e3a4f213609189ecc8a54 100644
+--- a/install.js
++++ b/install.js
+@@ -42,10 +42,20 @@ function getPlatformInfo() {
+ }
+ 
+ function getDownloadURLs(filename) {
+-  return [
+-    `https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/${filename}`,
+-    `https://gitee.com/${GITEE_REPO}/releases/download/${VERSION}/${filename}`,
+-  ];
++  const github = `https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/${filename}`;
++  const gitee = `https://gitee.com/${GITEE_REPO}/releases/download/${VERSION}/${filename}`;
++  // Patched by @yancyyu/agentpanel: prepend GitHub-release mirror prefixes so the
++  // binary can be fetched from behind the GFW / corporate firewalls where raw
++  // github.com releases are unreachable. CC_CONNECT_MIRROR (comma-separated)
++  // overrides the defaults. Mirrors are tried first; originals remain as fallback.
++  const defaults = ["https://gh-proxy.com/", "https://ghproxy.net/"];
++  const configured = (process.env.CC_CONNECT_MIRROR || "")
++    .split(",")
++    .map((s) => s.trim())
++    .filter(Boolean);
++  const prefixes = [...configured, ...defaults];
++  const mirrored = prefixes.map((p) => `${p}${github}`);
++  return [...mirrored, github, gitee];
+ }
+ 
+ function fetch(url, redirects = 5) {

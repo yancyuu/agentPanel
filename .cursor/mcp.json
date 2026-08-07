@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "agent-teams": {
+      "command": "node",
+      "args": [
+        "/Users/yancy/Library/Application Support/hermit/mcp-server/1.5.1/index.js"
+      ]
+    }
+  }
+}

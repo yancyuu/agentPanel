@@ -1,0 +1,318 @@
+{
+  "name": "@yancyyu/agentpanel",
+  "desktopName": "AgentPanel.desktop",
+  "type": "module",
+  "main": "dist-desktop-main/main.cjs",
+  "version": "1.11.0",
+  "description": "AgentPanel：本地优先的 AI Agent 工作台与团队协作运行时。",
+  "license": "AGPL-3.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": {
+    "name": "yancyyu",
+    "email": "yancyyu.ok@gmail.com"
+  },
+  "homepage": "https://github.com/yancyuu/agentpanel",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yancyuu/agentpanel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yancyuu/agentpanel/issues"
+  },
+  "bin": {
+    "agentpanel": "./bin/agentpanel.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "dist/",
+    "dist-renderer/",
+    "vendor/cc-connect/",
+    "vendor/openspec/",
+    "branding.json",
+    "tsconfig.json",
+    "package.json",
+    "README.md",
+    "README-CN.md",
+    "docs/THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "dev": "node ./scripts/dev-mvp.mjs",
+    "dev:server": "tsx watch src/main/server.ts",
+    "dev:web": "vite --config vite.web.config.ts",
+    "build:web": "vite build --config vite.web.config.ts --outDir ../../dist-renderer --emptyOutDir",
+    "build:pages": "node ./scripts/build-pages.mjs",
+    "build:server": "node ./scripts/build-server.mjs",
+    "build:standalone": "node ./scripts/build-standalone-package.mjs",
+    "desktop:build": "pnpm build:web && pnpm build:server && node ./scripts/build-desktop.mjs",
+    "desktop:stage": "node ./scripts/stage-desktop-runtime.mjs",
+    "desktop:dev": "pnpm desktop:build && electron .",
+    "desktop:dist:mac": "pnpm fetch:vendor && pnpm desktop:build && pnpm desktop:stage && electron-builder --mac dmg --arm64 --x64",
+    "desktop:dist:win": "pnpm fetch:vendor && pnpm desktop:build && pnpm desktop:stage && electron-builder --win nsis portable --x64 --arm64",
+    "desktop:dist:linux": "pnpm fetch:vendor && pnpm desktop:build && pnpm desktop:stage && electron-builder --linux AppImage --x64 --arm64",
+    "desktop:dist:all": "pnpm fetch:vendor && pnpm desktop:build && pnpm desktop:stage && electron-builder --mac dmg --arm64 --x64 && electron-builder --win nsis portable --x64 --arm64 && electron-builder --linux AppImage --x64 --arm64",
+    "postinstall": "node ./bin/postinstall.mjs",
+    "prepack": "node ./scripts/fetch-vendor-cc-connect.mjs && pnpm build:web && pnpm build:server",
+    "fetch:vendor": "node ./scripts/fetch-vendor-cc-connect.mjs",
+    "release:checklist": "node ./scripts/release-checklist.mjs",
+    "start": "node bin/agentpanel.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ --cache --cache-location .eslintcache --cache-strategy content",
+    "lint:fix": "eslint src/ --fix --cache --cache-location .eslintcache --cache-strategy content",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css}\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepare": "husky",
+    "fetch:vendor:openspec": "node ./scripts/fetch-vendor-openspec.mjs"
+  },
+  "lint-staged": {
+    "src/**/*.{ts,tsx,js,jsx}": [
+      "prettier --write"
+    ],
+    "src/**/*.{json,css}": [
+      "prettier --write"
+    ]
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@fastify/cors": "^11.2.0",
+    "@fastify/static": "^9.0.0",
+    "chokidar": "^5.0.0",
+    "croner": "^10.0.1",
+    "fastify": "^5.7.4",
+    "isbinaryfile": "^6.0.0",
+    "qrcode-terminal": "^0.12.0",
+    "tsx": "^4.21.0",
+    "yaml": "^2.8.2"
+  },
+  "optionalDependencies": {
+    "cc-connect": "1.4.1",
+    "@fission-ai/openspec": "1.7.0"
+  },
+  "devDependencies": {
+    "@codemirror/autocomplete": "^6.20.0",
+    "@codemirror/commands": "^6.10.2",
+    "@codemirror/lang-cpp": "^6.0.3",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-go": "^6.0.1",
+    "@codemirror/lang-html": "^6.4.11",
+    "@codemirror/lang-java": "^6.0.2",
+    "@codemirror/lang-javascript": "^6.2.4",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-less": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/lang-php": "^6.0.2",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-rust": "^6.0.2",
+    "@codemirror/lang-sass": "^6.0.2",
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/lang-xml": "^6.1.0",
+    "@codemirror/lang-yaml": "^6.1.2",
+    "@codemirror/language": "^6.12.1",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/lint": "^6.9.5",
+    "@codemirror/search": "^6.6.0",
+    "@codemirror/state": "^6.5.4",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@codemirror/view": "^6.39.15",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@eslint-community/eslint-plugin-eslint-comments": "^4.6.0",
+    "@eslint/js": "^9.39.2",
+    "@floating-ui/dom": "^1.7.6",
+    "@radix-ui/react-alert-dialog": "^1.1.15",
+    "@radix-ui/react-checkbox": "^1.3.3",
+    "@radix-ui/react-context-menu": "^2.2.16",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-hover-card": "^1.1.15",
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "@sentry/react": "^10.53.1",
+    "@tailwindcss/typography": "^0.5.19",
+    "@tanstack/react-virtual": "^3.10.8",
+    "@tiptap/extension-placeholder": "^3.20.4",
+    "@tiptap/markdown": "^3.20.4",
+    "@tiptap/pm": "^3.20.4",
+    "@tiptap/react": "^3.20.4",
+    "@tiptap/starter-kit": "^3.20.4",
+    "@types/hast": "^3.0.4",
+    "@types/mdast": "^4.0.4",
+    "@types/node": "^25.0.7",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "@vitest/coverage-v8": "^3.1.4",
+    "anser": "^2.3.5",
+    "autoprefixer": "^10.4.17",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "1.0.4",
+    "cronstrue": "^3.14.0",
+    "date-fns": "^3.6.0",
+    "diff": "^8.0.3",
+    "dompurify": "^3.3.1",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.1",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-boundaries": "^5.3.1",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.26",
+    "eslint-plugin-security": "^3.0.1",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "eslint-plugin-sonarjs": "^3.0.6",
+    "eslint-plugin-tailwindcss": "^3.18.2",
+    "globals": "^17.2.0",
+    "happy-dom": "^20.0.2",
+    "highlight.js": "^11.11.1",
+    "husky": "^9.1.7",
+    "idb-keyval": "^6.2.2",
+    "lint-staged": "^16.2.7",
+    "lucide-react": "^0.577.0",
+    "mdast-util-to-hast": "^13.2.1",
+    "mermaid": "^11.12.3",
+    "motion": "12.38.0",
+    "playwright": "^1.60.0",
+    "postcss": "^8.4.35",
+    "prettier": "^3.8.1",
+    "prettier-plugin-tailwindcss": "^0.7.2",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-grid-layout": "^2.2.3",
+    "react-markdown": "^10.1.0",
+    "react-modal-sheet": "5.6.0",
+    "react-resizable": "^3.1.3",
+    "rehype-highlight": "^7.0.2",
+    "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "shadcn": "^4.12.0",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^3.4.1",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.54.0",
+    "unified": "^11.0.5",
+    "vite": "^5.4.2",
+    "vitest": "^3.1.4",
+    "yet-another-react-lightbox": "^3.29.1",
+    "zustand": "^4.5.0"
+  },
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
+  "pnpm": {
+    "patchedDependencies": {
+      "cc-connect@1.4.1": "patches/cc-connect@1.4.1.patch"
+    }
+  },
+  "build": {
+    "appId": "com.yancyyu.agentpanel",
+    "productName": "AgentPanel",
+    "artifactName": "AgentPanel-${version}-${arch}.${ext}",
+    "asar": true,
+    "npmRebuild": false,
+    "afterPack": "scripts/desktop-after-pack.cjs",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "dist-desktop-main/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "desktop-runtime/agentpanel",
+        "to": "agentpanel"
+      },
+      {
+        "from": "resources/icons/win/icon.ico",
+        "to": "icons/agentpanel.ico"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "resources/icons/mac/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "identity": null,
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "title": "AgentPanel ${version}",
+      "sign": false
+    },
+    "win": {
+      "icon": "resources/icons/win/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "AgentPanel-Setup-${version}-${arch}.${ext}",
+      "installerIcon": "resources/icons/win/icon.ico",
+      "uninstallerIcon": "resources/icons/win/icon.ico",
+      "installerHeaderIcon": "resources/icons/win/icon.ico",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "AgentPanel-Portable-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "resources/icons/png",
+      "category": "Office",
+      "executableName": "agentpanel",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "appImage": {
+      "artifactName": "AgentPanel-${version}-${arch}.${ext}"
+    }
+  }
+}

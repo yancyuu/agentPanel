@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1024" height="1024">
+  <!-- 深渊黑背景 -->
+  <rect width="100" height="100" fill="#0A0A0A" rx="20" />
+
+  <!-- 层叠的终端窗口 (隐喻螺旋壳) -->
+  <!-- 最顶层 (远端节点) -->
+  <rect x="60" y="20" width="25" height="20" fill="none" stroke="#4B5563" stroke-width="4" rx="4" />
+  <!-- 中间层 (中间节点) -->
+  <rect x="45" y="35" width="35" height="25" fill="none" stroke="#9CA3AF" stroke-width="5" rx="4" />
+  <!-- 最底层 (主控台) -->
+  <rect x="30" y="50" width="45" height="30" fill="none" stroke="#FFFFFF" stroke-width="6" rx="4" />
+
+  <!-- 探出的螯 / 终端提示符 -->
+  <polyline points="12,55 22,65 12,75" fill="none" stroke="#FF5722" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- 可选：主控台内部的闪烁光标 -->
+  <line x1="38" y1="70" x2="48" y2="70" stroke="#FF5722" stroke-width="4" stroke-linecap="round" />
+</svg>

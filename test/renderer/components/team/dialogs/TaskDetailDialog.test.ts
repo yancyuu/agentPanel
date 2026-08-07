@@ -1,0 +1,536 @@
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const hoisted = vi.hoisted(() => ({
+  getTaskChanges: vi.fn(),
+  updateTaskFields: vi.fn(),
+  recordTaskChangePresence: vi.fn(),
+  setSelectedTeamTaskChangePresence: vi.fn(),
+  setTaskNeedsClarification: vi.fn(),
+  getTaskAttachmentData: vi.fn(),
+}));
+
+vi.mock('@renderer/api', () => ({
+  api: {
+    review: {
+      getTaskChanges: hoisted.getTaskChanges,
+    },
+  },
+}));
+
+vi.mock('@renderer/store', () => ({
+  useStore: (selector: (state: Record<string, unknown>) => unknown) =>
+    selector({
+      updateTaskFields: hoisted.updateTaskFields,
+      recordTaskChangePresence: hoisted.recordTaskChangePresence,
+      setSelectedTeamTaskChangePresence: hoisted.setSelectedTeamTaskChangePresence,
+      setTaskNeedsClarification: hoisted.setTaskNeedsClarification,
+      getTaskAttachmentData: hoisted.getTaskAttachmentData,
+    }),
+}));
+
+vi.mock('@renderer/hooks/useTheme', () => ({
+  useTheme: () => ({ isLight: false }),
+}));
+
+vi.mock('@renderer/hooks/useViewportCommentRead', () => ({
+  useViewportCommentRead: () => ({ registerComment: vi.fn(), flush: vi.fn() }),
+}));
+
+vi.mock('@renderer/services/commentReadStorage', () => ({
+  getLegacyCutoff: () => 0,
+  getReadCommentIds: () => new Set<string>(),
+}));
+
+vi.mock('@renderer/components/team/CollapsibleTeamSection', () => ({
+  CollapsibleTeamSection: ({
+    title,
+    children,
+    headerExtra,
+    defaultOpen = true,
+    onOpenChange,
+  }: {
+    title: string;
+    children: React.ReactNode;
+    headerExtra?: React.ReactNode;
+    defaultOpen?: boolean;
+    onOpenChange?: (isOpen: boolean) => void;
+  }) => {
+    const [open, setOpen] = React.useState(defaultOpen);
+    React.useEffect(() => {
+      onOpenChange?.(open);
+    }, [open, onOpenChange]);
+    return React.createElement(
+      'section',
+      null,
+      React.createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: () => setOpen((value) => !value),
+        },
+        title
+      ),
+      headerExtra ?? null,
+      (title === 'Changes' || title === '变更' || title === '文件变更' || title === '交付成果') &&
+        open
+        ? React.createElement('div', null, children)
+        : null
+    );
+  },
+}));
+
+vi.mock('@renderer/components/ui/dialog', () => ({
+  Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
+    open ? React.createElement('div', { 'data-dialog-root': true }, children) : null,
+  DialogContent: (props: { children: React.ReactNode } & Record<string, unknown>) =>
+    React.createElement(
+      'div',
+      { 'data-task-detail-presentation': props['data-task-detail-presentation'] },
+      props.children
+    ),
+  DialogDescription: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('div', null, children),
+  DialogFooter: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('div', null, children),
+  DialogHeader: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('div', null, children),
+  DialogTitle: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('h2', null, children),
+}));
+
+vi.mock('@renderer/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+  TooltipContent: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('span', null, children),
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+}));
+
+vi.mock('@renderer/components/ui/badge', () => ({
+  Badge: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('span', null, children),
+}));
+
+vi.mock('@renderer/components/ui/button', () => ({
+  Button: ({
+    children,
+    onClick,
+    disabled,
+    type = 'button',
+  }: {
+    children: React.ReactNode;
+    onClick?: React.MouseEventHandler<HTMLButtonElement>;
+    disabled?: boolean;
+    type?: 'button' | 'submit' | 'reset';
+  }) => React.createElement('button', { type, disabled, onClick }, children),
+}));
+
+vi.mock('@renderer/components/ui/input', () => ({
+  Input: (props: Record<string, unknown>) => React.createElement('input', props),
+}));
+
+vi.mock('@renderer/components/ui/MemberSelect', () => ({
+  MemberSelect: () => React.createElement('div', null),
+}));
+
+vi.mock('@renderer/components/ui/ExpandableContent', () => ({
+  ExpandableContent: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('div', null, children),
+}));
+
+vi.mock('@renderer/components/ui/tiptap', () => ({
+  TiptapEditor: () => React.createElement('div', null),
+}));
+
+vi.mock('@renderer/components/chat/viewers/MarkdownViewer', () => ({
+  MarkdownViewer: ({ content }: { content: string }) => React.createElement('div', null, content),
+}));
+
+vi.mock('@renderer/components/team/MemberBadge', () => ({
+  MemberBadge: ({ name }: { name: string }) => React.createElement('span', null, name),
+}));
+
+vi.mock('@renderer/components/team/editor/FileIcon', () => ({
+  FileIcon: () => React.createElement('span', null),
+}));
+
+vi.mock('@renderer/components/common/OngoingIndicator', () => ({
+  OngoingIndicator: () => React.createElement('span', null),
+}));
+
+vi.mock('@renderer/components/team/attachments/ImageLightbox', () => ({
+  ImageLightbox: () => null,
+  LightboxLockProvider: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+}));
+
+vi.mock('@renderer/components/team/attachments/SourceMessageAttachments', () => ({
+  SourceMessageAttachments: () => null,
+}));
+
+import { TaskDetailDialog } from '@renderer/components/team/dialogs/TaskDetailDialog';
+import { TaskDetailPanel } from '@renderer/components/team/dialogs/TaskDetailPanel';
+
+import type { TaskChangeSetV2, TeamTaskWithKanban } from '@shared/types';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function makeTask(id: string): TeamTaskWithKanban {
+  return {
+    id,
+    displayId: id,
+    subject: `Task ${id}`,
+    description: '',
+    owner: 'alice',
+    reviewer: '',
+    status: 'in_progress',
+    changePresence: 'unknown',
+    attachments: [],
+    blockedBy: [],
+    blocks: [],
+    workIntervals: [{ startedAt: '2026-04-20T10:00:00.000Z' }],
+    historyEvents: [],
+    createdAt: '2026-04-20T09:00:00.000Z',
+    updatedAt: '2026-04-20T10:00:00.000Z',
+  } as unknown as TeamTaskWithKanban;
+}
+
+function makeSummary(taskId: string): TaskChangeSetV2 {
+  return {
+    teamName: 'team-a',
+    taskId,
+    files: [
+      {
+        filePath: `/repo/src/${taskId}.ts`,
+        relativePath: `src/${taskId}.ts`,
+        snippets: [],
+        linesAdded: 1,
+        linesRemoved: 0,
+        isNewFile: true,
+      },
+    ],
+    totalFiles: 1,
+    totalLinesAdded: 1,
+    totalLinesRemoved: 0,
+    confidence: 'high',
+    computedAt: '2026-04-20T10:05:00.000Z',
+    scope: {
+      taskId,
+      memberName: 'alice',
+      startLine: 0,
+      endLine: 0,
+      startTimestamp: '2026-04-20T10:00:00.000Z',
+      endTimestamp: '2026-04-20T10:05:00.000Z',
+      toolUseIds: ['tool-1'],
+      filePaths: [`/repo/src/${taskId}.ts`],
+      confidence: { tier: 1, label: 'high', reason: 'ledger' },
+    },
+    warnings: [],
+    provenance: {
+      sourceKind: 'ledger',
+      sourceFingerprint: `fingerprint-${taskId}`,
+    },
+  };
+}
+
+function clickChangesSection(host: HTMLElement): void {
+  const button = [...host.querySelectorAll('button')].find(
+    (candidate) =>
+      candidate.textContent === '文件变更' ||
+      candidate.textContent === '变更' ||
+      candidate.textContent === 'Changes'
+  );
+  if (!button) {
+    throw new Error('Changes section button not found');
+  }
+  button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+}
+
+describe('TaskDetailPanel presentations', () => {
+  afterEach(() => {
+    document.body.textContent = '';
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('uses the same task detail implementation for inline and dialog presentations', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const task = makeTask('task-shared');
+    const props = {
+      variant: 'global' as const,
+      teamName: 'team-a',
+      task,
+      taskMap: new Map([[task.id, task]]),
+      members: [],
+      onClose: vi.fn(),
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(React.createElement(TaskDetailPanel, { ...props, presentation: 'inline' }));
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('Task task-shared');
+    // 评论区已移除：详情页指向消息线程
+    expect(host.textContent).toContain('沟通已统一到消息线程');
+    expect(
+      [...host.querySelectorAll('button')].some((button) => button.textContent === '评论')
+    ).toBe(false);
+    expect(host.querySelector('[data-task-detail-presentation="inline"]')).not.toBeNull();
+    expect(host.querySelector('[data-dialog-root]')).toBeNull();
+
+    await act(async () => {
+      root.render(React.createElement(TaskDetailDialog, { ...props, open: true }));
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('Task task-shared');
+    expect(host.querySelector('[data-task-detail-presentation="dialog"]')).not.toBeNull();
+    expect(host.querySelector('[data-dialog-root]')).not.toBeNull();
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('prioritizes a readable deliverable and hides empty technical sections in inbox mode', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const task = makeTask('task-delivery');
+    task.deliveries = [
+      {
+        version: 1,
+        result: '# 调研报告\n\n这是助手提交的最终结论。',
+        deliveredAt: '2026-01-02T00:00:00.000Z',
+      },
+    ];
+    task.status = 'completed';
+    task.reviewState = 'review';
+    task.needsClarification = 'user';
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(
+        React.createElement(TaskDetailPanel, {
+          presentation: 'inline',
+          variant: 'team',
+          teamName: 'team-a',
+          task,
+          taskMap: new Map([[task.id, task]]),
+          members: [],
+          onClose: vi.fn(),
+          onViewChanges: vi.fn(),
+          compactForInbox: true,
+        })
+      );
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('交付成果');
+    expect(host.textContent).toContain('调研报告');
+    expect(host.textContent).toContain('前往收件箱评审');
+    expect(host.textContent).not.toContain('通过交付');
+    expect(host.textContent).not.toContain('请求修改');
+    expect(host.textContent).not.toContain('标记为已解决');
+    expect(host.textContent).not.toContain('相关文件');
+    expect(host.textContent).not.toContain('文件变更');
+    expect(host.textContent).not.toContain('执行记录');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('头部状态为单一 chip：needsFix 归入「进行中」（橙橘），不再并列「需修改」徽章', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const task = makeTask('task-needsfix');
+    task.status = 'in_progress';
+    task.reviewState = 'needsFix';
+    task.historyEvents = [
+      {
+        id: 'e1',
+        type: 'review_changes_requested',
+        from: 'review',
+        to: 'needsFix',
+        timestamp: '2026-04-20T10:01:00.000Z',
+        actor: 'reviewer',
+      },
+    ];
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(
+        React.createElement(TaskDetailPanel, {
+          presentation: 'inline',
+          variant: 'team',
+          teamName: 'team-a',
+          task,
+          taskMap: new Map([[task.id, task]]),
+          members: [],
+          onClose: vi.fn(),
+        })
+      );
+      await Promise.resolve();
+    });
+
+    const chips = [...host.querySelectorAll('span')].filter(
+      (el) => el.textContent?.trim() === '进行中'
+    );
+    expect(chips.length).toBeGreaterThan(0);
+    expect(chips[0]?.className).toContain('orange');
+    expect(host.textContent).not.toContain('需修改');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('头部单 chip：waitingForAgent 显示「等待智能体上线」，不再并列「进行中」', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const task = makeTask('task-waiting');
+    task.status = 'in_progress';
+    task.waitingForAgent = true;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    await act(async () => {
+      root.render(
+        React.createElement(TaskDetailPanel, {
+          presentation: 'inline',
+          variant: 'team',
+          teamName: 'team-a',
+          task,
+          taskMap: new Map([[task.id, task]]),
+          members: [],
+          onClose: vi.fn(),
+        })
+      );
+      await Promise.resolve();
+    });
+
+    const waitingChips = [...host.querySelectorAll('span')].filter(
+      (el) => el.textContent?.trim() === '等待智能体上线'
+    );
+    expect(waitingChips).toHaveLength(1);
+    expect(waitingChips[0]?.className).toContain('amber');
+    expect(
+      [...host.querySelectorAll('span')].filter((el) => el.textContent?.trim() === '进行中')
+    ).toHaveLength(0);
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+});
+
+describe('TaskDetailDialog changes summary loading', () => {
+  afterEach(() => {
+    document.body.textContent = '';
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('does not drop a new task changes request while another task summary is still in flight', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const first = deferred<TaskChangeSetV2>();
+    const second = deferred<TaskChangeSetV2>();
+    hoisted.getTaskChanges
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+
+    const taskA = makeTask('task-a');
+    const taskB = makeTask('task-b');
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const baseProps = {
+      open: true,
+      variant: 'team' as const,
+      teamName: 'team-a',
+      taskMap: new Map<string, TeamTaskWithKanban>(),
+      members: [],
+      onClose: vi.fn(),
+      onViewChanges: vi.fn(),
+    };
+
+    await act(async () => {
+      root.render(React.createElement(TaskDetailDialog, { ...baseProps, task: taskA }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      clickChangesSection(host);
+      await Promise.resolve();
+    });
+    expect(hoisted.getTaskChanges).toHaveBeenCalledTimes(1);
+    expect(hoisted.getTaskChanges).toHaveBeenLastCalledWith(
+      'team-a',
+      'task-a',
+      expect.objectContaining({ summaryOnly: true })
+    );
+
+    await act(async () => {
+      root.render(React.createElement(TaskDetailDialog, { ...baseProps, task: taskB }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      clickChangesSection(host);
+      await Promise.resolve();
+    });
+
+    expect(hoisted.getTaskChanges).toHaveBeenCalledTimes(2);
+    expect(hoisted.getTaskChanges).toHaveBeenLastCalledWith(
+      'team-a',
+      'task-b',
+      expect.objectContaining({ summaryOnly: true })
+    );
+
+    await act(async () => {
+      root.render(React.createElement(TaskDetailDialog, { ...baseProps, task: taskA }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      clickChangesSection(host);
+      await Promise.resolve();
+    });
+    expect(hoisted.getTaskChanges).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      first.resolve(makeSummary('task-a'));
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('src/task-a.ts');
+    expect(host.textContent).not.toContain('src/task-b.ts');
+
+    await act(async () => {
+      second.resolve(makeSummary('task-b'));
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('src/task-a.ts');
+    expect(host.textContent).not.toContain('src/task-b.ts');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+});

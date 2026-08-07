@@ -1,0 +1,13 @@
+packages:
+  - packages/agent-graph
+# These packages are shipped as JavaScript or as application-managed native
+# binaries. Their npm lifecycle scripts are deliberately not trusted at install
+# time; cc-connect is supplied by the release's reviewed vendor payload instead.
+ignoredBuiltDependencies:
+  - esbuild
+  - '@fission-ai/openspec'
+  - '@google/genai'
+  - cc-connect
+  - protobufjs
+patchedDependencies:
+  cc-connect@1.4.1: patches/cc-connect@1.4.1.patch

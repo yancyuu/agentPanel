@@ -1,0 +1,600 @@
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@renderer/hooks/useTheme', () => ({
+  useTheme: () => ({ theme: 'dark', resolvedTheme: 'dark', isDark: true, isLight: false }),
+}));
+vi.mock('@renderer/components/chat/viewers/MarkdownViewer', () => ({
+  MarkdownViewer: ({ content }: { content: string }) => React.createElement('div', null, content),
+  CompactMarkdownPreview: ({ content, className }: { content: string; className?: string }) =>
+    React.createElement('div', { className }, content),
+}));
+vi.mock('@renderer/components/common/CopyButton', () => ({
+  CopyButton: () => null,
+}));
+vi.mock('@renderer/components/team/attachments/AttachmentDisplay', () => ({
+  AttachmentDisplay: () => null,
+}));
+vi.mock('@renderer/components/team/MemberBadge', () => ({
+  MemberBadge: ({ name }: { name: string }) => React.createElement('span', null, name),
+}));
+vi.mock('@renderer/components/team/TaskTooltip', () => ({
+  TaskTooltip: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+}));
+vi.mock('@renderer/components/ui/ExpandableContent', () => ({
+  ExpandableContent: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+}));
+vi.mock('@renderer/components/ui/tooltip', () => ({
+  TooltipProvider: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+  Tooltip: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+  TooltipContent: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('div', null, children),
+}));
+vi.mock('@renderer/components/team/activity/ReplyQuoteBlock', () => ({
+  ReplyQuoteBlock: () => null,
+}));
+
+import {
+  ActivityItem,
+  getCrossTeamSentMemberName,
+  getCrossTeamSentTarget,
+  getSystemMessageLabel,
+  isNoiseMessage,
+  isQualifiedExternalRecipient,
+} from '@renderer/components/team/activity/ActivityItem';
+import type { InboxMessage } from '@shared/types';
+
+describe('ActivityItem compact header preview', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+  });
+
+  it('uses a two-line clamped preview in compact mode', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const summary =
+      'Делегировал alice длинную задачу с заметно более длинным описанием, чтобы превью занимало больше одной строки в компактном режиме.';
+
+    const message: InboxMessage = {
+      from: 'lead',
+      text: summary,
+      summary,
+      timestamp: new Date('2026-04-18T16:30:00.000Z').toISOString(),
+      read: true,
+      source: 'lead_process',
+    };
+
+    await act(async () => {
+      root.render(
+        React.createElement(ActivityItem, {
+          message,
+          teamName: 'my-team',
+          compactHeader: true,
+          collapseMode: 'managed',
+          isCollapsed: true,
+          canToggleCollapse: true,
+          collapseToggleKey: 'message-key',
+        })
+      );
+      await Promise.resolve();
+    });
+
+    const preview = host.querySelector('.line-clamp-2');
+    expect(preview).not.toBeNull();
+    expect(preview?.textContent).toBe(summary);
+    expect(preview?.getAttribute('title')).toBeNull();
+    expect(preview?.className).toContain('line-clamp-2');
+    expect(preview?.className).toContain('w-full');
+    expect(preview?.className).toContain('max-w-full');
+    expect(preview?.className).not.toContain('min-h-8');
+    expect(preview?.className).not.toContain('truncate');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('prefers full message text over a pre-truncated summary in compact mode', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const fullText =
+      'Делегировал bob ещё один узкий шаг: собрать fix-batch с учётом landing P0 по render->generate и пройтись по оставшимся edge cases.';
+
+    const message: InboxMessage = {
+      from: 'lead',
+      text: fullText,
+      summary: 'Делегировал bob ещё один узкий шаг: собрать fix-batch с у...',
+      timestamp: new Date('2026-04-18T16:29:00.000Z').toISOString(),
+      read: true,
+      source: 'lead_process',
+    };
+
+    await act(async () => {
+      root.render(
+        React.createElement(ActivityItem, {
+          message,
+          teamName: 'my-team',
+          compactHeader: true,
+          collapseMode: 'managed',
+          isCollapsed: true,
+          canToggleCollapse: true,
+          collapseToggleKey: 'message-key-full-text',
+        })
+      );
+      await Promise.resolve();
+    });
+
+    const preview = host.querySelector('.line-clamp-2');
+    expect(preview).not.toBeNull();
+    expect(preview?.textContent).toBe(fullText);
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('strips info_for_agent blocks from compact preview text', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    const visibleText = 'New task assigned to you: #3fd70e2 Собрать fix-batch';
+    const message: InboxMessage = {
+      from: 'lead',
+      text: `${visibleText}\n<info_for_agent>\ninternal only\n</info_for_agent>`,
+      timestamp: new Date('2026-04-18T16:28:00.000Z').toISOString(),
+      read: true,
+      source: 'lead_process',
+    };
+
+    await act(async () => {
+      root.render(
+        React.createElement(ActivityItem, {
+          message,
+          teamName: 'my-team',
+          compactHeader: true,
+          collapseMode: 'managed',
+          isCollapsed: true,
+          canToggleCollapse: true,
+          collapseToggleKey: 'message-key-strip-agent-block',
+        })
+      );
+      await Promise.resolve();
+    });
+
+    const preview = host.querySelector('.line-clamp-2');
+    expect(preview).not.toBeNull();
+    expect(preview?.textContent).toContain('**New task assigned to you:**');
+    expect(preview?.textContent).toContain('[#3fd70e2](task://3fd70e2)');
+    expect(preview?.textContent).toContain('Собрать fix-batch');
+    expect(preview?.textContent).not.toContain('info_for_agent');
+    expect(preview?.textContent).not.toContain('internal only');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('reuses markdown display content for compact preview formatting', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const markdownText = '**Важно** проверить `CurrentTaskIndicator` и #abc123';
+
+    const message: InboxMessage = {
+      from: 'lead',
+      text: markdownText,
+      timestamp: new Date('2026-04-18T16:31:00.000Z').toISOString(),
+      read: true,
+      source: 'lead_process',
+      taskRefs: [{ taskId: 'abc123', displayId: '#abc123', teamName: 'my-team' }],
+    };
+
+    await act(async () => {
+      root.render(
+        React.createElement(ActivityItem, {
+          message,
+          teamName: 'my-team',
+          compactHeader: true,
+          collapseMode: 'managed',
+          isCollapsed: true,
+          canToggleCollapse: true,
+          collapseToggleKey: 'message-key-markdown-preview',
+        })
+      );
+      await Promise.resolve();
+    });
+
+    const preview = host.querySelector('.line-clamp-2');
+    expect(preview).not.toBeNull();
+    expect(preview?.textContent).toContain('**Важно**');
+    expect(preview?.textContent).toContain('task://abc123');
+    expect(preview?.textContent).toContain('`CurrentTaskIndicator`');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('does not show a routing arrow before the user recipient', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    const message: InboxMessage = {
+      from: '产品经理',
+      to: 'user',
+      text: '请确认本次交付结果。',
+      timestamp: new Date('2026-04-18T16:30:00.000Z').toISOString(),
+      read: true,
+      source: 'inbox',
+    };
+
+    await act(async () => {
+      root.render(React.createElement(ActivityItem, { message, teamName: 'my-team' }));
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('产品经理');
+    expect(host.textContent).toContain('user');
+    expect(host.querySelector('.lucide-move-right')).toBeNull();
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('uses a two-line preview in collapsed wide mode, not inline one-line summary', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const fullText =
+      'Делегировал alice финальную общую сводку и remediation plan по всем findings команды.';
+
+    const message: InboxMessage = {
+      from: 'lead',
+      text: fullText,
+      timestamp: new Date('2026-04-18T16:30:00.000Z').toISOString(),
+      read: true,
+      source: 'lead_process',
+    };
+
+    await act(async () => {
+      root.render(
+        React.createElement(ActivityItem, {
+          message,
+          teamName: 'my-team',
+          compactHeader: false,
+          collapseMode: 'managed',
+          isCollapsed: true,
+          canToggleCollapse: true,
+          collapseToggleKey: 'message-key-wide-collapsed',
+        })
+      );
+      await Promise.resolve();
+    });
+
+    const preview = host.querySelector('.line-clamp-2');
+    expect(preview).not.toBeNull();
+    expect(preview?.textContent).toBe(fullText);
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+});
+
+describe('ActivityItem slash command rendering', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+  });
+
+  it('renders standalone sent slash commands with command-specific styling content', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    const message: InboxMessage = {
+      from: 'user',
+      text: '/compact keep kanban aligned',
+      timestamp: new Date('2026-03-27T12:00:00.000Z').toISOString(),
+      read: true,
+      source: 'user_sent',
+    };
+
+    await act(async () => {
+      root.render(React.createElement(ActivityItem, { message, teamName: 'my-team' }));
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('command');
+    expect(host.textContent).toContain('/compact');
+    expect(host.textContent).toContain('压缩当前对话，并可附加需要保留的重点说明。');
+    expect(host.textContent).toContain('keep kanban aligned');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('does not duplicate standalone slash command text in the expanded header', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    const message: InboxMessage = {
+      from: 'user',
+      text: '/hermit:doctor\n检查 Hermit 安装、运行时、cc-connect、MCP 和常见配置问题',
+      timestamp: new Date('2026-03-27T12:00:30.000Z').toISOString(),
+      read: true,
+      source: 'user_sent',
+    };
+
+    await act(async () => {
+      root.render(React.createElement(ActivityItem, { message, teamName: 'my-team' }));
+      await Promise.resolve();
+    });
+
+    const slashCommandOccurrences = (host.textContent?.match(/\/hermit:doctor/g) ?? []).length;
+    expect(slashCommandOccurrences).toBe(1);
+    expect(host.textContent).toContain('检查 Hermit 安装');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('renders slash command results as a distinct command output row', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    const message: InboxMessage = {
+      from: 'lead',
+      text: 'Model set to sonnet\nContext usage reset',
+      timestamp: new Date('2026-03-27T12:01:00.000Z').toISOString(),
+      read: true,
+      source: 'lead_session',
+      messageKind: 'slash_command_result',
+      commandOutput: {
+        stream: 'stdout',
+        commandLabel: '/model',
+      },
+      summary: 'Model set to sonnet',
+    };
+
+    await act(async () => {
+      root.render(React.createElement(ActivityItem, { message, teamName: 'my-team' }));
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('result');
+    expect(host.textContent).toContain('stdout');
+    expect(host.textContent).toContain('/model');
+    expect(host.textContent).toContain('Model set to sonnet');
+    expect(host.textContent).toContain('Context usage reset');
+    expect(host.textContent).not.toContain('lead');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+});
+
+describe('ActivityItem legacy system message fallback', () => {
+  it('recognizes historical assignment and review message wording', () => {
+    expect(
+      getSystemMessageLabel('New task assigned to you: #abcd1234 "Implement feature".')
+    ).toBeTruthy();
+    expect(getSystemMessageLabel('Task #abcd1234 approved by reviewer.')).toBeTruthy();
+    expect(getSystemMessageLabel('Task #abcd1234 needs fixes before approval.')).toBeTruthy();
+  });
+
+  it('does not treat new controller-authored summaries as legacy system noise', () => {
+    expect(getSystemMessageLabel('Review request for #abcd1234')).toBeNull();
+    expect(getSystemMessageLabel('Approved abcd1234')).toBeNull();
+    expect(getSystemMessageLabel('Fix request for abcd1234')).toBeNull();
+  });
+
+  it('does not classify dotted local teammates as external recipients', () => {
+    expect(isQualifiedExternalRecipient('ops.bot', 'my-team', new Set(['ops.bot']))).toBe(false);
+    expect(isQualifiedExternalRecipient('team-best.user', 'my-team', new Set(['ops.bot']))).toBe(
+      true
+    );
+  });
+
+  it('recognizes pseudo cross-team recipients in activity rows', () => {
+    expect(getCrossTeamSentTarget('cross-team:team-best', 'my-team', new Set(['ops.bot']))).toBe(
+      'team-best'
+    );
+    expect(getCrossTeamSentTarget('team-best.user', 'my-team', new Set(['ops.bot']))).toBe(
+      'team-best'
+    );
+    expect(getCrossTeamSentMemberName('team-best.user')).toBe('user');
+    expect(getCrossTeamSentMemberName('cross-team:team-best')).toBeNull();
+  });
+
+  it('keeps heartbeat peer summaries out of compact idle noise rendering', () => {
+    expect(isNoiseMessage('{"type":"idle_notification","idleReason":"available"}')).toBe(true);
+    expect(
+      isNoiseMessage(
+        JSON.stringify({
+          type: 'idle_notification',
+          idleReason: 'available',
+          summary: '[to bob] aligned on rollout order',
+        })
+      )
+    ).toBe(false);
+  });
+
+  it('renders peer-summary idle rows with semantic summary text instead of generic idle noise', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    const message: InboxMessage = {
+      from: 'alice',
+      text: JSON.stringify({
+        type: 'idle_notification',
+        from: 'alice',
+        timestamp: '2026-04-08T12:01:00.000Z',
+        idleReason: 'available',
+        summary: '[to bob] aligned on rollout order',
+      }),
+      timestamp: new Date('2026-04-08T12:01:00.000Z').toISOString(),
+      read: true,
+      source: 'inbox',
+    };
+
+    await act(async () => {
+      root.render(React.createElement(ActivityItem, { message, teamName: 'my-team' }));
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toBeTruthy();
+    expect(host.textContent).toContain('alice');
+    expect(host.textContent).toContain('bob');
+    expect(host.textContent).toContain('aligned on rollout order');
+    expect(host.textContent).not.toContain('[to bob]');
+    expect(host.textContent).not.toContain('idle');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('renders user-directed peer-summary rows as passive updates instead of pseudo messages', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    const message: InboxMessage = {
+      from: 'alice',
+      text: JSON.stringify({
+        type: 'idle_notification',
+        from: 'alice',
+        timestamp: '2026-04-08T12:02:00.000Z',
+        idleReason: 'available',
+        summary: '[to user] Я здесь.',
+      }),
+      timestamp: new Date('2026-04-08T12:02:00.000Z').toISOString(),
+      read: true,
+      source: 'inbox',
+    };
+
+    await act(async () => {
+      root.render(React.createElement(ActivityItem, { message, teamName: 'my-team' }));
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toBeTruthy();
+    expect(host.textContent).toContain('alice');
+    expect(host.textContent).toContain('user');
+    expect(host.textContent).toContain('Я здесь.');
+    expect(host.textContent).not.toContain('[to user]');
+    expect(host.textContent).not.toContain('idle');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('does not duplicate cross-team-start system text in the expanded header', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    const text =
+      '[跨团队任务已启动] "@资产创建 你能干啥" — team-opue 已从 TODO 点击启动并开始执行。';
+    const message: InboxMessage = {
+      from: 'system',
+      to: 'team',
+      text,
+      timestamp: new Date('2026-04-13T13:30:00.000Z').toISOString(),
+      read: true,
+      source: 'system_notification',
+    };
+
+    await act(async () => {
+      root.render(React.createElement(ActivityItem, { message, teamName: 'my-team' }));
+      await Promise.resolve();
+    });
+
+    const occurrences = (host.textContent?.match(/\[跨团队任务已启动\]/g) ?? []).length;
+    expect(occurrences).toBe(1);
+    expect(host.textContent).toContain('team-opue 已从 TODO 点击启动并开始执行');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+
+  it('renders task comments as comments addressed to a task, not a participant', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    const message: InboxMessage = {
+      from: 'jack',
+      to: 'lead',
+      text: 'Короткий отчёт по contributor/internal implementation navigation',
+      summary: '#8fdd6803 Короткий отчёт по contributor/internal implementation navigation',
+      timestamp: new Date('2026-04-13T13:35:00.000Z').toISOString(),
+      read: true,
+      source: 'inbox',
+      messageKind: 'task_activity_notification',
+      taskRefs: [{ taskId: 'task-1', displayId: '#8fdd6803', teamName: 'my-team' }],
+    };
+
+    await act(async () => {
+      root.render(React.createElement(ActivityItem, { message, teamName: 'my-team' }));
+      await Promise.resolve();
+    });
+
+    expect(host.textContent).toContain('Comment');
+    expect(host.textContent).toContain('jack');
+    expect(host.textContent).toContain('#8fdd6803');
+    expect(host.textContent).not.toContain('lead');
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+  });
+});

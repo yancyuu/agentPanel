@@ -1,0 +1,49 @@
+import { parseCliArgs } from '@shared/utils/cliArgsParser';
+
+export type TeammateLaunchMode = 'in-process';
+
+export const DEFAULT_TEAMMATE_LAUNCH_MODE: TeammateLaunchMode = 'in-process';
+
+export function normalizeTeammateLaunchMode(value: string | null | undefined): TeammateLaunchMode {
+  return value === 'in-process' ? value : DEFAULT_TEAMMATE_LAUNCH_MODE;
+}
+
+export function buildTeammateModeCliArgs(): string[] {
+  return ['--teammate-mode', DEFAULT_TEAMMATE_LAUNCH_MODE];
+}
+
+function stripTeammateModeArgs(tokens: string[]): string[] {
+  const result: string[] = [];
+  let skip = false;
+  for (const token of tokens) {
+    if (skip) {
+      skip = false;
+      continue;
+    }
+    if (token === '--teammate-mode') {
+      skip = true;
+      continue;
+    }
+    if (token.startsWith('--teammate-mode=')) {
+      continue;
+    }
+    result.push(token);
+  }
+  return result;
+}
+
+function quoteCliToken(token: string): string {
+  if (/^[A-Za-z0-9_./:=@+-]+$/.test(token)) {
+    return token;
+  }
+  return `"${token.replace(/(["\\$`])/g, '\\$1')}"`;
+}
+
+export function buildLaunchExtraCliArgs(
+  customArgs: string,
+  _mode: TeammateLaunchMode = DEFAULT_TEAMMATE_LAUNCH_MODE
+): string | undefined {
+  const customTokens = stripTeammateModeArgs(parseCliArgs(customArgs));
+  const tokens = [...buildTeammateModeCliArgs(), ...customTokens];
+  return tokens.length > 0 ? tokens.map(quoteCliToken).join(' ') : undefined;
+}

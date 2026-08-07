@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentPanel — 让智能体真正把工作做完</title>
+  <meta name="description" content="AgentPanel 是面向普通用户的本地 AI 助手客户端。管理智能体、任务、小队、定时任务与交付成果，安装 App 即可使用。" />
+  <meta property="og:title" content="AgentPanel — 本地 AI 助手客户端" />
+  <meta property="og:description" content="不需要学习命令行。把任务交给智能体，跟进过程，审核成果。" />
+  <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#1769aa" />
+  <link rel="icon" href="icon.png" />
+  <style>
+    :root {
+      --ink: #10233d;
+      --muted: #58708d;
+      --line: rgba(26, 72, 118, 0.14);
+      --paper: #f7f9fc;
+      --white: #ffffff;
+      --blue-950: #073967;
+      --blue-900: #09528a;
+      --blue-800: #126eb2;
+      --blue-700: #2387ca;
+      --blue-100: #e8f5ff;
+      --pink: #f5a9bd;
+      --lavender: #bbb3ff;
+      --green: #1c9b75;
+      --shadow: 0 30px 90px rgba(5, 43, 78, 0.18);
+      color-scheme: light;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; overflow-x: hidden; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    button, select { font: inherit; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.92em;
+      background: #eef3f8;
+      border: 1px solid #dce6ef;
+      border-radius: 7px;
+      padding: 2px 6px;
+    }
+
+    .site-header {
+      position: fixed;
+      inset: 0 0 auto;
+      z-index: 50;
+      height: 76px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(12, 92, 151, 0.72);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      color: white;
+    }
+    .nav {
+      width: min(1240px, calc(100% - 48px));
+      height: 100%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .brand { display: inline-flex; align-items: center; gap: 11px; font-weight: 750; letter-spacing: -0.02em; font-size: 20px; }
+    .brand-mark { width: 30px; height: 30px; border-radius: 9px; box-shadow: 0 8px 24px rgba(4, 35, 68, 0.24); }
+    .nav-links { display: flex; align-items: center; gap: 30px; margin-left: auto; }
+    .nav-links a { color: rgba(255, 255, 255, 0.82); font-size: 14px; }
+    .nav-links a:hover { color: white; }
+    .nav-download { padding: 10px 17px; border-radius: 11px; background: white; color: var(--blue-950) !important; font-weight: 700; }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      min-height: 980px;
+      padding: 150px 24px 0;
+      color: white;
+      text-align: center;
+      background:
+        radial-gradient(circle at 16% 72%, rgba(245, 169, 189, 0.88) 0, rgba(245, 169, 189, 0) 24%),
+        radial-gradient(circle at 82% 43%, rgba(187, 179, 255, 0.58) 0, rgba(187, 179, 255, 0) 22%),
+        linear-gradient(180deg, #1268ad 0%, #238acb 58%, #83c9ee 100%);
+    }
+    .hero::before,
+    .hero::after {
+      content: "";
+      position: absolute;
+      pointer-events: none;
+      filter: blur(1px);
+      opacity: 0.9;
+    }
+    .hero::before {
+      width: 680px;
+      height: 360px;
+      left: -210px;
+      bottom: 170px;
+      border-radius: 48% 52% 55% 45%;
+      transform: rotate(12deg);
+      background: linear-gradient(140deg, rgba(255, 210, 220, 0.95), rgba(120, 195, 236, 0.08) 68%);
+      clip-path: polygon(0 76%, 16% 45%, 25% 62%, 40% 20%, 52% 58%, 67% 34%, 81% 68%, 100% 48%, 100% 100%, 0 100%);
+    }
+    .hero::after {
+      width: 620px;
+      height: 320px;
+      right: -190px;
+      bottom: 70px;
+      background: linear-gradient(145deg, rgba(202, 188, 255, 0.9), rgba(80, 157, 218, 0.06) 68%);
+      clip-path: polygon(0 58%, 17% 37%, 30% 66%, 44% 25%, 58% 55%, 72% 35%, 84% 62%, 100% 42%, 100% 100%, 0 100%);
+    }
+    .hero-inner { position: relative; z-index: 2; max-width: 990px; margin: 0 auto; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 13px;
+      border: 1px solid rgba(255,255,255,0.24);
+      border-radius: 999px;
+      background: rgba(2, 47, 87, 0.14);
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+    }
+    .eyebrow-dot { width: 7px; height: 7px; border-radius: 50%; background: #8ff1d0; box-shadow: 0 0 0 5px rgba(143,241,208,0.12); }
+    .hero h1 {
+      max-width: 940px;
+      margin: 32px auto 22px;
+      font-family: Iowan Old Style, Baskerville, "Times New Roman", "Songti SC", serif;
+      font-size: clamp(56px, 8vw, 104px);
+      font-weight: 500;
+      letter-spacing: -0.055em;
+      line-height: 0.98;
+      text-wrap: balance;
+    }
+    .hero-lede {
+      max-width: 760px;
+      margin: 0 auto;
+      color: rgba(255,255,255,0.88);
+      font-size: clamp(17px, 2vw, 21px);
+      line-height: 1.75;
+    }
+    .hero-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 31px; }
+    .button {
+      min-height: 50px;
+      padding: 0 22px;
+      border: 0;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      cursor: pointer;
+      font-weight: 720;
+      transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+    .button:hover { transform: translateY(-2px); }
+    .button-primary { background: white; color: var(--blue-950); box-shadow: 0 15px 38px rgba(3, 41, 74, 0.2); }
+    .button-secondary { color: white; background: rgba(3, 50, 91, 0.22); border: 1px solid rgba(255,255,255,0.22); }
+    .download-context { min-height: 23px; margin-top: 12px; color: rgba(255,255,255,0.72); font-size: 13px; }
+    .works-with { margin-top: 35px; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 18px; color: rgba(255,255,255,0.78); font-size: 14px; }
+    .works-with strong { color: white; font-weight: 650; }
+    .runtime-dot { opacity: .5; }
+
+    .product-shot {
+      position: relative;
+      z-index: 3;
+      width: min(1240px, calc(100% - 56px));
+      margin: 52px auto 0;
+      padding: 8px;
+      border: 1px solid rgba(255,255,255,0.52);
+      border-radius: 22px 22px 0 0;
+      background: rgba(255,255,255,0.48);
+      box-shadow: 0 40px 110px rgba(0, 43, 79, 0.34);
+      backdrop-filter: blur(14px);
+    }
+    .window-bar { height: 32px; border-radius: 14px 14px 0 0; background: #f7f8fa; display: flex; align-items: center; gap: 7px; padding: 0 13px; }
+    .window-dot { width: 9px; height: 9px; border-radius: 50%; }
+    .window-dot.red { background: #ff6b67; }
+    .window-dot.yellow { background: #ffc857; }
+    .window-dot.green { background: #55c878; }
+    .product-shot img { display: block; width: 100%; border-radius: 0 0 13px 13px; background: white; }
+
+    .trust-strip { background: white; border-bottom: 1px solid var(--line); }
+    .trust-grid { width: min(1180px, calc(100% - 48px)); margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
+    .trust-item { padding: 27px 22px; border-right: 1px solid var(--line); }
+    .trust-item:last-child { border-right: 0; }
+    .trust-item strong { display: block; margin-bottom: 3px; font-size: 14px; }
+    .trust-item span { color: var(--muted); font-size: 13px; }
+
+    .section { width: min(1180px, calc(100% - 48px)); margin: 0 auto; padding: 112px 0; }
+    .section-kicker { color: var(--blue-700); font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    .section h2 { margin: 12px 0 18px; max-width: 760px; font-family: Iowan Old Style, Baskerville, "Times New Roman", "Songti SC", serif; font-size: clamp(42px, 5vw, 66px); font-weight: 500; line-height: 1.04; letter-spacing: -.045em; }
+    .section-intro { max-width: 700px; margin: 0; color: var(--muted); font-size: 18px; }
+
+    .feature-split { display: grid; grid-template-columns: .88fr 1.12fr; align-items: center; gap: 78px; }
+    .feature-split.reverse { grid-template-columns: 1.12fr .88fr; }
+    .feature-split.reverse .feature-copy { order: 2; }
+    .feature-split.reverse .feature-visual { order: 1; }
+    .feature-copy h2 { font-size: clamp(40px, 4.5vw, 62px); }
+    .feature-points { display: grid; gap: 20px; margin-top: 32px; }
+    .feature-point { display: grid; grid-template-columns: 34px 1fr; gap: 13px; }
+    .feature-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: var(--blue-800); background: var(--blue-100); font-weight: 800; }
+    .feature-point strong { display: block; font-size: 15px; }
+    .feature-point p { margin: 3px 0 0; color: var(--muted); font-size: 14px; }
+    .feature-visual { position: relative; padding: 16px; border: 1px solid var(--line); border-radius: 22px; background: white; box-shadow: 0 24px 65px rgba(31, 75, 116, 0.13); }
+    .feature-visual::before { content: ""; position: absolute; inset: -28px; z-index: -1; border-radius: 42px; background: radial-gradient(circle at 20% 30%, rgba(103,188,238,.25), transparent 55%), radial-gradient(circle at 90% 80%, rgba(245,169,189,.28), transparent 50%); }
+    .feature-visual img { width: 100%; display: block; border-radius: 13px; }
+
+    .workflow-section { padding-top: 42px; }
+    .workflow-head { text-align: center; }
+    .workflow-head h2, .workflow-head .section-intro { margin-left: auto; margin-right: auto; }
+    .workflow-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 48px; }
+    .workflow-card { position: relative; overflow: hidden; min-height: 230px; padding: 25px; border: 1px solid var(--line); border-radius: 20px; background: white; }
+    .workflow-number { color: rgba(24, 111, 174, .15); font-family: Georgia, serif; font-size: 78px; line-height: .8; }
+    .workflow-card h3 { margin: 25px 0 8px; font-size: 18px; }
+    .workflow-card p { margin: 0; color: var(--muted); font-size: 14px; }
+
+    .download-section { width: min(1180px, calc(100% - 48px)); margin: 30px auto 110px; overflow: hidden; border-radius: 30px; color: white; background: linear-gradient(135deg, #073b69 0%, #126fb0 56%, #4da2d3 100%); box-shadow: var(--shadow); }
+    .download-inner { display: grid; grid-template-columns: .95fr 1.05fr; gap: 58px; padding: 70px; }
+    .download-copy h2 { margin: 10px 0 18px; font-family: Iowan Old Style, Baskerville, "Times New Roman", "Songti SC", serif; font-size: clamp(42px, 5vw, 66px); font-weight: 500; letter-spacing: -.045em; line-height: 1.02; }
+    .download-copy p { color: rgba(255,255,255,.76); }
+    .download-card { padding: 27px; border: 1px solid rgba(255,255,255,.2); border-radius: 20px; background: rgba(4, 44, 77, .24); backdrop-filter: blur(10px); }
+    .detected-label { color: #9eeed7; font-size: 12px; font-weight: 800; letter-spacing: .12em; }
+    .download-card h3 { margin: 9px 0 6px; font-size: 24px; }
+    .download-detail { min-height: 24px; color: rgba(255,255,255,.66); font-size: 13px; }
+    .download-card .button { width: 100%; margin-top: 19px; }
+    .platform-select { width: 100%; margin-top: 13px; padding: 11px 12px; color: white; border: 1px solid rgba(255,255,255,.2); border-radius: 10px; background: rgba(1, 31, 56, .28); }
+    .platform-select option { color: #142236; background: white; }
+    .download-note { margin: 12px 0 0 !important; font-size: 12px; }
+    .all-downloads { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid rgba(255,255,255,.13); }
+    .all-downloads a { padding: 18px 20px; border-right: 1px solid rgba(255,255,255,.13); }
+    .all-downloads a:last-child { border-right: 0; }
+    .all-downloads strong { display: block; font-size: 13px; }
+    .all-downloads span { color: rgba(255,255,255,.58); font-size: 11px; }
+
+    .advanced { width: min(1020px, calc(100% - 48px)); margin: 0 auto 100px; }
+    .advanced-card { border: 1px solid var(--line); border-radius: 20px; background: white; overflow: hidden; }
+    .advanced-card summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 25px 28px; font-weight: 760; }
+    .advanced-card summary::-webkit-details-marker { display: none; }
+    .advanced-card summary span { color: var(--muted); font-size: 13px; font-weight: 500; }
+    .advanced-body { padding: 0 28px 30px; border-top: 1px solid var(--line); }
+    .advanced-body h3 { margin: 27px 0 8px; }
+    .advanced-body p, .advanced-body li { color: var(--muted); font-size: 14px; }
+    .command-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 13px 0; padding: 15px 17px; border: 1px solid #dce6ef; border-radius: 12px; background: #f7f9fb; }
+    .command-box code { border: 0; padding: 0; background: none; color: #176fae; word-break: break-all; }
+    .copy-button { border: 0; border-radius: 8px; padding: 7px 10px; color: var(--blue-800); background: var(--blue-100); cursor: pointer; flex: 0 0 auto; }
+
+    .faq { width: min(900px, calc(100% - 48px)); margin: 0 auto; padding: 20px 0 110px; }
+    .faq h2 { text-align: center; margin-bottom: 32px; font-family: Iowan Old Style, Baskerville, "Times New Roman", "Songti SC", serif; font-size: 48px; font-weight: 500; }
+    .faq details { border-top: 1px solid var(--line); }
+    .faq details:last-child { border-bottom: 1px solid var(--line); }
+    .faq summary { cursor: pointer; padding: 20px 4px; font-weight: 700; }
+    .faq p { margin: -4px 4px 22px; color: var(--muted); }
+
+    .footer { padding: 40px 24px; color: #dcecff; background: #062e53; }
+    .footer-inner { width: min(1180px, 100%); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .footer-links { display: flex; gap: 20px; color: rgba(255,255,255,.7); font-size: 13px; }
+
+    @media (max-width: 980px) {
+      .nav-links a:not(.nav-download) { display: none; }
+      .hero { min-height: 790px; }
+      .feature-split, .feature-split.reverse, .download-inner { grid-template-columns: 1fr; }
+      .feature-split.reverse .feature-copy, .feature-split.reverse .feature-visual { order: initial; }
+      .workflow-grid { grid-template-columns: repeat(2, 1fr); }
+      .trust-grid { grid-template-columns: repeat(2, 1fr); }
+      .trust-item:nth-child(2) { border-right: 0; }
+      .trust-item:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .all-downloads { grid-template-columns: repeat(2, 1fr); }
+      .all-downloads a:nth-child(2) { border-right: 0; }
+      .all-downloads a:nth-child(-n+2) { border-bottom: 1px solid rgba(255,255,255,.13); }
+    }
+
+    @media (max-width: 640px) {
+      .site-header { height: 66px; }
+      .nav { width: min(100% - 28px, 1240px); }
+      .brand { font-size: 18px; }
+      .nav-download { padding: 8px 12px; font-size: 13px; }
+      .hero { min-height: 710px; padding: 116px 16px 0; }
+      .hero h1 { font-size: 52px; }
+      .hero-lede { font-size: 16px; }
+      .hero-actions { flex-direction: column; align-items: stretch; }
+      .product-shot { width: calc(100% - 20px); margin-top: 40px; padding: 5px; border-radius: 13px 13px 0 0; }
+      .window-bar { height: 23px; }
+      .window-dot { width: 7px; height: 7px; }
+      .section { width: min(100% - 30px, 1180px); padding: 78px 0; }
+      .section h2, .feature-copy h2 { font-size: 40px; }
+      .feature-split { gap: 36px; }
+      .workflow-grid { grid-template-columns: 1fr; }
+      .workflow-card { min-height: 190px; }
+      .trust-grid { width: 100%; grid-template-columns: 1fr; }
+      .trust-item { border-right: 0; border-bottom: 1px solid var(--line); }
+      .download-section { width: calc(100% - 24px); margin-bottom: 80px; border-radius: 22px; }
+      .download-inner { padding: 38px 24px; gap: 32px; }
+      .all-downloads { grid-template-columns: 1fr; }
+      .all-downloads a { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.13); }
+      .advanced { width: calc(100% - 24px); }
+      .advanced-card summary { align-items: flex-start; flex-direction: column; }
+      .command-box { align-items: flex-start; flex-direction: column; }
+      .footer-inner { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="主导航">
+      <a class="brand" href="#top">
+        <img class="brand-mark" src="icon.png" alt="" />
+        <span>AgentPanel</span>
+      </a>
+      <div class="nav-links">
+        <a href="#product">产品</a>
+        <a href="#workflow">如何使用</a>
+        <a href="#advanced">高级用户</a>
+        <a class="nav-download" href="#download">下载客户端</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-inner">
+        <span class="eyebrow"><span class="eyebrow-dot"></span> 本地优先 · Desktop v1.10.3</span>
+        <h1>让智能体，<br />真正把工作做完。</h1>
+        <p class="hero-lede">不用学编程，也不用守着终端。创建任务、选择智能体或小队、查看进度、审核成果——全部在一个本地客户端里完成。</p>
+        <div class="hero-actions">
+          <a id="heroDownload" class="button button-primary" href="https://github.com/yancyuu/agentpanel/releases/download/1.10.3/AgentPanel-1.10.3-arm64.dmg"><span aria-hidden="true">↓</span><span id="heroDownloadText">下载 macOS 客户端</span></a>
+          <a class="button button-secondary" href="#product">看看它能做什么 <span aria-hidden="true">→</span></a>
+        </div>
+        <div id="heroDownloadContext" class="download-context">正在识别你的系统…</div>
+        <div class="works-with">
+          <span>可连接</span>
+          <strong>Claude Code</strong><span class="runtime-dot">•</span>
+          <strong>Codex</strong><span class="runtime-dot">•</span>
+          <strong>Gemini CLI</strong><span class="runtime-dot">•</span>
+          <strong>Cursor</strong><span class="runtime-dot">•</span>
+          <strong>OpenCode</strong>
+        </div>
+      </div>
+      <div class="product-shot" aria-label="AgentPanel 工作台预览">
+        <div class="window-bar"><span class="window-dot red"></span><span class="window-dot yellow"></span><span class="window-dot green"></span></div>
+        <img src="images/workbench-inbox.png" alt="AgentPanel 收件箱与任务交付界面" />
+      </div>
+    </section>
+
+    <section class="trust-strip" aria-label="产品特点">
+      <div class="trust-grid">
+        <div class="trust-item"><strong>安装一个 App</strong><span>无需预装 Node.js 或 pnpm</span></div>
+        <div class="trust-item"><strong>数据保存在本机</strong><span>默认写入 ~/.hermit/</span></div>
+        <div class="trust-item"><strong>内置 AgentPanel</strong><span>客户端与命令行共用数据</span></div>
+        <div class="trust-item"><strong>交付结果优先</strong><span>成果直接阅读、审核与归档</span></div>
+      </div>
+    </section>
+
+    <section id="product" class="section feature-split">
+      <div class="feature-copy">
+        <span class="section-kicker">任务与收件箱</span>
+        <h2>像交代同事一样，把任务交给智能体。</h2>
+        <p class="section-intro">写清楚想要的结果，附上图片、PDF、Office 或 ZIP 文件，然后等待交付。过程状态和需要你处理的反馈会统一进入收件箱。</p>
+        <div class="feature-points">
+          <div class="feature-point"><span class="feature-icon">1</span><div><strong>不需要写 Prompt 工程</strong><p>用普通语言描述目标，选择合适的智能体即可。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">2</span><div><strong>输入和成果分开管理</strong><p>原始材料进入 input，正式成果按版本归档到 outputs。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">3</span><div><strong>返工不丢上下文</strong><p>直接回复当前任务要求修改，智能体在原任务上继续完成。</p></div></div>
+        </div>
+      </div>
+      <div class="feature-visual"><img src="images/workbench-tasks.png" alt="AgentPanel 任务管理页面" loading="lazy" /></div>
+    </section>
+
+    <section class="section feature-split reverse">
+      <div class="feature-copy">
+        <span class="section-kicker">智能体小队</span>
+        <h2>复杂任务，让一支小队协作完成。</h2>
+        <p class="section-intro">成员先进行有限轮次圆桌讨论，自行选出本任务的临时队长。队长负责分工、验收、整合，并向你统一交付最终结果。</p>
+        <div class="feature-points">
+          <div class="feature-point"><span class="feature-icon">✓</span><div><strong>任务级临时队长</strong><p>不是固定上下级，每次任务都能选择最合适的负责人。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">↗</span><div><strong>并行执行，集中交付</strong><p>成员同步工作，队长最终整合，避免你逐个追进度。</p></div></div>
+          <div class="feature-point"><span class="feature-icon">◎</span><div><strong>重启后继续运行</strong><p>协作状态持久化，客户端刷新或服务重启不会永久卡住。</p></div></div>
+        </div>
+      </div>
+      <div class="feature-visual"><img src="images/workbench-agents.png" alt="AgentPanel 智能体与小队界面" loading="lazy" /></div>
+    </section>
+
+    <section id="workflow" class="section workflow-section">
+      <div class="workflow-head">
+        <span class="section-kicker">完整工作闭环</span>
+        <h2>从一句需求，到一份正式成果。</h2>
+        <p class="section-intro">AgentPanel 把执行过程藏到合适的位置，让普通用户只关注目标、反馈和最终交付。</p>
+      </div>
+      <div class="workflow-grid">
+        <article class="workflow-card"><div class="workflow-number">01</div><h3>创建任务</h3><p>写下目标，添加输入文件，选择单个智能体或小队。</p></article>
+        <article class="workflow-card"><div class="workflow-number">02</div><h3>自动执行</h3><p>智能体自行推进；小队会先讨论、选队长，再并行分工。</p></article>
+        <article class="workflow-card"><div class="workflow-number">03</div><h3>收到交付</h3><p>成果进入收件箱，报告、图片和附件可以直接查看。</p></article>
+        <article class="workflow-card"><div class="workflow-number">04</div><h3>审核归档</h3><p>满意则保存正式版本；需要修改则在原任务继续返工。</p></article>
+      </div>
+    </section>
+
+    <section id="download" class="download-section">
+      <div class="download-inner">
+        <div class="download-copy">
+          <span class="section-kicker" style="color:#a9ead9">立即开始</span>
+          <h2>下载最适合你电脑的版本。</h2>
+          <p>页面会根据当前系统自动推荐。Apple Silicon Mac 优先使用桌面 DMG；其他系统会显示当前可用的独立安装包。</p>
+          <p>桌面客户端已内置 AgentPanel、cc-connect 与 Pi 运行时，不需要再通过 npm 安装。</p>
+        </div>
+        <div class="download-card">
+          <div class="detected-label">已为你推荐</div>
+          <h3 id="recommendedTitle">macOS 客户端</h3>
+          <div id="recommendedDetail" class="download-detail">Apple Silicon · DMG · 208 MB</div>
+          <a id="recommendedDownload" class="button button-primary" href="https://github.com/yancyuu/agentpanel/releases/download/1.10.3/AgentPanel-1.10.3-arm64.dmg">下载 macOS 客户端</a>
+          <select id="platformSelect" class="platform-select" aria-label="选择其他系统版本">
+            <option value="macArm">macOS Apple Silicon</option>
+            <option value="macIntel">macOS Intel</option>
+            <option value="windows">Windows x64</option>
+            <option value="linux">Linux x64</option>
+          </select>
+          <p id="downloadNote" class="download-note">下载后打开 DMG，将 AgentPanel 拖入“应用程序”。</p>
+        </div>
+      </div>
+      <div class="all-downloads">
+        <a href="https://github.com/yancyuu/agentpanel/releases/download/1.10.3/AgentPanel-1.10.3-arm64.dmg"><strong>macOS Apple Silicon</strong><span>DMG 桌面客户端</span></a>
+        <a href="https://github.com/yancyuu/agentpanel/releases/download/1.10.3/AgentPanel-1.10.3-x64.dmg"><strong>macOS Intel</strong><span>ZIP 独立包</span></a>
+        <a href="https://github.com/yancyuu/agentpanel/releases/download/1.10.3/AgentPanel-Setup-1.10.3-x64.exe"><strong>Windows x64</strong><span>ZIP 独立包</span></a>
+        <a href="https://github.com/yancyuu/agentpanel/releases/download/1.10.3/AgentPanel-1.10.3-x86_64.AppImage"><strong>Linux x64</strong><span>ZIP 独立包</span></a>
+      </div>
+    </section>
+
+    <section id="advanced" class="advanced">
+      <details class="advanced-card">
+        <summary>
+          <strong>高级用户与命令行</strong>
+          <span>查看内置 CLI、传统安装方式和常用命令 ＋</span>
+        </summary>
+        <div class="advanced-body">
+          <h3>安装 App 后可以使用 CLI 吗？</h3>
+          <p>可以。客户端本身已经内置 AgentPanel，首次启动后会创建 <code>~/.hermit/bin/agentpanel</code>，App 和终端共用同一份任务与配置数据，不需要再次执行 npm 安装。</p>
+          <div class="command-box"><code>~/.hermit/bin/agentpanel --version</code><button class="copy-button" data-copy="~/.hermit/bin/agentpanel --version">复制</button></div>
+          <p><strong>直接输入 <code>agentpanel</code>：</strong>客户端首次启动会在现有 PATH 中寻找可写的标准命令目录，并安全创建指向内置 CLI 的命令链接；不会覆盖同名用户命令，也不会修改 Shell 配置。若系统目录不可写，仍可使用上面的完整路径。</p>
+
+          <h3>不安装桌面 App</h3>
+          <p>传统 CLI 安装只推荐给需要脚本化或服务器环境的高级用户。</p>
+          <div class="command-box"><code>curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/yancyuu/agentpanel/master/scripts/install.sh | bash</code><button class="copy-button" data-copy="curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/yancyuu/agentpanel/master/scripts/install.sh | bash">复制</button></div>
+          <div class="command-box"><code>npm install -g @yancyyu/agentpanel</code><button class="copy-button" data-copy="npm install -g @yancyyu/agentpanel">复制</button></div>
+
+          <h3>常用命令</h3>
+          <ul>
+            <li><code>agentpanel --version</code>：查看当前版本。</li>
+            <li><code>agentpanel tasks list --team &lt;team&gt;</code>：查看团队任务。</li>
+            <li><code>agentpanel doctor</code>：执行只读诊断。</li>
+            <li><code>agentpanel usage status</code>：查看用量采集状态。</li>
+          </ul>
+          <p><a href="https://github.com/yancyuu/agentpanel">在 GitHub 查看完整说明 →</a></p>
+        </div>
+      </details>
+    </section>
+
+    <section class="faq">
+      <h2>常见问题</h2>
+      <details open><summary>我完全不会编程，也能使用吗？</summary><p>可以。桌面客户端的默认界面只使用“任务、收件箱、智能体、小队、交付成果”等普通工作语言，CLI、端口、Session 和内部日志默认隐藏。</p></details>
+      <details><summary>数据和任务文件会上传到云端吗？</summary><p>默认本地运行，任务与配置存放在本机 <code>~/.hermit/</code> 和智能体项目目录。只有你主动配置企业团队总线及对应授权范围后，指定的数据才会进行上报。</p></details>
+      <details><summary>安装 App 后是否还需要 Node.js 或 npm？</summary><p>不需要。桌面安装包包含 AgentPanel、Node 运行能力、cc-connect 和 Pi。没有 Claude Code 或 Codex 时，客户端会优先使用内置 Pi。</p></details>
+      <details><summary>为什么终端里暂时找不到 agentpanel？</summary><p>客户端会创建 <code>~/.hermit/bin/agentpanel</code>，并在已有 PATH 的可写标准目录中创建安全链接。如果系统没有可写目录或已有同名用户命令，客户端不会覆盖；此时可直接运行完整路径。</p></details>
+      <details><summary>当前有哪些桌面版本？</summary><p>当前正式桌面客户端首先提供 macOS Apple Silicon DMG；macOS Intel、Windows 和 Linux 目前提供独立 ZIP 包。后续会继续补齐对应桌面安装器。</p></details>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <a class="brand" href="#top"><img class="brand-mark" src="icon.png" alt="" /><span>AgentPanel</span></a>
+      <div class="footer-links"><a href="#download">下载</a><a href="#advanced">高级用户</a><a href="https://github.com/yancyuu/agentpanel">GitHub</a><span>© 2026 AgentPanel</span></div>
+    </div>
+  </footer>
+
+  <script>
+    const DOWNLOADS = {"macArm":{"label":"macOS 客户端","shortLabel":"macOS Apple Silicon","detail":"Apple Silicon · DMG · 208 MB","filename":"AgentPanel-1.10.3-arm64.dmg","href":"https://github.com/yancyuu/agentpanel/releases/download/1.10.3/AgentPanel-1.10.3-arm64.dmg","kind":"desktop"},"macIntel":{"label":"macOS Intel 客户端","shortLabel":"macOS Intel","detail":"Intel x64 · DMG · 216 MB","filename":"AgentPanel-1.10.3-x64.dmg","href":"https://github.com/yancyuu/agentpanel/releases/download/1.10.3/AgentPanel-1.10.3-x64.dmg","kind":"desktop"},"windows":{"label":"Windows 客户端","shortLabel":"Windows x64","detail":"Windows x64 · 安装程序 · 187 MB","filename":"AgentPanel-Setup-1.10.3-x64.exe","href":"https://github.com/yancyuu/agentpanel/releases/download/1.10.3/AgentPanel-Setup-1.10.3-x64.exe","kind":"desktop"},"linux":{"label":"Linux 客户端","shortLabel":"Linux x64","detail":"Linux x64 · AppImage · 142 MB","filename":"AgentPanel-1.10.3-x86_64.AppImage","href":"https://github.com/yancyuu/agentpanel/releases/download/1.10.3/AgentPanel-1.10.3-x86_64.AppImage","kind":"desktop"},"windowsArm":{"label":"Windows ARM64 客户端","shortLabel":"Windows ARM64","detail":"Windows ARM64 · 安装程序 · 179 MB","filename":"AgentPanel-Setup-1.10.3-arm64.exe","href":"https://github.com/yancyuu/agentpanel/releases/download/1.10.3/AgentPanel-Setup-1.10.3-arm64.exe","kind":"desktop"},"linuxArm":{"label":"Linux ARM64 客户端","shortLabel":"Linux ARM64","detail":"Linux ARM64 · AppImage · 138 MB","filename":"AgentPanel-1.10.3-arm64.AppImage","href":"https://github.com/yancyuu/agentpanel/releases/download/1.10.3/AgentPanel-1.10.3-arm64.AppImage","kind":"desktop"}};
+
+    function updateDownload(key) {
+      const item = DOWNLOADS[key] || DOWNLOADS.macArm;
+      const isDesktop = item.kind === 'desktop';
+      document.getElementById('recommendedTitle').textContent = item.label;
+      document.getElementById('recommendedDetail').textContent = item.detail + ' · v1.10.3';
+      document.getElementById('recommendedDownload').href = item.href;
+      document.getElementById('recommendedDownload').textContent = '下载' + item.label;
+      document.getElementById('platformSelect').value = key;
+      document.getElementById('downloadNote').textContent = isDesktop
+        ? '下载后打开 DMG，将 AgentPanel 拖入“应用程序”。'
+        : '当前系统提供免 Node.js 的独立 ZIP 包；解压后按包内说明运行。';
+      document.getElementById('heroDownload').href = item.href;
+      document.getElementById('heroDownloadText').textContent = '下载' + item.label;
+      document.getElementById('heroDownloadContext').textContent = '已识别：' + item.shortLabel + ' · ' + item.detail;
+    }
+
+    function detectBasicPlatform() {
+      const ua = navigator.userAgent.toLowerCase();
+      const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+      const value = platform.toLowerCase();
+      if (value.includes('win') || ua.includes('windows')) return 'windows';
+      if (value.includes('linux') || ua.includes('linux')) return 'linux';
+      if (value.includes('mac') || ua.includes('mac os')) return 'macArm';
+      return 'macArm';
+    }
+
+    async function detectPlatform() {
+      let key = detectBasicPlatform();
+      if (key === 'macArm' && navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+        try {
+          const values = await navigator.userAgentData.getHighEntropyValues(['architecture', 'bitness']);
+          if (String(values.architecture).toLowerCase().includes('x86')) key = 'macIntel';
+        } catch (_) {
+          // Safari does not expose CPU architecture. Modern macOS defaults to Apple Silicon.
+        }
+      }
+      updateDownload(key);
+    }
+
+    document.getElementById('platformSelect').addEventListener('change', event => updateDownload(event.target.value));
+    document.querySelectorAll('[data-copy]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const original = button.textContent;
+        try {
+          await navigator.clipboard.writeText(button.dataset.copy);
+          button.textContent = '已复制';
+        } catch (_) {
+          button.textContent = '请手动复制';
+        }
+        setTimeout(() => { button.textContent = original; }, 1400);
+      });
+    });
+    detectPlatform();
+  </script>
+</body>
+</html>

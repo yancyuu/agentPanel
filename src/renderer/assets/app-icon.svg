@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b5ef4"/>
+      <stop offset="1" stop-color="#3b36c4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 底板 -->
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- 几何螺旋：直角折线由外向内（寄居/收束） -->
+  <path d="M384 128
+           H168
+           Q128 128 128 168
+           V344
+           Q128 384 168 384
+           H344
+           Q384 384 384 344
+           V208
+           Q384 176 352 176
+           H208
+           Q176 176 176 208
+           V304
+           Q176 336 208 336
+           H304
+           Q336 336 336 304
+           V256"
+        fill="none"
+        stroke="#f5f2e8"
+        stroke-width="34"
+        stroke-linejoin="round"
+        stroke-linecap="round"/>
+
+  <!-- 寄居者：螺旋中心的橙点 -->
+  <circle cx="336" cy="248" r="34" fill="#fb923c"/>
+  <circle cx="326" cy="238" r="10" fill="#ffd9ad" opacity="0.85"/>
+</svg>

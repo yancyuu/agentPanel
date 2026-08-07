@@ -1,0 +1,38 @@
+name: npm CLI smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, dev]
+    paths:
+      - README.md
+      - bin/**
+      - package.json
+      - .github/workflows/npm-cli-smoke.yml
+  pull_request:
+    paths:
+      - README.md
+      - bin/**
+      - package.json
+      - .github/workflows/npm-cli-smoke.yml
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install AgentPanel
+        run: npm install -g @yancyyu/agentpanel@latest --prefer-online
+
+      - name: Check CLI commands
+        run: |
+          agentpanel --version
+          agentpanel --help
+          agentpanel --version

@@ -1,0 +1,772 @@
+import {
+  DISPLAY_COMPLETE_STEP_INDEX,
+  getDisplayStepIndex,
+  getLaunchJoinMilestonesFromMembers,
+  getLaunchJoinState,
+} from '@renderer/components/team/provisioningSteps';
+
+import type {
+  MemberSpawnStatusEntry,
+  MemberSpawnStatusesSnapshot,
+  TeamProvisioningProgress,
+} from '@shared/types';
+
+type MemberSpawnStatusCollection =
+  | Record<string, MemberSpawnStatusEntry>
+  | Map<string, MemberSpawnStatusEntry>
+  | undefined;
+
+interface ProvisioningMemberLike {
+  name: string;
+  removedAt?: number;
+  agentType?: string;
+  status?: string;
+  currentTaskId?: string | null;
+  taskCount?: number;
+  lastActiveAt?: string | null;
+  messageCount?: number;
+}
+
+interface FailedSpawnDetail {
+  name: string;
+  reason: string | null;
+}
+
+interface SkippedSpawnDetail {
+  name: string;
+  reason: string | null;
+}
+
+type PendingDiagnosticBucket =
+  | 'shellOnly'
+  | 'runtimeProcess'
+  | 'runtimeCandidate'
+  | 'permission'
+  | 'noRuntime';
+
+type PendingDiagnosticNameGroups = Record<PendingDiagnosticBucket, string[]>;
+
+const MAX_PENDING_DIAGNOSTIC_NAMES = 4;
+
+function parseStatusUpdatedAtMs(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isFailedSpawnEntry(entry: MemberSpawnStatusEntry | undefined): boolean {
+  return entry?.launchState === 'failed_to_start' || entry?.status === 'error';
+}
+
+function isSkippedSpawnEntry(entry: MemberSpawnStatusEntry | undefined): boolean {
+  return entry?.launchState === 'skipped_for_launch' || entry?.skippedForLaunch === true;
+}
+
+function shouldPreferSnapshotEntryOverLive(params: {
+  liveEntry: MemberSpawnStatusEntry | undefined;
+  snapshotEntry: MemberSpawnStatusEntry | undefined;
+  snapshotUpdatedAt?: string;
+}): boolean {
+  const { liveEntry, snapshotEntry, snapshotUpdatedAt } = params;
+  if (!liveEntry || !snapshotEntry) {
+    return false;
+  }
+  if (!isFailedSpawnEntry(liveEntry) || isFailedSpawnEntry(snapshotEntry)) {
+    return false;
+  }
+
+  const liveUpdatedAtMs = parseStatusUpdatedAtMs(liveEntry.updatedAt);
+  const snapshotUpdatedAtMs =
+    parseStatusUpdatedAtMs(snapshotEntry.updatedAt) ?? parseStatusUpdatedAtMs(snapshotUpdatedAt);
+  return (
+    snapshotUpdatedAtMs != null &&
+    (liveUpdatedAtMs == null || snapshotUpdatedAtMs >= liveUpdatedAtMs)
+  );
+}
+
+function getPreferredSpawnEntry(params: {
+  liveEntry: MemberSpawnStatusEntry | undefined;
+  snapshotEntry: MemberSpawnStatusEntry | undefined;
+  snapshotUpdatedAt?: string;
+}): MemberSpawnStatusEntry | undefined {
+  return shouldPreferSnapshotEntryOverLive(params)
+    ? params.snapshotEntry
+    : (params.liveEntry ?? params.snapshotEntry);
+}
+
+function countPermissionBlockedMembers(params: {
+  memberSpawnStatuses: MemberSpawnStatusCollection;
+  memberSpawnSnapshotStatuses?: MemberSpawnStatusesSnapshot['statuses'];
+  memberSpawnSnapshotUpdatedAt?: string;
+}): number {
+  const names = new Set<string>();
+  if (params.memberSpawnStatuses instanceof Map) {
+    for (const name of params.memberSpawnStatuses.keys()) {
+      names.add(name);
+    }
+  } else if (params.memberSpawnStatuses) {
+    for (const name of Object.keys(params.memberSpawnStatuses)) {
+      names.add(name);
+    }
+  }
+  for (const name of Object.keys(params.memberSpawnSnapshotStatuses ?? {})) {
+    names.add(name);
+  }
+
+  let count = 0;
+  for (const name of names) {
+    const liveEntry =
+      params.memberSpawnStatuses instanceof Map
+        ? params.memberSpawnStatuses.get(name)
+        : params.memberSpawnStatuses?.[name];
+    const snapshotEntry = params.memberSpawnSnapshotStatuses?.[name];
+    const entry = getPreferredSpawnEntry({
+      liveEntry,
+      snapshotEntry,
+      snapshotUpdatedAt: params.memberSpawnSnapshotUpdatedAt,
+    });
+    if (!entry) {
+      continue;
+    }
+    if (
+      entry.launchState === 'runtime_pending_permission' ||
+      (entry.pendingPermissionRequestIds?.length ?? 0) > 0
+    ) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function buildAwaitingPermissionPhrase(count: number): string {
+  return count === 1 ? '1 个成员等待权限批准' : `${count} 个成员等待权限批准`;
+}
+
+function getMemberNamesFromSpawnSources(params: {
+  memberSpawnStatuses: MemberSpawnStatusCollection;
+  memberSpawnSnapshotStatuses?: MemberSpawnStatusesSnapshot['statuses'];
+}): string[] {
+  const names = new Set<string>();
+  if (params.memberSpawnStatuses instanceof Map) {
+    for (const name of params.memberSpawnStatuses.keys()) {
+      names.add(name);
+    }
+  } else if (params.memberSpawnStatuses) {
+    for (const name of Object.keys(params.memberSpawnStatuses)) {
+      names.add(name);
+    }
+  }
+  for (const name of Object.keys(params.memberSpawnSnapshotStatuses ?? {})) {
+    names.add(name);
+  }
+  return [...names].sort((left, right) => left.localeCompare(right));
+}
+
+function getPendingDiagnosticNameGroups(params: {
+  memberSpawnStatuses: MemberSpawnStatusCollection;
+  memberSpawnSnapshotStatuses?: MemberSpawnStatusesSnapshot['statuses'];
+  memberSpawnSnapshotUpdatedAt?: string;
+}): PendingDiagnosticNameGroups {
+  const groups: PendingDiagnosticNameGroups = {
+    shellOnly: [],
+    runtimeProcess: [],
+    runtimeCandidate: [],
+    permission: [],
+    noRuntime: [],
+  };
+
+  for (const name of getMemberNamesFromSpawnSources(params)) {
+    const liveEntry =
+      params.memberSpawnStatuses instanceof Map
+        ? params.memberSpawnStatuses.get(name)
+        : params.memberSpawnStatuses?.[name];
+    const snapshotEntry = params.memberSpawnSnapshotStatuses?.[name];
+    const entry = getPreferredSpawnEntry({
+      liveEntry,
+      snapshotEntry,
+      snapshotUpdatedAt: params.memberSpawnSnapshotUpdatedAt,
+    });
+    if (
+      !entry ||
+      entry.launchState === 'confirmed_alive' ||
+      isFailedSpawnEntry(entry) ||
+      isSkippedSpawnEntry(entry)
+    ) {
+      continue;
+    }
+    if (
+      entry.launchState === 'runtime_pending_permission' ||
+      (entry.pendingPermissionRequestIds?.length ?? 0) > 0
+    ) {
+      groups.permission.push(name);
+      continue;
+    }
+    if (entry.livenessKind === 'shell_only') {
+      groups.shellOnly.push(name);
+    } else if (entry.livenessKind === 'runtime_process') {
+      groups.runtimeProcess.push(name);
+    } else if (entry.livenessKind === 'runtime_process_candidate') {
+      groups.runtimeCandidate.push(name);
+    } else if (
+      entry.livenessKind === 'not_found' ||
+      entry.livenessKind === 'stale_metadata' ||
+      entry.livenessKind === 'registered_only'
+    ) {
+      groups.noRuntime.push(name);
+    }
+  }
+
+  return groups;
+}
+
+function formatNamedPendingDiagnostic(label: string, names: readonly string[]): string | null {
+  if (names.length === 0) {
+    return null;
+  }
+  const listedNames = names.slice(0, MAX_PENDING_DIAGNOSTIC_NAMES).join(', ');
+  const remainingCount = names.length - Math.min(names.length, MAX_PENDING_DIAGNOSTIC_NAMES);
+  return `${label}: ${listedNames}${remainingCount > 0 ? `，另有 ${remainingCount} 个` : ''}`;
+}
+
+function formatCountPendingDiagnostic(count: number | undefined, label: string): string | null {
+  return count && count > 0 ? `${count} ${label}` : null;
+}
+
+function buildPendingDiagnosticPhrase({
+  summary,
+  memberSpawnStatuses,
+  memberSpawnSnapshotStatuses,
+  memberSpawnSnapshotUpdatedAt,
+  fallbackJoiningPhrase,
+}: {
+  summary: MemberSpawnStatusesSnapshot['summary'] | undefined;
+  memberSpawnStatuses: MemberSpawnStatusCollection;
+  memberSpawnSnapshotStatuses?: MemberSpawnStatusesSnapshot['statuses'];
+  memberSpawnSnapshotUpdatedAt?: string;
+  fallbackJoiningPhrase: string;
+}): string {
+  const groups = getPendingDiagnosticNameGroups({
+    memberSpawnStatuses,
+    memberSpawnSnapshotStatuses,
+    memberSpawnSnapshotUpdatedAt,
+  });
+  const namedParts = [
+    formatNamedPendingDiagnostic('仅检测到 Shell', groups.shellOnly),
+    formatNamedPendingDiagnostic('等待启动初始化', groups.runtimeProcess),
+    formatNamedPendingDiagnostic('候选进程', groups.runtimeCandidate),
+    formatNamedPendingDiagnostic('等待权限', groups.permission),
+    formatNamedPendingDiagnostic('未检测到成员进程', groups.noRuntime),
+  ].filter(Boolean);
+  if (namedParts.length > 0) {
+    return namedParts.join(', ');
+  }
+  if (!summary) {
+    return fallbackJoiningPhrase;
+  }
+  const countParts = [
+    formatCountPendingDiagnostic(summary.shellOnlyPendingCount, '个仅检测到 Shell'),
+    formatCountPendingDiagnostic(summary.runtimeProcessPendingCount, '个等待启动初始化'),
+    formatCountPendingDiagnostic(summary.runtimeCandidatePendingCount, '个候选进程'),
+    formatCountPendingDiagnostic(summary.permissionPendingCount, '个等待权限'),
+    formatCountPendingDiagnostic(summary.noRuntimePendingCount, '个未检测到成员进程'),
+  ].filter(Boolean);
+  return countParts.length > 0 ? countParts.join(', ') : fallbackJoiningPhrase;
+}
+
+const ACTIVE_PROVISIONING_STATES = new Set([
+  'validating',
+  'spawning',
+  'configuring',
+  'assembling',
+  'finalizing',
+  'verifying',
+]);
+
+function getFailedSpawnDetails(params: {
+  memberSpawnStatuses: MemberSpawnStatusCollection;
+  memberSpawnSnapshotStatuses?: MemberSpawnStatusesSnapshot['statuses'];
+  memberSpawnSnapshotUpdatedAt?: string;
+}): FailedSpawnDetail[] {
+  const names = new Set<string>();
+  if (params.memberSpawnStatuses instanceof Map) {
+    for (const name of params.memberSpawnStatuses.keys()) {
+      names.add(name);
+    }
+  } else if (params.memberSpawnStatuses) {
+    for (const name of Object.keys(params.memberSpawnStatuses)) {
+      names.add(name);
+    }
+  }
+  for (const name of Object.keys(params.memberSpawnSnapshotStatuses ?? {})) {
+    names.add(name);
+  }
+
+  if (names.size === 0) {
+    return [];
+  }
+
+  return [...names]
+    .map((name) => {
+      const liveEntry =
+        params.memberSpawnStatuses instanceof Map
+          ? params.memberSpawnStatuses.get(name)
+          : params.memberSpawnStatuses?.[name];
+      const snapshotEntry = params.memberSpawnSnapshotStatuses?.[name];
+      return [
+        name,
+        getPreferredSpawnEntry({
+          liveEntry,
+          snapshotEntry,
+          snapshotUpdatedAt: params.memberSpawnSnapshotUpdatedAt,
+        }),
+      ] as const;
+    })
+    .filter(
+      ([, entry]) => entry && (entry.launchState === 'failed_to_start' || entry.status === 'error')
+    )
+    .map(([name, entry]) => ({
+      name,
+      reason:
+        typeof entry?.hardFailureReason === 'string' && entry.hardFailureReason.trim().length > 0
+          ? entry.hardFailureReason.trim()
+          : typeof entry?.error === 'string' && entry.error.trim().length > 0
+            ? entry.error.trim()
+            : null,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function getSkippedSpawnDetails(params: {
+  memberSpawnStatuses: MemberSpawnStatusCollection;
+  memberSpawnSnapshotStatuses?: MemberSpawnStatusesSnapshot['statuses'];
+  memberSpawnSnapshotUpdatedAt?: string;
+}): SkippedSpawnDetail[] {
+  const names = new Set<string>();
+  if (params.memberSpawnStatuses instanceof Map) {
+    for (const name of params.memberSpawnStatuses.keys()) {
+      names.add(name);
+    }
+  } else if (params.memberSpawnStatuses) {
+    for (const name of Object.keys(params.memberSpawnStatuses)) {
+      names.add(name);
+    }
+  }
+  for (const name of Object.keys(params.memberSpawnSnapshotStatuses ?? {})) {
+    names.add(name);
+  }
+
+  if (names.size === 0) {
+    return [];
+  }
+
+  return [...names]
+    .map((name) => {
+      const liveEntry =
+        params.memberSpawnStatuses instanceof Map
+          ? params.memberSpawnStatuses.get(name)
+          : params.memberSpawnStatuses?.[name];
+      const snapshotEntry = params.memberSpawnSnapshotStatuses?.[name];
+      return [
+        name,
+        getPreferredSpawnEntry({
+          liveEntry,
+          snapshotEntry,
+          snapshotUpdatedAt: params.memberSpawnSnapshotUpdatedAt,
+        }),
+      ] as const;
+    })
+    .filter(([, entry]) => isSkippedSpawnEntry(entry))
+    .map(([name, entry]) => ({
+      name,
+      reason:
+        typeof entry?.skipReason === 'string' && entry.skipReason.trim().length > 0
+          ? entry.skipReason.trim()
+          : null,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function normalizeFailureReason(reason: string): string {
+  return reason.replace(/\s+/g, ' ').trim();
+}
+
+function buildFailedSpawnPanelMessage(
+  failedSpawnDetails: readonly FailedSpawnDetail[]
+): string | null {
+  if (failedSpawnDetails.length === 0) {
+    return null;
+  }
+  if (failedSpawnDetails.length === 1) {
+    const [failed] = failedSpawnDetails;
+    return failed.reason
+      ? `${failed.name} 启动失败 - ${normalizeFailureReason(failed.reason)}`
+      : `${failed.name} 启动失败`;
+  }
+  const listedFailures = failedSpawnDetails
+    .slice(0, 2)
+    .map((failed) =>
+      failed.reason ? `${failed.name} - ${normalizeFailureReason(failed.reason)}` : failed.name
+    )
+    .join('; ');
+  const remainingCount = failedSpawnDetails.length - Math.min(failedSpawnDetails.length, 2);
+  return `启动失败的成员：${listedFailures}${remainingCount > 0 ? `；另有 ${remainingCount} 个` : ''}`;
+}
+
+function buildFailedSpawnCompactDetail(
+  failedSpawnDetails: readonly FailedSpawnDetail[]
+): string | null {
+  if (failedSpawnDetails.length === 0) {
+    return null;
+  }
+  if (failedSpawnDetails.length === 1) {
+    return `${failedSpawnDetails[0].name} 启动失败`;
+  }
+  return `${failedSpawnDetails.length} 个成员启动失败`;
+}
+
+function buildGenericFailedSpawnPanelMessage(
+  failedSpawnCount: number,
+  expectedTeammateCount: number
+): string | null {
+  if (failedSpawnCount <= 0) {
+    return null;
+  }
+  if (failedSpawnCount === 1) {
+    return '1 个成员启动失败';
+  }
+  return `${failedSpawnCount}/${Math.max(expectedTeammateCount, failedSpawnCount)} 个成员启动失败`;
+}
+
+function buildSkippedSpawnPanelMessage(
+  skippedSpawnDetails: readonly SkippedSpawnDetail[]
+): string | null {
+  if (skippedSpawnDetails.length === 0) {
+    return null;
+  }
+  if (skippedSpawnDetails.length === 1) {
+    const [skipped] = skippedSpawnDetails;
+    return skipped.reason
+      ? `${skipped.name} 本次启动已跳过 - ${normalizeFailureReason(skipped.reason)}`
+      : `${skipped.name} 本次启动已跳过`;
+  }
+  const listedSkipped = skippedSpawnDetails
+    .slice(0, 3)
+    .map((skipped) =>
+      skipped.reason ? `${skipped.name} - ${normalizeFailureReason(skipped.reason)}` : skipped.name
+    )
+    .join('; ');
+  const remainingCount = skippedSpawnDetails.length - Math.min(skippedSpawnDetails.length, 3);
+  return `已跳过的成员：${listedSkipped}${remainingCount > 0 ? `；另有 ${remainingCount} 个` : ''}`;
+}
+
+function buildSkippedSpawnCompactDetail(
+  skippedSpawnDetails: readonly SkippedSpawnDetail[]
+): string | null {
+  if (skippedSpawnDetails.length === 0) {
+    return null;
+  }
+  if (skippedSpawnDetails.length === 1) {
+    return `${skippedSpawnDetails[0].name} 已跳过`;
+  }
+  return `${skippedSpawnDetails.length} 个成员已跳过`;
+}
+
+export interface TeamProvisioningPresentation {
+  progress: TeamProvisioningProgress;
+  isActive: boolean;
+  isReady: boolean;
+  isFailed: boolean;
+  canCancel: boolean;
+  currentStepIndex: number;
+  expectedTeammateCount: number;
+  heartbeatConfirmedCount: number;
+  processOnlyAliveCount: number;
+  pendingSpawnCount: number;
+  failedSpawnCount: number;
+  skippedSpawnCount: number;
+  allTeammatesConfirmedAlive: boolean;
+  hasMembersStillJoining: boolean;
+  remainingJoinCount: number;
+  panelTitle: string;
+  panelMessage?: string | null;
+  panelMessageSeverity?: 'error' | 'warning' | 'info';
+  panelTone?: 'default' | 'error';
+  successMessage?: string | null;
+  successMessageSeverity?: 'success' | 'warning' | 'info';
+  defaultLiveOutputOpen: boolean;
+  compactTitle: string;
+  compactDetail?: string | null;
+  compactTone: 'default' | 'warning' | 'error' | 'success';
+}
+
+export function isProvisioningProgressActive(
+  progress: Pick<TeamProvisioningProgress, 'state'> | null | undefined
+): boolean {
+  return progress != null && ACTIVE_PROVISIONING_STATES.has(progress.state);
+}
+
+export function buildTeamProvisioningPresentation({
+  progress,
+  members,
+  memberSpawnStatuses,
+  memberSpawnSnapshot,
+}: {
+  progress: TeamProvisioningProgress | null | undefined;
+  members: readonly ProvisioningMemberLike[];
+  memberSpawnStatuses?: MemberSpawnStatusCollection;
+  memberSpawnSnapshot?: Pick<
+    MemberSpawnStatusesSnapshot,
+    'expectedMembers' | 'summary' | 'updatedAt'
+  > & {
+    statuses?: MemberSpawnStatusesSnapshot['statuses'];
+  };
+}): TeamProvisioningPresentation | null {
+  if (!progress) {
+    return null;
+  }
+
+  if (progress.state === 'cancelled' || progress.state === 'disconnected') {
+    return null;
+  }
+
+  const snapshotComplete =
+    (memberSpawnSnapshot?.summary?.failedCount ?? 0) === 0 &&
+    (memberSpawnSnapshot?.summary?.skippedCount ?? 0) === 0 &&
+    (memberSpawnSnapshot?.summary?.pendingCount ?? 0) === 0 &&
+    (memberSpawnSnapshot?.summary?.confirmedCount ?? 0) > 0;
+  const isReady = progress.state === 'ready' || snapshotComplete;
+  const isFailed = progress.state === 'failed';
+  const isActive = isProvisioningProgressActive(progress) && !snapshotComplete;
+  const canCancel =
+    progress.state === 'spawning' ||
+    progress.state === 'configuring' ||
+    progress.state === 'assembling' ||
+    progress.state === 'finalizing' ||
+    progress.state === 'verifying';
+
+  const {
+    expectedTeammateCount,
+    heartbeatConfirmedCount,
+    processOnlyAliveCount,
+    pendingSpawnCount,
+    failedSpawnCount,
+    skippedSpawnCount,
+  } = getLaunchJoinMilestonesFromMembers({
+    members,
+    memberSpawnStatuses,
+    memberSpawnSnapshot,
+  });
+  const failedSpawnDetails = getFailedSpawnDetails({
+    memberSpawnStatuses,
+    memberSpawnSnapshotStatuses: memberSpawnSnapshot?.statuses,
+    memberSpawnSnapshotUpdatedAt: memberSpawnSnapshot?.updatedAt,
+  });
+  const failedSpawnPanelMessage = buildFailedSpawnPanelMessage(failedSpawnDetails);
+  const failedSpawnCompactDetail = buildFailedSpawnCompactDetail(failedSpawnDetails);
+  const genericFailedSpawnPanelMessage = buildGenericFailedSpawnPanelMessage(
+    failedSpawnCount,
+    expectedTeammateCount
+  );
+  const skippedSpawnDetails = getSkippedSpawnDetails({
+    memberSpawnStatuses,
+    memberSpawnSnapshotStatuses: memberSpawnSnapshot?.statuses,
+    memberSpawnSnapshotUpdatedAt: memberSpawnSnapshot?.updatedAt,
+  });
+  const skippedSpawnPanelMessage = buildSkippedSpawnPanelMessage(skippedSpawnDetails);
+  const skippedSpawnCompactDetail = buildSkippedSpawnCompactDetail(skippedSpawnDetails);
+  const permissionBlockedCount = countPermissionBlockedMembers({
+    memberSpawnStatuses,
+    memberSpawnSnapshotStatuses: memberSpawnSnapshot?.statuses,
+    memberSpawnSnapshotUpdatedAt: memberSpawnSnapshot?.updatedAt,
+  });
+
+  const { allTeammatesConfirmedAlive, hasMembersStillJoining, remainingJoinCount } =
+    getLaunchJoinState({
+      expectedTeammateCount,
+      heartbeatConfirmedCount,
+      processOnlyAliveCount,
+      pendingSpawnCount,
+      failedSpawnCount,
+      skippedSpawnCount,
+    });
+
+  const progressStepIndex = getDisplayStepIndex({
+    progress,
+    expectedTeammateCount,
+    heartbeatConfirmedCount,
+    processOnlyAliveCount,
+    pendingSpawnCount,
+    failedSpawnCount,
+    skippedSpawnCount,
+  });
+
+  if (isFailed) {
+    return {
+      progress,
+      isActive: false,
+      isReady: false,
+      isFailed: true,
+      canCancel: false,
+      currentStepIndex: progressStepIndex,
+      expectedTeammateCount,
+      heartbeatConfirmedCount,
+      processOnlyAliveCount,
+      pendingSpawnCount,
+      failedSpawnCount,
+      skippedSpawnCount,
+      allTeammatesConfirmedAlive,
+      hasMembersStillJoining,
+      remainingJoinCount,
+      panelTitle: '启动失败',
+      panelMessage: progress.error ?? failedSpawnPanelMessage ?? genericFailedSpawnPanelMessage,
+      panelTone: 'error',
+      defaultLiveOutputOpen: true,
+      compactTitle: '启动失败',
+      compactDetail: progress.message ?? null,
+      compactTone: 'error',
+    };
+  }
+
+  if (isReady) {
+    const allMembersSkipped =
+      skippedSpawnCount > 0 &&
+      expectedTeammateCount > 0 &&
+      skippedSpawnCount >= expectedTeammateCount;
+    const joiningPhrase =
+      remainingJoinCount === 1 ? '1 个成员仍在加入' : `${remainingJoinCount} 个成员仍在加入`;
+    const pendingMembersAwaitApproval =
+      failedSpawnCount === 0 &&
+      permissionBlockedCount > 0 &&
+      permissionBlockedCount === remainingJoinCount;
+    const pendingDetailPhrase = pendingMembersAwaitApproval
+      ? buildAwaitingPermissionPhrase(permissionBlockedCount)
+      : buildPendingDiagnosticPhrase({
+          summary: memberSpawnSnapshot?.summary,
+          memberSpawnStatuses,
+          memberSpawnSnapshotStatuses: memberSpawnSnapshot?.statuses,
+          memberSpawnSnapshotUpdatedAt: memberSpawnSnapshot?.updatedAt,
+          fallbackJoiningPhrase: joiningPhrase,
+        });
+    const readyCompactDetail = hasMembersStillJoining
+      ? pendingDetailPhrase
+      : expectedTeammateCount === 0
+        ? '负责人已在线'
+        : allMembersSkipped
+          ? '按需加载'
+          : `全部 ${expectedTeammateCount} 个成员已加入`;
+    const readyDetailMessage =
+      expectedTeammateCount === 0
+        ? '团队已启动，负责人已在线'
+        : allTeammatesConfirmedAlive
+          ? `团队已启动，全部 ${expectedTeammateCount} 个成员已加入`
+          : allMembersSkipped
+            ? '团队已启动，成员按需加载'
+            : hasMembersStillJoining
+              ? pendingDetailPhrase
+              : '团队已启动，成员仍在加入';
+    const readyDetailSeverity = hasMembersStillJoining ? 'info' : undefined;
+    const readyMessage =
+      expectedTeammateCount === 0
+        ? '团队已启动，负责人已在线'
+        : allTeammatesConfirmedAlive
+          ? `团队已启动，全部 ${expectedTeammateCount} 个成员已加入`
+          : allMembersSkipped
+            ? '团队已启动，成员按需加载'
+            : '正在完成启动';
+
+    return {
+      progress,
+      isActive: false,
+      isReady: true,
+      isFailed: false,
+      canCancel: false,
+      expectedTeammateCount,
+      heartbeatConfirmedCount,
+      processOnlyAliveCount,
+      pendingSpawnCount,
+      failedSpawnCount,
+      skippedSpawnCount,
+      allTeammatesConfirmedAlive,
+      hasMembersStillJoining,
+      remainingJoinCount,
+      panelTitle: '启动详情',
+      panelMessage: hasMembersStillJoining ? readyDetailMessage : null,
+      panelMessageSeverity: readyDetailSeverity,
+      successMessage: readyMessage,
+      successMessageSeverity: hasMembersStillJoining ? 'info' : 'success',
+      defaultLiveOutputOpen: false,
+      compactTitle: hasMembersStillJoining ? '正在完成启动' : '团队已启动',
+      compactDetail: readyCompactDetail,
+      compactTone: hasMembersStillJoining ? 'default' : 'success',
+      currentStepIndex: hasMembersStillJoining ? 2 : DISPLAY_COMPLETE_STEP_INDEX,
+    };
+  }
+
+  if (isActive) {
+    const activeJoiningPhrase =
+      remainingJoinCount === 1 ? '1 个成员仍在加入' : `${remainingJoinCount} 个成员仍在加入`;
+    const activePendingDetailPhrase =
+      failedSpawnCount === 0 &&
+      hasMembersStillJoining &&
+      permissionBlockedCount > 0 &&
+      permissionBlockedCount === remainingJoinCount
+        ? buildAwaitingPermissionPhrase(permissionBlockedCount)
+        : buildPendingDiagnosticPhrase({
+            summary: memberSpawnSnapshot?.summary,
+            memberSpawnStatuses,
+            memberSpawnSnapshotStatuses: memberSpawnSnapshot?.statuses,
+            memberSpawnSnapshotUpdatedAt: memberSpawnSnapshot?.updatedAt,
+            fallbackJoiningPhrase: activeJoiningPhrase,
+          });
+    return {
+      progress,
+      isActive: true,
+      isReady: false,
+      isFailed: false,
+      canCancel,
+      currentStepIndex: progressStepIndex >= 0 ? progressStepIndex : -1,
+      expectedTeammateCount,
+      heartbeatConfirmedCount,
+      processOnlyAliveCount,
+      pendingSpawnCount,
+      failedSpawnCount,
+      skippedSpawnCount,
+      allTeammatesConfirmedAlive,
+      hasMembersStillJoining,
+      remainingJoinCount,
+      panelTitle: '正在启动团队',
+      panelMessage:
+        failedSpawnCount > 0
+          ? (failedSpawnPanelMessage ?? genericFailedSpawnPanelMessage ?? progress.message)
+          : skippedSpawnCount > 0
+            ? (skippedSpawnPanelMessage ??
+              `本次启动已跳过 ${skippedSpawnCount}/${Math.max(expectedTeammateCount, skippedSpawnCount)} 个成员`)
+            : hasMembersStillJoining &&
+                permissionBlockedCount > 0 &&
+                permissionBlockedCount === remainingJoinCount
+              ? activePendingDetailPhrase
+              : progress.message,
+      panelMessageSeverity:
+        failedSpawnCount > 0 || skippedSpawnCount > 0 ? 'warning' : progress.messageSeverity,
+      defaultLiveOutputOpen: false,
+      compactTitle: '正在启动团队',
+      compactDetail:
+        failedSpawnCount > 0
+          ? (failedSpawnCompactDetail ?? `${failedSpawnCount} 个成员启动失败`)
+          : skippedSpawnCount > 0
+            ? (skippedSpawnCompactDetail ?? `已跳过 ${skippedSpawnCount} 个成员`)
+            : hasMembersStillJoining && failedSpawnCount === 0 && permissionBlockedCount > 0
+              ? permissionBlockedCount === remainingJoinCount
+                ? buildAwaitingPermissionPhrase(permissionBlockedCount)
+                : `${heartbeatConfirmedCount}/${expectedTeammateCount} 个成员已确认`
+              : expectedTeammateCount > 0 && progressStepIndex >= 2
+                ? `${heartbeatConfirmedCount}/${expectedTeammateCount} 个成员已确认`
+                : progress.message,
+      compactTone: failedSpawnCount > 0 || skippedSpawnCount > 0 ? 'warning' : 'default',
+    };
+  }
+
+  return null;
+}
